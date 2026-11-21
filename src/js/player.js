@@ -2,8 +2,8 @@
 (function () {
   const ISK = (globalThis.ISK = globalThis.ISK || {});
   const D = () => ISK.data;
-  const SLOTS = ['weapon', 'offhand', 'head', 'body', 'legs', 'feet', 'hands', 'cloak', 'ring1', 'ring2', 'amulet', 'costume'];
-  const SLOT_NAMES = { weapon: 'Зброя', offhand: 'Друга рука', head: 'Голова', body: 'Тіло', legs: 'Ноги', feet: 'Взуття', hands: 'Руки', cloak: 'Плащ', ring1: 'Перстень', ring2: 'Перстень', amulet: 'Амулет', costume: 'Вбрання' };
+  const SLOTS = ['weapon', 'offhand', 'head', 'body', 'legs', 'feet', 'hands', 'cloak', 'ring1', 'ring2', 'amulet', 'artifact', 'costume'];
+  const SLOT_NAMES = { weapon: 'Зброя', offhand: 'Друга рука', head: 'Голова', body: 'Тіло', legs: 'Ноги', feet: 'Взуття', hands: 'Руки', cloak: 'Плащ', ring1: 'Перстень', ring2: 'Перстень', amulet: 'Амулет', artifact: 'Артефакт', costume: 'Вбрання' };
 
   function newPlayer(opts) {
     const race = opts.race === 'god' ? 'goblin' : (opts.race || 'human'); // богом стати не можна. Гоблін — найближче.
@@ -11,10 +11,10 @@
       name: opts.name || 'Хіро', gender: opts.gender || 'm', race, cheat: opts.cheat || 'luck', origin: opts.origin || 'офісний працівник',
       look: Object.assign({ hair: 0, hairColor: 0, eyes: 0, costume: 'c_default' }, opts.look || {}),
       level: 1, xp: 0, statPoints: 3, stats: { str: 5, agi: 5, int: 5, vit: 5, luk: 5 },
-      hp: 1, mp: 1, gold: 60, fame: 0, social: 0,
+      hp: 1, mp: 1, gold: 60, fame: 0, social: opts.cheat === 'royal' ? 2 : 0, jackSkills: [], army: null, spouse: null, children: [], lordRel: {},
       classes: { primary: null, secondary: null }, classXp: {}, skillRanks: {},
       inventory: { potion_s: 3, food_bread: 2, c_default: 0 },
-      equipment: { weapon: 'w_sword_0_0', offhand: null, head: null, body: 'a_body_cloth_0_0', legs: 'a_legs_cloth_0_0', feet: 'a_feet_cloth_0_0', hands: null, cloak: null, ring1: null, ring2: null, amulet: null, costume: opts.look && opts.look.costume || 'c_default' },
+      equipment: { weapon: 'w_sword_0_0', offhand: null, head: null, body: 'a_body_cloth_0_0', legs: 'a_legs_cloth_0_0', feet: 'a_feet_cloth_0_0', hands: null, cloak: null, ring1: null, ring2: null, amulet: null, artifact: null, costume: opts.look && opts.look.costume || 'c_default' },
       professions: {}, guild: { registered: false, rank: 0, points: 0, done: 0 },
       quests: [], location: null, food: null, relics: 0, flags: {}, kills: {},
       stat: { battles: 0, wins: 0, dungeons: 0, deaths: 0, crafted: 0, gathered: 0, harvests: 0, dice: 0, continents: {} },
@@ -33,7 +33,7 @@
     return p;
   }
 
-  const xpNeed = (L) => Math.round(40 * Math.pow(L, 1.65));
+  const xpNeed = (L) => (L >= 100 ? Infinity : Math.round(30 * Math.pow(L, 1.5) + L * 20));
   const classXpNeed = (L) => Math.round(35 * Math.pow(L, 1.45));
   const profXpNeed = (L) => Math.round(18 * Math.pow(L, 1.45));
   const item = (id) => (id ? D().getItem(id) : null);
@@ -50,7 +50,10 @@
       if (cx.adv) { const A = C.adv.find((a) => a.id === cx.adv); if (A) for (const k in A.bonus) s[k] += A.bonus[k]; }
       if (cx.adv && cx.master) { const A = C.adv.find((a) => a.id === cx.adv); if (A && A.master) for (const k in A.master.bonus) s[k] += A.master.bonus[k]; }
       if (cx.ascended) for (const k in s) s[k] += 6;
+      const t = D().classTier && D().classTier(cls, cx); if (t) s[C.main] += t.tier * 3 + t.grade; // grade bonus
     }
+    if (p.spouse && p.spouse.kind === 'warrior') s.str += 4;
+    if (p.spouse && p.spouse.kind === 'mage') s.int += 4;
     if (p.food && p.food.buff === 'all') for (const k in s) s[k] = Math.round(s[k] * (1 + p.food.amt));
     return s;
   }
@@ -60,6 +63,7 @@
     const s = totalStats(p); let m = 15 + s.int * 7 + p.level * 4;
     for (const it of eqItems(p)) m += it.mp || 0;
     if (p.cheat === 'mana') m *= 1.5;
+    if (p.spouse && p.spouse.kind === 'mage') m *= 1.15;
     return Math.round(m);
   }
 
@@ -101,13 +105,20 @@
   function knownSkills(p) {
     const out = [];
     for (const cls of [p.classes.primary, p.classes.secondary]) if (cls) for (const s of availableSkills(p, cls)) out.push(rankSkill(s, skillRank(p, s.id)));
+    // «Майстер на всі руки»: borrowed skills of any class
+    if ((p.classes.primary === 'jack' || p.classes.secondary === 'jack') && p.jackSkills && D().skillIndex) {
+      const idx = D().skillIndex();
+      for (const id of p.jackSkills) { const sk = idx.get(id); if (sk && !out.some((x) => x.id === id)) out.push(rankSkill({ ...sk, borrowed: true }, skillRank(p, id))); }
+    }
     return out;
   }
 
   function addXp(p, amount) {
     if (p.cheat === 'exp') amount = Math.round(amount * 1.6);
+    if (D().hasArt && D().hasArt(p, 'xp')) amount = Math.round(amount * 1.25);
+    if (p.level >= (D().LEVEL_CAP || 100)) return { amount: 0, ups: [] };
     p.xp += amount; const ups = [];
-    while (p.xp >= xpNeed(p.level)) { p.xp -= xpNeed(p.level); p.level++; p.statPoints += 3; p.hp = maxHp(p); p.mp = maxMp(p); ups.push(p.level); }
+    while (p.level < (D().LEVEL_CAP || 100) && p.xp >= xpNeed(p.level)) { p.xp -= xpNeed(p.level); p.level++; p.statPoints += 3; p.hp = maxHp(p); p.mp = maxMp(p); ups.push(p.level); }
     return { amount, ups };
   }
   function addClassXp(p, amount) {
@@ -168,7 +179,7 @@
     p.hp = Math.min(p.hp, maxHp(p)); p.mp = Math.min(p.mp, maxMp(p));
   }
 
-  function priceMul(p) { let m = 1; if (p.cheat === 'merchant') m *= 0.9; if (p.cheat === 'charisma') m *= 0.85; if (p.race === 'goblin') m *= 0.9; return m; }
+  function priceMul(p) { let m = 1; if (p.cheat === 'merchant') m *= 0.9; if (p.cheat === 'charisma') m *= 0.85; if (p.race === 'goblin') m *= 0.9; if (p.spouse && p.spouse.kind === 'merchant') m *= 0.9; return m; }
   function sellPrice(p, id) { const it = item(id); if (!it || !it.price) return 0; let v = it.price * 0.45; if (p.cheat === 'appraisal') v *= 1.15; if (p.cheat === 'merchant') v *= 1.3; return Math.max(1, Math.round(v)); }
   function buyPrice(p, id, mod = 1) { const it = item(id); if (!it) return 0; return Math.max(1, Math.round(it.price * mod * priceMul(p))); }
 
@@ -183,11 +194,11 @@
     if (u.revive || u.dmg || (u.buff && !u.food)) return null;
     removeItem(p, id);
     let mul = 1;
-    if (u.food && p.cheat === 'cook') mul = 2;
+    if (u.food && (p.cheat === 'cook' || p.cheat === 'chef')) mul = 2;
     if (u.food && p.race === 'halfling') mul *= 1.5;
     if (u.hp) { const before = p.hp; p.hp = Math.min(maxHp(p), p.hp + Math.round(u.hp * (u.food ? mul : 1))); out.push(`+${p.hp - before} ❤️`); }
     if (u.mp) { const before = p.mp; p.mp = Math.min(maxMp(p), p.mp + u.mp); out.push(`+${p.mp - before} 🔷`); }
-    if (u.food) { p.food = { ...u.food, amt: u.food.amt * (p.cheat === 'cook' ? 2 : 1) }; out.push('ситий бонус'); }
+    if (u.food) { p.food = { ...u.food, amt: u.food.amt * (p.cheat === 'cook' ? 2 : 1), battles: u.food.battles * (p.cheat === 'chef' ? 2 : 1) }; out.push('ситий бонус'); }
     if (u.cure) out.push('отрута виведена');
     return { text: out.join(' '), use: u };
   }
@@ -200,7 +211,7 @@
   }
   function petStats(p, pet) {
     const P = D().PETS[pet.key]; const k = pet.lvl;
-    let mul = P.power * (p.cheat === 'beasttalk' ? 1.5 : 1);
+    let mul = P.power * (p.cheat === 'beasttalk' ? 1.5 : 1) * (p.cheat === 'tamer' ? 1.5 : 1);
     return { atk: Math.round((7 + k * 3) * mul), heal: Math.round((6 + k * 2.5) * mul), maxHp: Math.round((40 + k * 15) * mul) };
   }
   function addPetXp(p, amount) {
@@ -214,8 +225,13 @@
     for (const c of p.party) { c.xp += amount; while (c.xp >= 50 + c.lvl * 30) { c.xp -= 50 + c.lvl * 30; c.lvl++; ups.push(c); } }
     return ups;
   }
-  function travelSpeed(p) { let s = D().MOUNTS[p.mount].speed; if (p.cheat === 'speed') s *= 1.4; return s; }
-  function encounterMul(p) { return D().MOUNTS[p.mount].enc; }
+  function travelSpeed(p) {
+    let s = (D().MOUNTS[p.mount] || D().MOUNTS.feet).speed; if (p.cheat === 'speed' || p.cheat === 'speedrun') s *= 1.4;
+    if (D().hasArt && D().hasArt(p, 'travel')) s *= 1.3;
+    if (ISK.game && ISK.ui && ISK.ui.G && p.cheat !== 'weather') { const env = ISK.game.environment(ISK.ui.G); s *= env.travel; }
+    return s;
+  }
+  function encounterMul(p) { let m = (D().MOUNTS[p.mount] || D().MOUNTS.feet).enc; if (D().hasArt && D().hasArt(p, 'stealth')) m *= 0.4; return m; }
 
   ISK.player = {
     SLOTS, SLOT_NAMES, newPlayer, xpNeed, classXpNeed, profXpNeed, totalStats, maxHp, maxMp, derived, classLevel, skillRank, availableSkills, knownSkills,

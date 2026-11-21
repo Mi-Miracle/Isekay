@@ -93,6 +93,12 @@
       for (const c of cls) {
         const C = D().CLASSES[c]; const cx = p.classXp[c]; const L = cx.lvl;
         wrap.appendChild(h('div', { class: 'row' }, h('h3', { style: { margin: '4px 0', fontFamily: 'Georgia' } }, `${C.icon} ${C.name} — рівень ${L}`), h('span', { class: 'tag rank' }, `Очки навичок: ${cx.sp || 0}`)));
+        const T = D().classTier && D().classTier(c, cx);
+        if (T) {
+          const path = [C.name, cx.adv ? (C.adv.find((a) => a.id === cx.adv) || {}).name : 'Клас ІІ', cx.adv && (C.adv.find((a) => a.id === cx.adv) || {}).master ? C.adv.find((a) => a.id === cx.adv).master.name : 'Клас ІІІ', C.ascend.name];
+          wrap.appendChild(h('div', { class: 'grade-track' }, path.map((nm, ti) => h('div', { class: 'gt-tier' + (ti < T.tier ? ' done' : ti === T.tier ? ' cur' : '') }, h('div', { class: 'gt-nm' }, nm), h('div', { class: 'gt-pips' }, [1, 2, 3].map((gi) => h('span', { class: 'gt-pip' + (ti < T.tier || (ti === T.tier && gi <= T.grade) ? ' on' : '') }, ['I', 'II', 'III'][gi - 1])))))));
+          wrap.appendChild(h('div', { class: 'muted', style: { fontSize: '12px' } }, `Поточний грейд: ${T.icon} ${T.title} · кожен грейд дає +${T.tier * 3 + T.grade} до основної характеристики`));
+        }
         if (L >= 10 && !cx.adv) {
           wrap.appendChild(h('div', { class: 'quest main' }, h('div', { class: 't' }, '⬆️ Підвищення класу доступне!'), h('div', { class: 'd' }, 'Обери шлях розвитку. Це назавжди (ну, до перереєстрації в іншому світі).'),
             h('div', { class: 'choice-grid' }, C.adv.map((a) => h('div', { class: 'choice', onclick: async () => { if (!(await UI().confirm(`Стати «${a.name}»?\n${a.desc}`))) return; cx.adv = a.id; A().play('level'); UI().cutin(a.name.toUpperCase(), 'Нове підвищення класу!', '#b77bff'); reopen(skills); } },
@@ -115,6 +121,11 @@
             ok && r < 5 ? h('div', { class: 'acts' }, h('button', { class: 'btn small primary', disabled: !cx.sp, onclick: () => { PL().upgradeSkill(p, c, sk.id); A().play('magic'); reopen(skills); } }, '⬆ ранг')) : null));
         }
         wrap.appendChild(grid);
+      }
+      if (p.jackSkills && p.jackSkills.length) {
+        wrap.appendChild(h('h3', { style: { margin: '10px 0 4px', fontFamily: 'Georgia' } }, '🃏 Позичені навички (Майстер на всі руки)'));
+        const idx = D().skillIndex ? D().skillIndex() : new Map();
+        wrap.appendChild(h('div', { class: 'items' }, p.jackSkills.map((id) => { const sk = idx.get(id); return sk ? h('div', { class: 'item' }, h('div', { class: 'ic' }, sk.icon), h('div', null, h('div', { class: 'nm' }, sk.name), h('div', { class: 'ds' }, sk.desc))) : null; })));
       }
       return wrap;
     } });
@@ -257,6 +268,9 @@
       ISK.voice.hasNeural() && !V.installed ? h('div', { class: 'card' }, h('div', { style: { fontSize: '13px', marginBottom: '6px' } }, '🎙️ Нейроозвучка: справжні українські голоси (Микита, Тетяна, Лада), працює офлайн. Одноразове завантаження ~80 МБ.'),
         h('button', { class: 'btn primary', onclick: async (e) => { const b = e.target; b.disabled = true; b.textContent = 'Завантаження… 0%'; const r = await ISK.voice.install((v) => { b.textContent = `Завантаження… ${v}%`; }); if (r && r.ok) { b.textContent = '✅ Встановлено!'; ISK.voice.say('Богиня Люмі', 'Тепер ти мене чуєш? Ура! Я так довго цього чекала!'); } else { b.disabled = false; b.textContent = '⚠️ Помилка: ' + ((r && r.error) || '?') + ' — спробувати ще'; } } }, '⬇️ Завантажити нейроозвучку')) : null,
       ISK.voice.hasNeural() && V.installed ? h('button', { class: 'btn ghost', onclick: () => ISK.voice.say('Богиня Люмі', 'Привіт, герою! Це я, Люмі. Звук працює чудово!') }, '🔊 Перевірити голос') : null,
+      h('button', { class: 'btn', onclick: () => { UI().closeAll(); ISK.panels2.voices(); } }, '🎚️ Голоси персонажів: тембр і швидкість кожного'),
+      h('div', { class: 'field' }, h('label', null, 'Складність гри'), h('div', { class: 'row wrap' }, Object.entries(ISK.combat.DIFF).map(([k, d]) => h('button', { class: 'btn small' + ((UI().G && UI().G.difficulty) === k ? ' primary' : ''), title: d.desc, onclick: () => { if (!UI().G) return; UI().G.difficulty = k; ISK.difficulty = k; UI().toast(`Складність: ${d.name}. ${d.desc}`, 'good'); reopen(settings); } }, d.name)))),
+      h('div', { class: 'field' }, h('label', null, '📡 Twitch-чат (глядачі впливають на гру)'), h('div', { class: 'row', style: { gap: '6px' } }, (() => { const inp = h('input', { value: (ISK.twitch && ISK.twitch.channel()) || 'mi_miracle', style: { width: '160px' } }); return [inp, h('button', { class: 'btn small primary', onclick: () => { ISK.twitch.connect(inp.value.trim()); reopen(settings); } }, ISK.twitch && ISK.twitch.connected() ? '🔄 Перепідключити' : '🔌 Підключити'), ISK.twitch && ISK.twitch.connected() ? h('button', { class: 'btn small ghost', onclick: () => { ISK.twitch.disconnect(); reopen(settings); } }, 'Вимкнути') : null]; })()), h('div', { class: 'muted', style: { fontSize: '12px' } }, 'Команди: !герой · !подарунок · !лікуй · !орда (3 голоси) · !війна (5 голосів) · !погода [дощ/сніг/буря/туман/ясно] · !жарт · !допомога')),
       h('label', { class: 'row' }, h('input', { type: 'checkbox', checked: !!UI().fastTravel, onchange: (e) => { UI().fastTravel = e.target.checked; } }), 'Швидка анімація подорожей'),
       h('div', { class: 'muted', style: { fontSize: '12px' } }, 'F11 — повноекранний режим. Оновлення гри встановлюються автоматично при запуску.'),
       h('button', { class: 'btn ghost', onclick: () => { UI().closeAll(); cheats(); } }, '🧪 Чіт-меню (для тестування) · клавіша ` або F10')) });
@@ -324,17 +338,47 @@
         return w;
       } },
       { id: 'class', label: '⚔️ Другий клас', render: () => classTab() },
+      ...((p.classes.primary === 'jack' || p.classes.secondary === 'jack') ? [{ id: 'jack', label: '🃏 Чужі навички', render: () => jackTab(B) }] : []),
+      { id: 'rivals', label: '🐺 Клани', render: () => rivalsTab(B) },
     ] });
+  }
+  function jackTab(B) {
+    const p = G().player; const cx = p.classXp.jack; const w = h('div'); const slots = D().JACK_SLOTS(cx.lvl);
+    w.appendChild(h('div', { class: 'muted', style: { marginBottom: '8px' } }, `🃏 Майстер на всі руки (рів. класу ${cx.lvl}) може тримати ${slots} чужих навичок. Вивчення: 1 очко навичок + золото. Доступні навички до рівня ${cx.lvl}. Зайнято: ${p.jackSkills.length}/${slots}.`));
+    const grid = h('div', { class: 'items' }); w.appendChild(grid);
+    const byClass = {};
+    for (const sk of D().skillIndex().values()) { if (sk.lvl > cx.lvl || sk.cls === 'jack') continue; (byClass[sk.cls] = byClass[sk.cls] || []).push(sk); }
+    for (const [ck, arr] of Object.entries(byClass)) {
+      grid.appendChild(h('div', { class: 'loc-section' }, `${D().CLASSES[ck].icon} ${D().CLASSES[ck].name}`));
+      for (const sk of arr.sort((a, b) => a.lvl - b.lvl)) {
+        const has = p.jackSkills.includes(sk.id); const cost = 80 * sk.lvl;
+        grid.appendChild(h('div', { class: 'item' }, h('div', { class: 'ic' }, sk.icon), h('div', { style: { flex: 1 } }, h('div', { class: 'nm' }, `${sk.name} · рів. ${sk.lvl}`), h('div', { class: 'ds' }, `${sk.desc || ''} · ${sk.mp} MP`)),
+          h('div', { class: 'acts' }, has ? h('button', { class: 'btn small ghost', onclick: () => { p.jackSkills = p.jackSkills.filter((x) => x !== sk.id); reopen(() => guild(B)); } }, 'Забути') : h('button', { class: 'btn small primary', disabled: p.jackSkills.length >= slots || cx.sp < 1 || p.gold < cost, onclick: () => { cx.sp--; p.gold -= cost; p.jackSkills.push(sk.id); A().play('magic'); UI().toast(`🃏 Вивчено чужу навичку: ${sk.icon} ${sk.name}!`, 'epic'); reopen(() => guild(B)); } }, `Вивчити ${cost}🪙`))));
+      }
+    }
+    return w;
+  }
+  function rivalsTab(B) {
+    const g = G(); const p = g.player; const w = h('div'); const rv = ISK.life.rivals(g);
+    w.appendChild(h('div', { class: 'muted', style: { marginBottom: '8px' } }, 'Клани-суперники полюють на ті самі квести. Обганяй їх за очками гільдії та кидай виклик раз на тиждень.'));
+    const rows = [{ name: 'Твоя гільдія (ти)', icon: '⭐', pts: p.guild.points, me: true }, ...rv.map((r) => { const RG = D().RIVAL_GUILDS.find((x) => x.id === r.id); return { ...RG, pts: r.pts, id: r.id }; })].sort((a, b) => b.pts - a.pts);
+    rows.forEach((r, i) => w.appendChild(h('div', { class: 'item' + (r.me ? ' r2' : '') }, h('div', { class: 'ic' }, `${i + 1}`), h('div', { style: { flex: 1 } }, h('div', { class: 'nm' }, `${r.icon} ${r.name}`), h('div', { class: 'ds' }, r.me ? 'Це ти. Ти молодець.' : r.motto)), h('div', { class: 'gold' }, `${r.pts} оч.`),
+      r.me ? null : h('button', { class: 'btn small primary', onclick: async () => {
+        const c = ISK.life.rivalChallenge(g, r.id); if (c.err) return UI().toast(c.err, 'bad');
+        UI().closeAll(); const res = await ISK.combatUI.run(c.enemies, { biome: 'plains', noFlee: true, noDeath: true });
+        ISK.life.rivalResult(g, r.id, res === 'win'); UI().toast(res === 'win' ? `🏆 Клан «${c.RG.name}» принижено! +60 очок гільдії` : `😤 «${c.RG.name}» сміються з тебе. Реванш через тиждень!`, res === 'win' ? 'epic' : 'bad', 5000);
+      } }, '⚔️ Виклик'))));
+    return w;
   }
   function classTab() {
     const p = G().player; const w = h('div');
     w.appendChild(h('div', { class: 'muted', style: { marginBottom: '8px' } }, p.level >= 15 && !p.classes.secondary ? 'Ти досяг 15 рівня — можеш опанувати другий клас!' : `Основний клас: ${D().CLASSES[p.classes.primary].name}. Другий клас — з 15 рівня. Підвищення класу — у вікні навичок (K) з 10 рівня класу.`));
-    if (p.level >= 15 && !p.classes.secondary) w.appendChild(h('div', { class: 'choice-grid' }, Object.entries(D().CLASSES).filter(([k]) => k !== p.classes.primary).map(([k, C]) => h('div', { class: 'choice', onclick: async () => { if (await UI().confirm(`Обрати другий клас: ${C.name}? (500 🪙)`)) { if (p.gold < 500) return UI().toast('Недостатньо золота', 'bad'); p.gold -= 500; p.classes.secondary = k; p.classXp[k] = p.classXp[k] || { lvl: 1, xp: 0, sp: 0 }; UI().closeAll(); UI().cutin(C.name.toUpperCase(), 'Другий клас!', '#7cd6ff'); } } }, h('div', { class: 'ic' }, C.icon), h('div', { class: 'nm' }, C.name), h('div', { class: 'ds' }, C.desc)))));
+    if (p.level >= 15 && !p.classes.secondary) w.appendChild(h('div', { class: 'choice-grid' }, Object.entries(D().CLASSES).filter(([k, C]) => k !== p.classes.primary && (!C.hidden || p.cheat === 'jack')).map(([k, C]) => h('div', { class: 'choice', onclick: async () => { if (await UI().confirm(`Обрати другий клас: ${C.name}? (500 🪙)`)) { if (p.gold < 500) return UI().toast('Недостатньо золота', 'bad'); p.gold -= 500; p.classes.secondary = k; p.classXp[k] = p.classXp[k] || { lvl: 1, xp: 0, sp: 0 }; UI().closeAll(); UI().cutin(C.name.toUpperCase(), 'Другий клас!', '#7cd6ff'); } } }, h('div', { class: 'ic' }, C.icon), h('div', { class: 'nm' }, C.name), h('div', { class: 'ds' }, C.desc)))));
     return w;
   }
   function chooseClass(B) {
     const p = G().player;
-    UI().modal({ title: 'Обери бойову професію', icon: '⚔️', sub: 'Мірра: «Обирайте уважно! З 10 рівня класу — клас ІІ, з 20 — клас ІІІ, з 30 — вознесіння.»', body: () => h('div', { class: 'choice-grid' }, Object.entries(D().CLASSES).map(([k, C]) => h('div', { class: 'choice', onclick: async () => {
+    UI().modal({ title: 'Обери бойову професію', icon: '⚔️', sub: 'Мірра: «Обирайте уважно! З 10 рівня класу — клас ІІ, з 20 — клас ІІІ, з 30 — вознесіння.»', body: () => h('div', { class: 'choice-grid' }, Object.entries(D().CLASSES).filter(([k, C]) => !C.hidden || p.cheat === 'jack').map(([k, C]) => h('div', { class: 'choice' + (C.hidden ? ' secret' : ''), onclick: async () => {
       if (!(await UI().confirm(`${C.icon} ${C.name}: ${C.desc}\n\nКлас ІІ: ${C.adv.map((a) => a.name).join(' або ')}.\nКлас ІІІ: ${C.adv.map((a) => a.master ? a.master.name : '?').join(' або ')}.\nВознесіння: ${C.ascend.name}.\n\nОбрати?`))) return;
       p.classes.primary = k; p.classXp[k] = { lvl: 1, xp: 0, sp: 0 };
       const wid = `w_${C.weapon}_0_0`; PL().addItem(p, wid); PL().equip(p, wid);
@@ -389,14 +433,25 @@
   function store(B, kind) {
     const g = G(), p = g.player; const titles = { shop: ['Крамниця', '🛒'], smith: ['Кузня', '⚒️'], alchemist: ['Лавка алхіміка', '⚗️'], market: ['Ринок', '🏪'], magic: ['Лавка магії', '🔮'] };
     const mod = GM().priceMod(g, B);
+    const CATS = [['all', 'Усе'], ['weapon', '🗡️ Зброя'], ['armor', '🛡️ Броня'], ['offhand', '🔰 Щити/книги'], ['accessory', '💍 Прикраси'], ['potion', '🧪 Зілля'], ['food', '🍲 Їжа'], ['scroll', '📜 Сувої'], ['material', '🪨 Матеріали'], ['other', '📦 Інше']];
+    const catOf = (id) => { const it = PL().item(id); if (!it) return 'other'; if (it.kind === 'weapon') return 'weapon'; if (it.kind === 'armor') return 'armor'; if (it.kind === 'offhand') return 'offhand'; if (it.kind === 'accessory' || it.slot === 'ring' || it.slot === 'amulet' || it.slot === 'artifact') return 'accessory'; if (/^food_|^dish/.test(id)) return 'food'; if (/^scroll_/.test(id) || (it.use && it.use.scroll)) return 'scroll'; if (it.use) return 'potion'; if (D().MATERIALS[id]) return 'material'; return 'other'; };
+    const filt = { buy: 'all', sell: 'all' };
+    const listWith = (mode, ids, row) => {
+      const w = h('div'); const bar = h('div', { class: 'row', style: { flexWrap: 'wrap', gap: '4px', marginBottom: '8px' } }); const list = h('div', { class: 'items' });
+      const present = new Set(ids.map(catOf));
+      const draw = () => { list.innerHTML = ''; const sorted = ids.filter((id) => filt[mode] === 'all' || catOf(id) === filt[mode]).sort((x, y) => CATS.findIndex((c) => c[0] === catOf(x)) - CATS.findIndex((c) => c[0] === catOf(y)) || (PL().item(x).price || 0) - (PL().item(y).price || 0)); for (const id of sorted) list.appendChild(row(id)); if (!sorted.length) list.appendChild(h('div', { class: 'muted' }, 'Порожньо.')); [...bar.children].forEach((b) => b.classList.toggle('primary', b.dataset.c === filt[mode])); };
+      for (const [c, l] of CATS) if (c === 'all' || present.has(c)) { const b = h('button', { class: 'btn small', onclick: () => { filt[mode] = c; draw(); } }, l); b.dataset.c = c; bar.appendChild(b); }
+      w.append(bar, list); draw(); return w;
+    };
     const tabs = [
-      { id: 'buy', label: '🛍️ Купити', render: () => { const list = h('div', { class: 'items' }); for (const id of GM().shopStock(g, B, kind)) { const price = PL().buyPrice(p, id, mod); list.appendChild(itemEl(id, 1, [h('button', { class: 'btn small primary', disabled: p.gold < price, onclick: () => { p.gold -= price; PL().addItem(p, id); A().play('coin'); UI().toast(`Куплено: ${PL().item(id).name}`, 'good'); UI().refresh(); reopen(() => store(B, kind)); } }, `${price} 🪙`)])); } return list; } },
-      { id: 'sell', label: '💰 Продати', render: () => { const list = h('div', { class: 'items' }); const ents = Object.entries(p.inventory).filter(([id]) => { const it = PL().item(id); return it && it.price > 0; }); for (const [id, n] of ents) { const price = PL().sellPrice(p, id); list.appendChild(itemEl(id, n, [h('button', { class: 'btn small', onclick: () => { PL().removeItem(p, id); p.gold += price; A().play('coin'); reopen(() => store(B, kind)); setTimeout(() => document.querySelector('.tabs button[data-id="sell"]')?.click(), 10); } }, `+${price}`), n > 1 ? h('button', { class: 'btn small ghost', onclick: () => { PL().removeItem(p, id, n); p.gold += price * n; A().play('coin'); reopen(() => store(B, kind)); setTimeout(() => document.querySelector('.tabs button[data-id="sell"]')?.click(), 10); } }, `усі +${price * n}`) : null])); } if (!ents.length) list.appendChild(h('div', { class: 'muted' }, 'Нічого продати.')); return list; } },
+      { id: 'buy', label: '🛍️ Купити', render: () => listWith('buy', GM().shopStock(g, B, kind), (id) => { const price = PL().buyPrice(p, id, mod); return itemEl(id, 1, [h('button', { class: 'btn small primary', disabled: p.gold < price, onclick: () => { p.gold -= price; PL().addItem(p, id); A().play('coin'); UI().toast(`Куплено: ${PL().item(id).name}`, 'good'); UI().refresh(); reopen(() => store(B, kind)); } }, `${price} 🪙`)]); }) },
+      { id: 'sell', label: '💰 Продати', render: () => listWith('sell', Object.keys(p.inventory).filter((id) => { const it = PL().item(id); return it && it.price > 0 && p.inventory[id] > 0; }), (id) => { const n = p.inventory[id]; const price = PL().sellPrice(p, id); const back = () => { reopen(() => store(B, kind)); setTimeout(() => document.querySelector('.tabs button[data-id="sell"]')?.click(), 10); }; return itemEl(id, n, [h('button', { class: 'btn small', onclick: () => { PL().removeItem(p, id); p.gold += price; A().play('coin'); back(); } }, `+${price}`), n > 1 ? h('button', { class: 'btn small ghost', onclick: () => { PL().removeItem(p, id, n); p.gold += price * n; A().play('coin'); back(); } }, `усі +${price * n}`) : null]); }) },
     ];
     if (kind === 'smith') tabs.push({ id: 'forge', label: '🔥 Кувати', render: () => gearTab('smithing') });
     if (kind === 'market' || kind === 'shop') tabs.push({ id: 'tailor', label: '🧵 Кравецтво', render: () => gearTab('tailoring') }, { id: 'process', label: '🪡 Обробка', render: () => craftTab('tailoring') });
     if (kind === 'alchemist') tabs.push({ id: 'brew', label: '🧪 Варити', render: () => craftTab('alchemy') });
-    if (kind === 'magic') tabs.push({ id: 'scribe', label: '📜 Писати сувої', render: () => craftTab('scribing') });
+    if (kind === 'magic') tabs.push({ id: 'scribe', label: '📜 Писати сувої', render: () => craftTab('scribing') }, { id: 'jewel', label: '💍 Ювелірство', render: () => craftTab('jewelcrafting') });
+    if (kind === 'shop') tabs.push({ id: 'cook2', label: '🍳 Кухня', render: () => craftTab('cooking') });
     UI().modal({ title: titles[kind][0], icon: titles[kind][1], sub: `${B.name} · 🪙 ${Math.floor(p.gold)}${mod > 1.05 ? ' · воєнні ціни!' : mod < 1 ? ' · знижка за репутацію/титул' : ''}`, tabs });
   }
   const gearState = { cat: 'weapon', tier: -1 };
@@ -455,7 +510,7 @@
     w.appendChild(h('div', { class: 'muted', style: { marginBottom: '8px' } }, `${D().PROFESSIONS[prof].name}: ${PL().profRank(p, prof)} (рів. ${lvl}). Ідеальна мінігра — подвійний результат.`));
     const grid = h('div', { class: 'items' });
     for (const r of D().RECIPES[prof]) {
-      const ok = GM().canCraft(p, r) && lvl >= r.lvl; const needs = Object.entries(r.needs).map(([id, n]) => `${D().MATERIALS[id].icon}${p.inventory[id] || 0}/${n}`).join(' ');
+      const ok = GM().canCraft(p, r) && lvl >= r.lvl; const needs = Object.entries(r.needs).map(([id, n]) => `${PL().item(id) ? PL().item(id).icon : '?'}${p.inventory[id] || 0}/${n}`).join(' ');
       grid.appendChild(itemEl(r.out, 1, [h('button', { class: 'btn small primary', disabled: !ok, onclick: async () => {
         UI().closeAll(); const q = prof === 'alchemy' ? await ISK.minigames.alchemy(r.lvl) : prof === 'scribing' ? await ISK.minigames.alchemy(r.lvl + 4) : await ISK.minigames.cooking(r.lvl);
         const res = GM().craft(G(), prof, r, q); UI().toast(res.count ? `✨ Створено: ${PL().item(r.out).name} ×${res.count}` : '💨 Невдача... Вийшло щось сіре і сумне.', res.count ? 'good' : 'bad');

@@ -4,7 +4,7 @@
   const ISK = (globalThis.ISK = globalThis.ISK || {});
   const { RNG, noise, names } = ISK;
 
-  const W = 440, H = 300;
+  const W = 540, H = 370;
   const T = { DEEP: 0, SEA: 1, BEACH: 2, PLAINS: 3, FOREST: 4, HILLS: 5, MOUNTAIN: 6, PEAK: 7, DESERT: 8, TUNDRA: 9, SWAMP: 10, ASH: 11, JUNGLE: 12 };
   const TERRAIN_INFO = {
     0: { name: 'Глибоке море', cost: Infinity }, 1: { name: 'Море', cost: Infinity }, 2: { name: 'Узбережжя', cost: 1.2 },
@@ -64,7 +64,7 @@
         const v = Math.max(0, 1 - d * d);
         if (v > best) { best = v; bc = ci; }
       });
-      let h = noise.fbm(x / 44, y / 44, seed, 6) * 0.55;
+      let h = noise.fbm(x / 52, y / 52, seed, 6) * 0.55;
       const ridge = 1 - Math.abs(noise.fbm(x / 26 + 50, y / 26, seed + 7, 4) * 2 - 1);
       h += ridge * 0.22 + best * 0.62;
       const isl = noise.fbm(x / 11 + 400, y / 11, seed + 99, 3);
@@ -110,7 +110,7 @@
     for (let i = 0; i < W * H; i++) if (terrain[i] === T.MOUNTAIN || terrain[i] === T.HILLS) src.push(i);
     rng.shuffle(src); let made = 0;
     for (const s of src) {
-      if (made >= 42) break;
+      if (made >= 60) break;
       let k = s, steps = 0; const path = []; const vis = new Set();
       while (steps++ < 800) {
         path.push(k); vis.add(k); if (!isLand(terrain[k])) break;
@@ -137,7 +137,7 @@
     g[from] = 0; came[from] = -1; stamp[from] = gen; push(from, 0);
     const water = !!opts.water; let found = from === to, guard = 0;
     const hw = water ? 1 : 0.6;
-    while (n && guard++ < 260000) {
+    while (n && guard++ < 330000) {
       const k = pop(); if (closed[k] === gen) continue; closed[k] = gen;
       if (k === to) { found = true; break; }
       const x = k % W, y = (k / W) | 0;
@@ -219,6 +219,12 @@
     { key: 'frost', name: 'Вічна Мерзлота', icon: '❄️', terr: [T.TUNDRA, T.HILLS], color: [220, 240, 255], monsters: ['yeti', 'wolf', 'ghost', 'icegolem'], lvl: 14, dungeon: 'ice', desc: 'Тут навіть зілля замерзає. І хоробрість.' },
     { key: 'volcano', name: 'Вулкан Пекельний Зуб', icon: '🌋', terr: [T.MOUNTAIN, T.HILLS], color: [255, 80, 20], monsters: ['imp', 'golem', 'drake', 'salamander'], lvl: 20, dungeon: 'volcano', desc: 'Гаряче. Дуже. Не бери шоколадку.' },
     { key: 'graveyard', name: 'Цвинтар Героїв-Невдах', icon: '🪦', terr: [T.PLAINS, T.HILLS], color: [120, 120, 140], monsters: ['ghost', 'skeleton', 'zombie'], lvl: 4, dungeon: 'crypt', desc: 'Тут лежать ісекайники, які не дочитали туторіал.' },
+    { key: 'mushroom', name: 'Грибне Королівство', icon: '🍄', terr: [T.FOREST, T.SWAMP], color: [200, 90, 160], monsters: ['pixie', 'slime', 'treant'], lvl: 7, dungeon: 'slime', desc: 'Гриби тут розумні. І трохи сварливі.' },
+    { key: 'giants', name: 'Долина Велетнів', icon: '🗿', terr: [T.HILLS, T.PLAINS], color: [150, 130, 100], monsters: ['troll', 'golem', 'orc'], lvl: 14, dungeon: 'mine', desc: 'Сліди розміром з хату. Власники десь поруч.' },
+    { key: 'mirage', name: 'Міражні Піски', icon: '🏜️', terr: [T.DESERT], color: [255, 210, 150], monsters: ['scorpion', 'mummy', 'salamander'], lvl: 12, dungeon: 'ruins', desc: 'Оазис тут є. Але не там, де ти його бачиш.' },
+    { key: 'stormpeak', name: 'Пік Вічних Бур', icon: '⛈️', terr: [T.MOUNTAIN, T.PEAK, T.TUNDRA], color: [120, 140, 200], monsters: ['harpy', 'wyvern', 'icegolem'], lvl: 18, dungeon: 'tower', desc: 'Блискавки б\'ють сюди щохвилини. Місцеві звикли.' },
+    { key: 'goblinwastes', name: 'Гоблінські Звалища', icon: '🗑️', terr: [T.PLAINS, T.HILLS, T.DESERT], color: [130, 150, 60], monsters: ['goblin', 'rabbit', 'bandit'], lvl: 4, dungeon: 'goblin', desc: 'Скарби серед мотлоху. Або мотлох серед скарбів.' },
+    { key: 'bloodmoor', name: 'Кривава Трясовина', icon: '🩸', terr: [T.SWAMP, T.JUNGLE], color: [140, 20, 30], monsters: ['vampire', 'zombie', 'naga'], lvl: 16, dungeon: 'crypt', desc: 'Вода тут червона. Не від вина.' },
     { key: 'banditwoods', name: 'Розбійницькі Хащі', icon: '🗡️', terr: [T.FOREST, T.HILLS], color: [90, 60, 40], monsters: ['bandit', 'bandit', 'wolf', 'orc'], lvl: 5, dungeon: 'bandit', desc: 'Кругом розбійники. Романтика.' },
   ];
 
@@ -253,9 +259,9 @@
     const cand = [];
     for (let i = 0; i < W * H; i++) { const t = terrain[i]; if (!isLand(t) || t === T.PEAK || t === T.MOUNTAIN || sizes[comp[i]] < 40) continue; cand.push(i); }
     rng.shuffle(cand);
-    const minD = 10.5; const baronyCells = []; const grid = new Map();
+    const minD = 12; const baronyCells = []; const grid = new Map();
     for (const c of cand) {
-      const x = c % W, y = (c / W) | 0, gx = (x / 11) | 0, gy = (y / 11) | 0; let ok = true;
+      const x = c % W, y = (c / W) | 0, gx = (x / 12.5) | 0, gy = (y / 12.5) | 0; let ok = true;
       for (let ox = -1; ox <= 1 && ok; ox++) for (let oy = -1; oy <= 1 && ok; oy++) { const L = grid.get((gx + ox) + ',' + (gy + oy)); if (!L) continue; for (const o of L) if (Math.hypot(o % W - x, ((o / W) | 0) - y) < minD) { ok = false; break; } }
       if (!ok) continue;
       baronyCells.push(c); const k = gx + ',' + gy; if (!grid.has(k)) grid.set(k, []); grid.get(k).push(c);
@@ -264,7 +270,7 @@
     baronyCells.forEach((c, bi) => { dist[c] = 0; cellBarony[c] = bi; heap.push(c, 0); });
     while (heap.size) {
       const k = heap.pop(); const x = k % W, y = (k / W) | 0;
-      for (const [dx, dy] of DIRS4) { const xx = x + dx, yy = y + dy; if (xx < 0 || yy < 0 || xx >= W || yy >= H) continue; const j = idx(xx, yy); if (!isLand(terrain[j]) || comp[j] !== comp[k]) continue; const nd = dist[k] + Math.min(cellCost(terrain, river, j), 9); if (nd < dist[j] && nd < 38) { dist[j] = nd; cellBarony[j] = cellBarony[k]; heap.push(j, nd); } }
+      for (const [dx, dy] of DIRS4) { const xx = x + dx, yy = y + dy; if (xx < 0 || yy < 0 || xx >= W || yy >= H) continue; const j = idx(xx, yy); if (!isLand(terrain[j]) || comp[j] !== comp[k]) continue; const nd = dist[k] + Math.min(cellCost(terrain, river, j), 9); if (nd < dist[j] && nd < 44) { dist[j] = nd; cellBarony[j] = cellBarony[k]; heap.push(j, nd); } }
     }
     const nB = baronyCells.length; const pos = baronyCells.map((c) => ({ x: c % W, y: (c / W) | 0 }));
     const adjS = Array.from({ length: nB }, () => new Set()); const area = new Array(nB).fill(0);
@@ -403,12 +409,13 @@
     // ---- landmarks ----
     const cellLandmark = new Int8Array(W * H).fill(-1); const landmarks = [];
     const mainLids = new Set([mainL.lid, ...Object.values(contMain)]);
-    for (const LM of rng.shuffle(LANDMARKS.slice())) {
+    for (const LM of [...rng.shuffle(LANDMARKS.slice()), ...rng.shuffle(LANDMARKS.slice())]) {
+      if (landmarks.length >= 30) break;
       const cs = []; for (let i = 0; i < W * H; i += 3) if (LM.terr.includes(terrain[i]) && mainLids.has(comp[i]) && cellLandmark[i] < 0) cs.push(i);
       rng.shuffle(cs);
-      const c = cs.find((i) => landmarks.every((l) => Math.hypot(l.x - i % W, l.y - ((i / W) | 0)) > 34));
+      const c = cs.find((i) => landmarks.every((l) => Math.hypot(l.x - i % W, l.y - ((i / W) | 0)) > 30));
       if (c === undefined) continue;
-      const x = c % W, y = (c / W) | 0, r = rng.int(9, 14);
+      const x = c % W, y = (c / W) | 0, r = rng.int(9, 15);
       const L = { ...LM, terr: undefined, id: landmarks.length, x, y, r }; landmarks.push(L);
       for (let yy = Math.max(0, y - r - 3); yy < Math.min(H, y + r + 3); yy++) for (let xx = Math.max(0, x - r - 3); xx < Math.min(W, x + r + 3); xx++) {
         const i = idx(xx, yy); if (!isLand(terrain[i])) continue;
@@ -514,8 +521,8 @@
     const gcand = []; for (let i = 0; i < W * H; i++) if (isLand(terrain[i]) && terrain[i] !== T.PEAK && terrain[i] !== T.ASH && sizes[comp[i]] >= 6) gcand.push(i);
     rng.shuffle(gcand);
     for (const c of gcand) {
-      if (dungeons.length >= 84) break;
-      if (!freeCell(c, 14)) continue;
+      if (dungeons.length >= 110) break;
+      if (!freeCell(c, 15)) continue;
       const t = terrain[c]; const small = sizes[comp[c]] < 40;
       const opts = Object.entries(DTYPES).filter(([k, d]) => k !== 'hellgate' && d.terr.includes(t) && (small ? ['pirate', 'sunken', 'tower', 'ruins'].includes(k) : k !== 'pirate' || rng.chance(0.3)));
       if (!opts.length) continue;
@@ -537,6 +544,21 @@
       if (realms[B.realm].isDemon) lvl = 30 + rng.int(0, 5);
       B.danger = lvl;
     }
+    // ---- lords: dukes, counts, barons (kings are the realm rulers in politics) ----
+    const lordName = (cul, female, r) => { const pool = female ? ['Аделаїда', 'Беатриса', 'Вільгельміна', 'Грета', 'Дарина', 'Єлизавета', 'Злата', 'Ізольда', 'Марґарита', 'Олімпія', 'Ростислава', 'Софія', 'Терезія'] : ['Альберт', 'Бертольд', 'Вацлав', 'Гедеон', 'Добромир', 'Еразм', 'Збігнєв', 'Ігнатій', 'Леопольд', 'Мстислав', 'Онуфрій', 'Пантелеймон', 'Рудольф', 'Святополк', 'Феофан', 'Ярополк'];
+      const nick = female ? ['Мудра', 'Сувора', 'Пухнаста', 'Залізна', 'Весела', 'Невгамовна', 'Скупа', 'Прекрасна', 'Сонна', 'Хоробра'] : ['Мудрий', 'Суворий', 'Пухлий', 'Залізний', 'Веселий', 'Невгамовний', 'Скупий', 'Прекрасний', 'Сонний', 'Лисий', 'Хоробрий', 'Третій'];
+      return `${r.pick(pool)} ${r.pick(nick)}`; };
+    const mkLord = (kind, id, seat, realmId) => { const r = new RNG((seed * 31 + id * 7919 + kind.length * 104729) >>> 0); const female = r.chance(0.35); return { kind, id, seat, female, name: lordName(realms[realmId] ? realms[realmId].culture : 'slavic', female, r), trait: r.int(0, 9), age: r.int(19, 74), portrait: r.int(1, 1e6) }; };
+    for (const Du of duchies) Du.lord = mkLord('duke', Du.id, Du.seat, Du.realm);
+    for (const Co of counties) Co.lord = mkLord('count', Co.id, Co.seat, Co.realm);
+    for (const B of baronies) B.lord = mkLord('baron', B.id, B.id, B.realm);
+    // ---- artifacts hidden in deep dungeons ----
+    const ARTS = (ISK.data && ISK.data.ARTIFACTS) || [];
+    const deep = dungeons.filter((d) => !d.final && d.type !== 'hellgate').sort((a, b) => b.level - a.level);
+    rng.shuffle(ARTS.slice()).forEach((A, i) => { const Dg = deep[i * 2 + rng.int(0, 1)]; if (Dg) Dg.artifact = A.id; });
+    // seasonal dungeons (open only in one season)
+    for (const Dg of dungeons) if (!Dg.final && Dg.type !== 'hellgate' && !Dg.relic && rng.chance(0.12)) Dg.season = rng.int(0, 3);
+
     // ---- resource sites (deposits, groves, lakes...) ----
     const SITES = (ISK.data && ISK.data.RESOURCE_SITES) || {};
     for (const B of baronies) {

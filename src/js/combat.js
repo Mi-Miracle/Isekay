@@ -1,4 +1,5 @@
-// Combat engine v2: party (hero + companions + pet) vs enemies, enemy intents & skills, limit-break gauge, statuses.
+// Combat engine v4: party vs enemies, intents, limit gauge, statuses + BREAK system (weakness shields),
+// Boost Points (BP), combo chains, speed timeline and difficulty levels.
 (function () {
   const ISK = (globalThis.ISK = globalThis.ISK || {});
   const D = () => ISK.data;
@@ -6,6 +7,45 @@
   const rnd = (a, b) => a + Math.random() * (b - a);
   const chance = (x) => Math.random() < x;
   const pick = (a) => a[Math.floor(Math.random() * a.length)];
+
+  // ---- difficulty ----
+  const DIFF = {
+    easy: { name: 'Легка', hp: 0.7, atk: 0.7, rew: 0.9, desc: 'Для тих, хто прийшов по сюжет і котиків.' },
+    normal: { name: 'Нормальна', hp: 1, atk: 1, rew: 1, desc: 'Так задумала богиня. Мабуть.' },
+    hard: { name: 'Важка', hp: 1.35, atk: 1.3, rew: 1.25, desc: 'Монстри ходили в спортзал.' },
+    hell: { name: 'Ісекай-пекло', hp: 1.8, atk: 1.65, rew: 1.6, desc: 'Вантажівка-кун чекає за рогом. Поразка забирає половину золота.' },
+  };
+  const diff = () => DIFF[ISK.difficulty] || DIFF.normal;
+  // ---- damage types & weaknesses ----
+  const DTYPES = { slash: '🗡️', pierce: '🏹', blunt: '🔨', fire: '🔥', ice: '❄️', light: '⚡', holy: '✨', dark: '🌑', magic: '🔮' };
+  const WEAPON_DTYPE = { sword: 'slash', katana: 'slash', axe: 'slash', greatsword: 'slash', scythe: 'slash', claws: 'slash', dagger: 'pierce', rapier: 'pierce', spear: 'pierce', halberd: 'pierce', bow: 'pierce', crossbow: 'pierce', mace: 'blunt', warhammer: 'blunt', knuckles: 'blunt', staff: 'magic', wand: 'magic', holy: 'holy', lute: 'magic' };
+  const GROUP_WEAK = [
+    [/skeleton|ghost|mummy|zombie|lich|vampire|wraith|bone|undead|banshee/, ['holy', 'fire', 'blunt']],
+    [/slime|jelly|ooze/, ['fire', 'magic', 'ice']],
+    [/golem|gargoyle|construct|statue/, ['blunt', 'light', 'magic']],
+    [/ice|yeti|frost|snow/, ['fire', 'blunt']],
+    [/fire|salamander|imp|lava|phoenix/, ['ice', 'pierce']],
+    [/demon|devil|succub|hell/, ['holy', 'light', 'slash']],
+    [/drake|dragon|wyvern|wyrm/, ['ice', 'pierce', 'light']],
+    [/spider|scorpion|bug|ant|wasp|beetle/, ['fire', 'blunt']],
+    [/treant|plant|mandrake|ent|fung|shroom/, ['fire', 'slash']],
+    [/bat|harpy|griffin|bird|roc/, ['pierce', 'light']],
+    [/wolf|bear|boar|beast|tiger|rat|cat/, ['fire', 'slash', 'pierce']],
+    [/pirate|bandit|soldier|knight|orc|goblin|kobold|cultist|mage|thief|assassin/, ['slash', 'pierce', 'dark', 'light']],
+    [/serpent|kraken|shark|crab|fish|naga/, ['light', 'slash']],
+    [/pixie|fairy|spirit|wisp/, ['dark', 'pierce']],
+  ];
+  function hashStr(str) { let h = 0; for (const c of String(str)) h = (h * 31 + c.charCodeAt(0)) >>> 0; return h; }
+  function assignWeak(e) {
+    const g = GROUP_WEAK.find(([re]) => re.test(e.key));
+    const pool = g ? g[1].slice() : ['slash', 'pierce', 'blunt', 'fire', 'ice', 'light', 'holy', 'dark', 'magic'];
+    const h = hashStr(e.key); const n = e.boss ? 3 : 2;
+    const w = new Set(e.weak || []);
+    for (let i = 0; w.size < n + (e.weak || []).length && i < 12; i++) w.add(pool[(h + i * 7) % pool.length]);
+    e.weak = [...w].filter((x) => DTYPES[x]); e.known = [];
+    e.shieldMax = e.boss ? (e.finalBoss ? 10 : 6 + Math.floor(e.lvl / 12)) : e.elite ? 4 : 2 + (e.lvl > 20 ? 1 : 0);
+    e.shield = e.shieldMax; e.broken = 0;
+  }
 
   function makeEnemy(key, lvl, mods = {}) {
     const m = D().MONSTERS[key] || D().MONSTERS.goblin;
@@ -20,7 +60,8 @@
     };
     if (mods.name) e.name = mods.name;
     if (mods.icon) e.icon = mods.icon;
-    e.hp = e.maxHp;
+    e.maxHp = Math.round(e.maxHp * diff().hp); e.atk = Math.round(e.atk * diff().atk);
+    e.hp = e.maxHp; assignWeak(e);
     return e;
   }
 
@@ -34,6 +75,7 @@
     base.xp = Math.round(base.xp * 6); base.gold = Math.round(base.gold * 8 + 50);
     base.skills = [['slam', 'Нищівний удар', 'hit', 2.1, 2], ['wave', 'Хвиля руйнування', 'aoe', 1.3, 2], ['roar', 'Лютий рев', 'buff', 0, 1], ['regen', 'Темне відновлення', 'heal', 0.12, 1]];
     if (dtype === 'citadel') { base.phase = 1; base.finalBoss = true; }
+    base.key = 'boss_' + dtype + '_' + (b.name || ''); assignWeak(base); base.key = 'boss_' + dtype;
     return base;
   }
 
@@ -46,7 +88,12 @@
     }
     const pet = p.pets[p.activePet];
     if (pet) { const st = PL().petStats(p, pet); allies.push({ kind: 'pet', ref: pet, name: pet.name, icon: D().PETS[pet.key].icon, role: D().PETS[pet.key].role, hp: st.maxHp, maxHp: st.maxHp, atk: st.atk, heal: st.heal, def: 2 + pet.lvl, alive: true, status: {} }); }
-    const b = { allies, enemies, buffs: {}, cd: {}, turn: 0, over: null, opts, limit: 0, defending: false, pStatus: {}, undyingUsed: false, rewards: null, firstStrike: p.cheat === 'ninja' };
+    const b = { allies, enemies, buffs: {}, cd: {}, turn: 0, over: null, opts, limit: 0, defending: false, pStatus: {}, undyingUsed: false, rewards: null, firstStrike: p.cheat === 'ninja', bp: 1, combo: 0, maxCombo: 0, breaks: 0 };
+    const art = (fx) => D().hasArt && D().hasArt(p, fx);
+    if (p.cheat === 'appraisal' || p.cheat === 'sage' || art('sight')) for (const e of enemies) e.known = e.weak.slice();
+    if (p.cheat === 'breaker') for (const e of enemies) { e.shieldMax = Math.max(1, e.shieldMax - 1); e.shield = e.shieldMax; }
+    if (art('bp')) b.bp = 3;
+    b.art = { regen: art('regen'), revive: art('revive'), gold: art('gold') };
     planIntents(b);
     return b;
   }
@@ -68,7 +115,10 @@
       }
       e.intent = s ? { id: s[0], name: s[1], kind: s[2], mult: s[3] } : { id: 'attack', name: 'Атака', kind: 'attack', mult: 1 };
       e.intent.icon = INTENT_TXT[e.intent.kind];
+      if (e.broken) e.intent = { id: 'broken', name: 'ЗЛАМАНО', kind: 'broken', mult: 0, icon: '💥' };
     }
+    // speed timeline for the UI: who acts in which order this round
+    b.order = [{ side: 'ally', i: 0 }, ...b.allies.slice(1).map((a, i) => ({ side: 'ally', i: i + 1 })), ...b.enemies.map((e, i) => ({ e, i })).filter((x) => x.e.hp > 0).sort((x, y) => y.e.agi - x.e.agi).map((x) => ({ side: 'enemy', i: x.i }))];
   }
 
   function elemMult(e, elem) { if (!elem) return 1; if (e.weak.includes(elem)) return 1.5; if (e.resist.includes(elem)) return 0.5; return 1; }
@@ -76,14 +126,23 @@
 
   function hitEnemy(b, e, raw, opts, ev, by) {
     if (e.hp <= 0) return 0;
-    let dmg = mitig(raw, e.def * (e.buffs.def ? 1.5 : 1), opts.pierce) * rnd(0.9, 1.1);
-    const em = elemMult(e, opts.elem); dmg *= em;
+    let dmg = mitig(raw, e.def * (e.buffs.def ? 1.5 : 1) * (e.broken ? 0.5 : 1), opts.pierce) * rnd(0.9, 1.1);
+    const dt = opts.elem && DTYPES[opts.elem] ? opts.elem : opts.phys;
+    const em = elemMult(e, opts.elem === 'blunt' ? null : opts.elem); dmg *= em;
+    const weakHit = dt && e.weak.includes(dt);
+    if (weakHit) { dmg *= 1.3; if (!e.known.includes(dt)) e.known.push(dt); if (String(by).startsWith('player')) b.weakThisTurn = true; }
     if (opts.crit) dmg *= 1.75;
     if (e.status.freeze) dmg *= 1.2;
+    if (e.broken) dmg *= 1.5;
     if (opts.execute && e.hp < e.maxHp * 0.3) dmg *= 3;
+    if (b.combo > 1 && String(by).startsWith('player')) dmg *= 1 + Math.min(5, b.combo - 1) * 0.1;
     dmg = Math.max(1, Math.round(dmg));
     e.hp = Math.max(0, e.hp - dmg);
-    ev.push({ kind: 'dmg', side: 'enemy', target: b.enemies.indexOf(e), amount: dmg, crit: !!opts.crit, weak: em > 1, resist: em < 1, elem: opts.elem, by });
+    ev.push({ kind: 'dmg', side: 'enemy', target: b.enemies.indexOf(e), amount: dmg, crit: !!opts.crit, weak: em > 1 || weakHit, resist: em < 1, elem: opts.elem || dt, by });
+    if (weakHit && !e.broken && e.hp > 0) {
+      e.shield = Math.max(0, e.shield - 1);
+      if (e.shield === 0) { e.broken = ISK.ui && ISK.ui.G && ISK.ui.G.player.cheat === 'breaker' ? 3 : 2; b.breaks++; e.intent = { id: 'broken', name: 'ЗЛАМАНО', kind: 'broken', mult: 0, icon: '💥' }; b.limit = Math.min(100, b.limit + 15); ev.push({ kind: 'break', target: b.enemies.indexOf(e), text: `💥 ЗЛАМ! ${e.name} беззахисний!` }); }
+    }
     if (e.hp <= 0) ev.push({ kind: 'die', target: b.enemies.indexOf(e), name: e.name });
     return dmg;
   }
@@ -110,17 +169,24 @@
     const target = b.enemies[action.target] && b.enemies[action.target].hp > 0 ? b.enemies[action.target] : alive(b)[0];
     const critRoll = (bonus = 0) => { if (b.firstStrike) { b.firstStrike = false; return true; } return chance((d.crit + bonus + (b.buffs.crit ? b.buffs.crit.amt : 0)) / 100); };
     const atkMul = (b.buffs.atk ? 1 + b.buffs.atk.amt : 1) * (p.cheat === 'berserk' && p.hp < PL().maxHp(p) * 0.4 ? 1.4 : 1);
+    const boost = Math.max(0, Math.min(3, Math.min(b.bp, action.boost || 0)));
+    if (boost && action.type !== 'defend' && action.type !== 'flee' && action.type !== 'item') { b.bp -= boost; ev.push({ kind: 'boost', amount: boost, text: `⚡ ПІДСИЛЕННЯ ×${boost}!` }); }
+    b.boostUsed = boost;
+    const phys = (d.weapon && WEAPON_DTYPE[d.weapon.wtype]) || (d.blunt ? 'blunt' : 'slash');
     if (action.type === 'attack') {
       if (!target) return;
       const magicW = d.weapon && d.weapon.matk;
-      const crit = action.quality >= 1.3 || critRoll();
-      hitEnemy(b, target, (magicW ? d.matk : d.atk) * atkMul * (action.quality || 1), { crit, elem: !magicW && d.blunt ? 'blunt' : null }, ev, 'player');
+      for (let h = 0; h < 1 + boost; h++) {
+        if (target.hp <= 0) break;
+        const crit = action.quality >= 1.3 || critRoll();
+        hitEnemy(b, target, (magicW ? d.matk : d.atk) * atkMul * (action.quality || 1) * (h ? 0.85 : 1), { crit, phys, elem: magicW && d.weapon.wtype !== 'lute' ? 'magic' : null }, ev, 'player');
+      }
       b.limit = Math.min(100, b.limit + 9);
     } else if (action.type === 'limit') {
       if (b.limit < 100) return ev.push({ kind: 'text', text: 'Шкала ульти ще не заповнена!' });
       b.limit = 0;
       ev.push({ kind: 'limit', text: `${p.name}: «СИЛА ПРОТАГОНІСТА!!!»` });
-      for (const e of alive(b)) hitEnemy(b, e, Math.max(d.atk, d.matk) * 4.2 * atkMul, { crit: true, pierce: true }, ev, 'player');
+      for (const e of alive(b)) { hitEnemy(b, e, Math.max(d.atk, d.matk) * 4.2 * atkMul, { crit: true, pierce: true }, ev, 'player'); if (e.hp > 0 && !e.broken) { e.shield = 0; e.broken = 2; e.intent = { id: 'broken', name: 'ЗЛАМАНО', kind: 'broken', mult: 0, icon: '💥' }; ev.push({ kind: 'break', target: b.enemies.indexOf(e), text: `💥 ЗЛАМ! ${e.name}` }); } }
       partyHeal(b, p, Math.round(PL().maxHp(p) * 0.2), ev, '✨ Сила дружби лікує команду');
     } else if (action.type === 'skill') {
       const sk = PL().knownSkills(p).find((s) => s.id === action.id);
@@ -133,7 +199,7 @@
       const statAtk = sk.scale === 'luk' ? d.atk * (0.6 + d.s.luk / 40) : magic ? d.matk : d.atk;
       if (sk.heal) {
         const base = sk.scale === 'vit' ? d.s.vit * 5 + p.level * 5 : d.matk * 1.3;
-        const amt = Math.round(base * sk.heal * rnd(0.9, 1.1));
+        const amt = Math.round(base * sk.heal * rnd(0.9, 1.1) * (1 + boost * 0.5));
         if (sk.target === 'party') partyHeal(b, p, amt, ev, `${sk.icon} ${sk.name}`);
         else { const before = p.hp; p.hp = Math.min(d.maxHp, p.hp + amt); ev.push({ kind: 'heal', side: 'ally', ally: 0, amount: p.hp - before }); }
       }
@@ -143,7 +209,7 @@
         for (const t of targets) {
           for (let h = 0; h < (sk.hits || 1); h++) {
             if (t.hp <= 0) break;
-            const dmg = hitEnemy(b, t, statAtk * sk.power * atkMul * (action.quality || 1), { elem: sk.elem, pierce: sk.pierce, crit: critRoll(sk.critBonus || 0), execute: sk.execute }, ev, 'player');
+            const dmg = hitEnemy(b, t, statAtk * sk.power * atkMul * (action.quality || 1) * (1 + boost * 0.55), { elem: sk.elem || (magic ? 'magic' : null), phys, pierce: sk.pierce, crit: critRoll(sk.critBonus || 0), execute: sk.execute }, ev, 'player');
             if (sk.drain) { const hgain = Math.round(dmg * sk.drain); p.hp = Math.min(d.maxHp, p.hp + hgain); }
             if (sk.steal && dmg > 0) { const g = Math.round(t.gold * rnd(0.3, 0.7) + 5); p.gold += g; ev.push({ kind: 'text', text: `💰 Вкрадено ${g} золота!` }); }
           }
@@ -223,6 +289,7 @@
     setAllyHp(a, p, hp);
     ev.push({ kind: 'dmg', side: 'ally', ally: b.allies.indexOf(a), amount: dmg, by });
     if (isP) b.limit = Math.min(100, b.limit + 6);
+    if (isP && p.hp <= 0 && b.art && b.art.revive && !b.artRevived) { b.artRevived = true; p.hp = Math.round(d.maxHp * 0.4); ev.push({ kind: 'heal', side: 'ally', ally: 0, amount: p.hp, text: '🪶 Вічне перо фенікса: ти повстаєш!' }); }
     if (isP && p.hp <= 0 && PL().hasItem(p, 'phoenix')) { PL().removeItem(p, 'phoenix'); p.hp = Math.round(d.maxHp * 0.5); ev.push({ kind: 'heal', side: 'ally', ally: 0, amount: p.hp, text: '🪶 Перо фенікса спалахує! Ти воскресаєш!' }); }
     if (!isP && hp <= 0) ev.push({ kind: 'text', text: `😵 ${a.name} вибуває з бою!` });
     if (isP && b.buffs.counter) { const e = b.enemies[by]; if (e && e.hp > 0) { hitEnemy(b, e, d.atk * b.buffs.counter.amt, {}, ev, 'player'); ev.push({ kind: 'text', text: '⚔️ Контратака!' }); } }
@@ -230,8 +297,9 @@
   }
 
   function enemyPhase(b, p, d, ev) {
-    for (const e of b.enemies.slice()) {
+    for (const e of b.enemies.slice().sort((x, y) => y.agi - x.agi)) {
       if (e.hp <= 0 || p.hp <= 0) continue;
+      if (e.broken) { e.turn++; ev.push({ kind: 'text', text: `💥 ${e.icon} ${e.name} оговтується після зламу...` }); continue; }
       e.turn++;
       if (e.status.poison) { const dmg = Math.max(1, Math.round(e.maxHp * (e.boss ? 0.025 : 0.07))); e.hp = Math.max(0, e.hp - dmg); ev.push({ kind: 'dmg', side: 'enemy', target: b.enemies.indexOf(e), amount: dmg, dot: 'poison' }); }
       if (e.status.burn) { const dmg = Math.max(1, Math.round(e.maxHp * (e.boss ? 0.03 : 0.06) + d.matk * 0.2)); e.hp = Math.max(0, e.hp - dmg); ev.push({ kind: 'dmg', side: 'enemy', target: b.enemies.indexOf(e), amount: dmg, dot: 'burn' }); }
@@ -266,10 +334,13 @@
       if (--b.buffs[k].turns <= 0) delete b.buffs[k];
     }
     if (p.food && p.food.buff === 'regen') p.hp = Math.min(d.maxHp, p.hp + Math.round(d.maxHp * p.food.amt));
+    if (b.art && b.art.regen && p.hp > 0) p.hp = Math.min(d.maxHp, p.hp + Math.round(d.maxHp * 0.04));
     for (const k of Object.keys(b.cd)) if (--b.cd[k] <= 0) delete b.cd[k];
     for (const e of b.enemies) for (const s of Object.keys(e.status)) if (--e.status[s] <= 0) delete e.status[s];
     if (b.pStatus.poison) { const dmg = Math.round(d.maxHp * 0.05); p.hp = Math.max(1, p.hp - dmg); ev.push({ kind: 'dmg', side: 'ally', ally: 0, amount: dmg, dot: 'poison' }); if (--b.pStatus.poison <= 0) delete b.pStatus.poison; }
     p.mp = Math.min(d.maxMp, p.mp + Math.round(d.maxMp * (p.cheat === 'mana' ? 0.08 : 0.03)));
+    for (const e of b.enemies) if (e.broken && --e.broken <= 0) { e.broken = 0; e.shield = e.shieldMax; ev.push({ kind: 'text', text: `🛡️ ${e.name} відновлює щит (${e.shieldMax}).` }); }
+    if (!b.boostUsed) b.bp = Math.min(5, b.bp + 1);
     b.hasteUsed = false;
     planIntents(b);
   }
@@ -284,9 +355,10 @@
     const ev = [];
     if (b.over) return ev;
     const d = PL().derived(p);
-    b.turn++; b.defending = false;
+    b.turn++; b.defending = false; b.weakThisTurn = false;
     if (b.pStatus.stun) { delete b.pStatus.stun; ev.push({ kind: 'text', text: '💫 Ти оговтуєшся від оглушення...' }); }
     else playerAction(b, p, d, action, ev);
+    if (['attack', 'skill', 'limit'].includes(action.type)) { if (b.weakThisTurn) { b.combo++; b.maxCombo = Math.max(b.maxCombo, b.combo); if (b.combo >= 2) ev.push({ kind: 'combo', amount: b.combo, text: `🔗 КОМБО ×${b.combo}! (+${Math.min(5, b.combo - 1) * 10}% шкоди)` }); } else b.combo = 0; }
     if (b.over) return ev;
     if (checkEnd(b, p, ev)) return ev;
     if (b.buffs.haste && !b.hasteUsed && action.type !== 'flee') { b.hasteUsed = true; ev.push({ kind: 'text', text: '⚡ Прискорення: додатковий хід!' }); return ev; }
@@ -320,10 +392,12 @@
       p.kills[e.key] = (p.kills[e.key] || 0) + 1;
     }
     if (b.opts.xpMul) xp = Math.round(xp * b.opts.xpMul);
+    xp = Math.round(xp * diff().rew * (1 + b.breaks * 0.03)); gold = Math.round(gold * diff().rew);
     if (p.cheat === 'midas') gold = Math.round(gold * 1.6);
+    if (b.art && b.art.gold) gold = Math.round(gold * 1.4);
     if (b.opts.horde) fame += 20;
     b.rewards = { xp, gold, items, fame };
   }
 
-  ISK.combat = { makeEnemy, makeBoss, startBattle, act, alive, aliveAllies, allyHp };
+  ISK.combat = { makeEnemy, makeBoss, startBattle, act, alive, aliveAllies, allyHp, DIFF, DTYPES, WEAPON_DTYPE };
 })();

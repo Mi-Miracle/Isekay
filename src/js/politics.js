@@ -562,7 +562,7 @@
       }
       const next = army.path[0];
       const edge = adj[army.node].find((e) => e.to === next);
-      const days = Math.max(1, Math.round((edge ? edge.cost : 8) / 5));
+      const days = Math.max(1, Math.round((edge ? edge.cost : 8) / 5 * (ISK.season === 'winter' ? 1.4 : 1)));
       army.legDays = days;
       army.prog += 1 / days;
       if (army.prog >= 1) {

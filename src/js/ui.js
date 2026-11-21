@@ -76,7 +76,7 @@
     $('#hud-level').textContent = 'Рів. ' + p.level;
     $('#hud-rank').textContent = p.guild.registered ? 'Ранг ' + PL().guildRank(p) : 'Без гільдії';
     $('#hud-social').textContent = `${PL().socialName(p)} · ⭐${Math.floor(p.fame)}`;
-    const cls = [p.classes.primary, p.classes.secondary].filter(Boolean).map((c) => { const C = ISK.data.CLASSES[c]; const cx = p.classXp[c]; const adv = cx && cx.adv ? C.adv.find((a) => a.id === cx.adv) : null; const ms = adv && cx.master && adv.master ? adv.master : null; return (ms ? ms.icon + ' ' + ms.name : adv ? adv.icon + ' ' + adv.name : C.icon + ' ' + C.name); }).join(' / ');
+    const cls = [p.classes.primary, p.classes.secondary].filter(Boolean).map((c) => { const C = ISK.data.CLASSES[c]; const cx = p.classXp[c]; const adv = cx && cx.adv ? C.adv.find((a) => a.id === cx.adv) : null; const ms = adv && cx.master && adv.master ? adv.master : null; const t = ISK.data.classTier && ISK.data.classTier(c, cx); if (t) return t.icon + ' ' + t.title; return (ms ? ms.icon + ' ' + ms.name : adv ? adv.icon + ' ' + adv.name : C.icon + ' ' + C.name); }).join(' / ');
     $('#hud-class').textContent = cls || 'Без класу';
     const port = $('#hud-portrait'); port.innerHTML = ''; port.appendChild(ISK.sprites.img(ISK.sprites.hero(p), 56));
     const pct = (a, b) => Math.max(0, Math.min(100, (a / b) * 100)) + '%';
@@ -85,6 +85,7 @@
     const need = PL().xpNeed(p.level); $('#bar-xp').style.width = pct(p.xp, need); $('#txt-xp').textContent = `✨ ${p.xp}/${need}`;
     $('#hud-gold').textContent = Math.floor(p.gold).toLocaleString('uk');
     $('#hud-date').textContent = GM().dateStr(G.time);
+    if (ISK.life) { const env = ISK.life.environment(G); let we = $('#hud-weather'); if (!we) { we = h('div', { id: 'hud-weather', class: 'muted' }); $('#hud-date').after(we); } we.textContent = `${env.season.icon} ${env.season.name} · ${env.weather.icon} ${env.weather.name}`; we.title = `Швидкість подорожі ×${env.travel.toFixed(2)}`; document.body.dataset.season = env.season.id; document.body.dataset.weather = env.weatherKey; }
     const hr = GM().here(G); const realm = GM().realmOfNode(G, p.location);
     $('#hud-loc').textContent = `📍 ${hr.kind === 'barony' ? hr.B.name : hr.Dg.name}${realm >= 0 ? ' · ' + G.world.realms[realm].name : ''} · ${ISK.data.MOUNTS[p.mount].icon}`;
     const party = $('#hud-party'); party.innerHTML = '';
@@ -95,9 +96,14 @@
     dot('skills', [p.classes.primary, p.classes.secondary].some((c) => c && p.classXp[c] && (p.classXp[c].sp > 0 || (p.classXp[c].lvl >= 10 && !p.classXp[c].adv) || (p.classXp[c].lvl >= 20 && p.classXp[c].adv && !p.classXp[c].master))));
     dot('quests', p.quests.some((q) => GM().questDone(G, q)));
     if (!UI.travelling) renderLocation();
-    if (!UI.inCombat && !UI.inDungeon && $('#screen-game').classList.contains('active')) {
+    if (!UI.inCombat && !UI.inDungeon && !UI.inEstate && $('#screen-game').classList.contains('active')) {
       const hb = GM().here(G); let mood = 'field';
-      if (hb.kind === 'barony') { if (ISK.politics.isDemon(G.P, hb.B.owner)) mood = 'demon'; else if (['capital', 'city', 'town', 'port'].includes(hb.B.type)) mood = 'town'; }
+      const env = ISK.life ? ISK.life.environment(G) : null;
+      let bio = 'plains'; try { bio = biomeAt(p.location); } catch (e) { /* ignore */ }
+      if (bio === 'desert') mood = 'desert'; else if (bio === 'forest' || bio === 'jungle') mood = 'forest'; else if (bio === 'beach' || (hb.kind === 'barony' && hb.B.type === 'port')) mood = 'sea'; else if (bio === 'tundra') mood = 'winter';
+      if (env && env.season.id === 'winter' && mood === 'field') mood = 'winter';
+      if (hb.kind === 'barony') { if (ISK.politics.isDemon(G.P, hb.B.owner)) mood = 'demon'; else if (ISK.life && (ISK.life.eventAt(G, hb.B.id) || {}).key === 'festival') mood = 'festival'; else if (['capital', 'city', 'town', 'port'].includes(hb.B.type)) mood = 'town'; }
+      if (p.hp < PL().maxHp(p) * 0.2) mood = 'sad';
       A().setMood(mood);
     }
   }
@@ -120,10 +126,14 @@
       el.appendChild(h('div', { class: 'row' }, ISK.sprites.img(ISK.sprites.icon(['capital', 'city', 'fortress', 'town', 'port', 'mine', 'hellfort'].includes(B.type) ? B.type : 'village'), 40), h('div', null, h('h3', null, B.name),
         h('div', { class: 'loc-sub' }, `${st.name} · графство ${w.counties[B.county].name}, герцогство ${w.duchies[B.duchy].name}`, h('br'), owner ? owner.fullName + (owner.liege >= 0 ? ' (Імперія)' : '') : 'Нічийна земля', B.occ >= 0 ? h('span', { class: 'bad' }, ` · окуповано: ${w.realms[B.occ].name}`) : null, lm ? h('div', { class: 'gold' }, `${lm.icon} ${lm.name}`) : null))));
       if (ISK.politics.isDemon(G.P, B.owner)) el.appendChild(h('div', { class: 'quest main' }, '😈 Землі Темряви. Тут немає закладів — лише біль і погана погода.'));
+      const ev = ISK.life && ISK.life.eventAt(G, B.id);
+      if (ev) el.appendChild(h('div', { class: 'quest' }, { festival: '🎉 Ярмарок! Ціни в крамницях нижчі.', goblin_market: '👺 Гоблінський базар: дивні товари, підозрілі гобліни.', tournament: '🏆 Лицарський турнір! Слава переможцям.', dragon: '🐉 Над містом кружляє дракон. Не виходь без шолома.' }[ev.key] || '✨ Тут щось відбувається!'));
       const svcs = h('div', { class: 'svc-grid' });
       for (const s of st.services) { const S = SVC[s]; svcs.appendChild(h('div', { class: 'svc', onclick: () => { A().play('click'); ISK.panels.openService(s, B); } }, h('span', { class: 'i' }, S.icon), S.name)); }
-      if (p.house && p.house.barony === B.id) svcs.appendChild(h('div', { class: 'svc hl', onclick: () => ISK.panels.house() }, h('span', { class: 'i' }, '🏡'), 'Мій дім'));
-      if (p.holdings.includes(B.id)) svcs.appendChild(h('div', { class: 'svc hl', onclick: () => ISK.panels.land(B.id) }, h('span', { class: 'i' }, '🏰'), 'Мої землі'));
+      if (p.house && p.house.barony === B.id) svcs.appendChild(h('div', { class: 'svc hl', onclick: () => ISK.estate.open('house') }, h('span', { class: 'i' }, '🏡'), 'Мій дім'));
+      if (p.holdings.includes(B.id)) svcs.appendChild(h('div', { class: 'svc hl', onclick: () => ISK.estate.open('land', B.id) }, h('span', { class: 'i' }, '🏰'), 'Мої землі'));
+      if (B.type === 'port') svcs.appendChild(h('div', { class: 'svc', onclick: () => ISK.panels2.shipyard(B) }, h('span', { class: 'i' }, '⚓'), 'Верф і море'));
+      if (ISK.life && ISK.life.lordsAt(G, B.id).length && !ISK.politics.isDemon(G.P, B.owner)) svcs.appendChild(h('div', { class: 'svc', onclick: () => ISK.panels2.lords(B.id) }, h('span', { class: 'i' }, '👑'), 'Двір лордів'));
       if (st.services.length || p.house) { el.appendChild(h('div', { class: 'loc-section' }, 'Заклади')); el.appendChild(svcs); }
       el.appendChild(h('div', { class: 'loc-section' }, 'Дії'));
       const acts = h('div', { class: 'svc-grid' });
@@ -135,6 +145,8 @@
       acts.appendChild(h('div', { class: 'svc', onclick: () => ISK.panels.talk(B) }, h('span', { class: 'i' }, '💬'), 'Поговорити'));
       acts.appendChild(h('div', { class: 'svc', onclick: () => ISK.panels.campfire() }, h('span', { class: 'i' }, '🔥'), 'Табір'));
       acts.appendChild(h('div', { class: 'svc', onclick: () => ISK.panels.waitDays() }, h('span', { class: 'i' }, '⏳'), 'Чекати'));
+      acts.appendChild(h('div', { class: 'svc', onclick: () => ISK.panels2.army() }, h('span', { class: 'i' }, '⚔️'), 'Військо' + (p.army && ISK.life.armyCount(p) ? ` (${ISK.life.armyCount(p)})` : '')));
+      acts.appendChild(h('div', { class: 'svc', onclick: () => ISK.panels2.family() }, h('span', { class: 'i' }, '💞'), 'Родина'));
       const hostile = G.P.armies.filter((a) => a.node === B.id && ISK.politics.isDemon(G.P, a.realm));
       for (const a of hostile) acts.appendChild(h('div', { class: 'svc danger', onclick: () => ISK.panels.attackArmy(a.id) }, h('span', { class: 'i' }, a.icon || '😈'), 'В бій з ордою!'));
       el.appendChild(acts);
@@ -155,8 +167,11 @@
       const Dg = hr.Dg;
       el.appendChild(h('div', { class: 'row' }, h('div', { style: { fontSize: '34px' } }, Dg.icon), h('div', null, h('h3', null, Dg.name), h('div', { class: 'loc-sub' }, `Підземелля · рекомендований рівень ${Dg.level} · поверхів: ${Dg.floors}`, G.cleared[Dg.id] ? h('span', { class: 'good' }, ' · зачищено') : null))));
       if (Dg.relic && p.flags.relicsRevealed && !G.cleared[Dg.id]) el.appendChild(h('div', { class: 'quest main' }, '🔱 Тут зберігається Осколок Печаті!'));
-      const canEnter = !Dg.final || p.relics >= 3;
-      el.appendChild(h('div', { class: 'row', style: { marginTop: '10px' } }, h('button', { class: 'btn primary', disabled: !canEnter, onclick: () => ISK.dungeonUI.enter(Dg.id) }, Dg.final ? '🌋 Увійти до Цитаделі' : '⚔️ Увійти в підземелля'), !canEnter ? h('span', { class: 'muted' }, 'Печать: потрібні 3 Осколки') : null));
+      const seasonOk = Dg.season === undefined || Dg.season === null || !ISK.life || ISK.life.environment(G).seasonIdx === Dg.season;
+      if (Dg.season !== undefined && Dg.season !== null) el.appendChild(h('div', { class: 'quest' + (seasonOk ? '' : ' main') }, `${ISK.data.SEASONS[Dg.season].icon} Сезонне підземелля: відчиняється лише в сезон «${ISK.data.SEASONS[Dg.season].name}».${seasonOk ? ' Двері відчинені!' : ' Зараз на дверях табличка: «Зачинено. Пішли на обід (на три місяці)».'}`));
+      if (Dg.artifact && !G.cleared[Dg.id]) el.appendChild(h('div', { class: 'quest main' }, `🏺 Кажуть, у глибині лежить артефакт: ${PL().item(Dg.artifact).name}`));
+      const canEnter = (!Dg.final || p.relics >= 3) && seasonOk;
+      el.appendChild(h('div', { class: 'row', style: { marginTop: '10px' } }, h('button', { class: 'btn primary', disabled: !canEnter, onclick: () => ISK.dungeonUI.enter(Dg.id) }, Dg.final ? '🌋 Увійти до Цитаделі' : '⚔️ Увійти в підземелля'), !canEnter ? h('span', { class: 'muted' }, seasonOk ? 'Печать: потрібні 3 Осколки' : 'Не сезон') : null));
     }
   }
 
@@ -281,6 +296,12 @@
       if (r === 'win') { PL().addFame(p, 15); toast('«Нечесно! Я ще повернуся! Із сиквелом!» +15 ⭐', 'epic', 5000); }
       return 'ok';
     }
+    if (enc.type === 'naval') {
+      const F = ISK.life.FOES[enc.foe];
+      await alertBox('На обрії вітрила!', `${F ? F.icon + ' ' + F.name : 'Ворожий корабель'} іде на зближення. Капітан кричить: «Гармати до бою! Хто взяв мою папугу?!»`, '🌊');
+      const r = await ISK.panels2.naval(enc.foe, enc.lvl); A().setMood('sea'); refresh();
+      return r === 'lose' && p.hp <= 0 ? 'dead' : 'ok';
+    }
     toast('⚠️ ' + enc.text, 'bad');
     const r = await ISK.combatUI.run(enc.enemies, { biome: enc.enemies.some((e) => e.key === 'pirate' || e.key === 'naga') ? 'sea' : biomeAt(p.location) });
     return r === 'lose' ? 'dead' : 'ok';
@@ -326,7 +347,8 @@
   // ---------------- Input ----------------
   function bindMap() {
     const c = $('#map'); const R = ISK.render.R; let drag = null, moved = false;
-    c.addEventListener('mousedown', (e) => { drag = { x: e.clientX, y: e.clientY, cx: R.cam.x, cy: R.cam.y }; moved = false; });
+    c.addEventListener('contextmenu', (e) => { e.preventDefault(); if (UI.travelling) return; const node = ISK.render.pick(e.clientX, e.clientY); ISK.panels2.mapContext(e, node); });
+    c.addEventListener('mousedown', (e) => { if (e.button !== 0) return; drag = { x: e.clientX, y: e.clientY, cx: R.cam.x, cy: R.cam.y }; moved = false; });
     window.addEventListener('mousemove', (e) => { if (!drag) return; const dx = e.clientX - drag.x, dy = e.clientY - drag.y; if (Math.abs(dx) + Math.abs(dy) > 4) { moved = true; c.classList.add('drag'); } R.cam.x = drag.cx - dx / R.cam.z; R.cam.y = drag.cy - dy / R.cam.z; ISK.render.clampCam(); });
     window.addEventListener('mouseup', (e) => { if (drag && !moved && e.target === c) { const node = ISK.render.pick(e.clientX, e.clientY); if (node) { A().play('click'); showInfo(node); } } drag = null; c.classList.remove('drag'); });
     c.addEventListener('wheel', (e) => { e.preventDefault(); const [wx, wy] = ISK.render.screenToWorld(e.clientX, e.clientY); R.cam.z = Math.max(0.22, Math.min(4, R.cam.z * (e.deltaY < 0 ? 1.12 : 0.89))); R.cam.x = wx - e.clientX / R.cam.z; R.cam.y = wy - e.clientY / R.cam.z; ISK.render.clampCam(); }, { passive: false });
@@ -337,6 +359,7 @@
     $('#btn-center').addEventListener('click', () => ISK.render.centerOn(UI.G.player.location));
     document.querySelectorAll('#time-ctrl [data-speed]').forEach((b) => b.addEventListener('click', () => { A().play('click'); setSpeed(+b.dataset.speed); }));
     $('#travel-stop').addEventListener('click', () => { UI.stopTravel = true; });
+    $('#hl-toggle').addEventListener('click', () => { R.hl = !R.hl; $('#hl-toggle').classList.toggle('active', R.hl); A().play('click'); toast(R.hl ? '⛏️ Підсвічено: шахти, підземелля (колір = складність), родовища, артефакти 🏺' : 'Підсвітку вимкнено', ''); });
     document.querySelectorAll('#side-menu [data-panel]').forEach((b) => b.addEventListener('click', () => { A().play('click'); ISK.panels.open(b.dataset.panel); }));
     const gameActive = () => UI.G && $('#screen-game').classList.contains('active') && !UI.inCombat && !UI.inMinigame && !UI.inDungeon;
     window.addEventListener('keydown', (e) => {
@@ -347,6 +370,7 @@
       const byCode = { KeyC: 'character', KeyI: 'inventory', KeyK: 'skills', KeyP: 'professions', KeyJ: 'quests', KeyR: 'realms', KeyH: 'chronicle', KeyT: 'party', KeyY: 'achievements' };
       if (byCode[e.code]) ISK.panels.open(byCode[e.code]);
       if (e.code === 'Space') { e.preventDefault(); setSpeed(UI.timeSpeed ? 0 : 1); return; }
+      if (e.code === 'KeyG') { $('#hl-toggle').click(); return; }
       if (e.code === 'KeyF') { ISK.render.centerOn(UI.G.player.location); return; }
       if (e.code === 'Equal' || e.code === 'NumpadAdd') { setSpeed(Math.min(3, UI.timeSpeed + 1)); return; }
       if (e.code === 'Minus' || e.code === 'NumpadSubtract') { setSpeed(Math.max(0, UI.timeSpeed - 1)); return; }
@@ -360,7 +384,7 @@
   // ---- world clock: time flows by itself (armies march, heroes wander) ----
   UI.timeSpeed = 0; const SPEEDS = [0, 0.2, 0.6, 2]; let lastT = 0, acc = 0, lastDay = -1;
   function setSpeed(i) {
-    UI.timeSpeed = i; document.querySelectorAll('#time-ctrl [data-speed]').forEach((b) => b.classList.toggle('active', +b.dataset.speed === i));
+    UI.timeSpeed = i; try { localStorage.setItem('dyvo_speed', String(i)); } catch (e) { /* ignore */ } document.querySelectorAll('#time-ctrl [data-speed]').forEach((b) => b.classList.toggle('active', +b.dataset.speed === i));
   }
   function timeFlow(now) {
     const dt = Math.min(0.1, (now - lastT) / 1000); lastT = now;
@@ -370,14 +394,40 @@
     const news = GM().passTime(G, acc); acc = 0; showNews(news);
     const d = Math.floor(G.time);
     if (d !== lastDay) {
-      lastDay = d; refresh();
+      lastDay = d; refresh(); if (ISK.panels2) ISK.panels2.goddessPopup();
       const hr = GM().here(G); if (hr.kind === 'barony' && G.P.armies.some((a) => a.node === hr.B.id && ISK.politics.isDemon(G.P, a.realm))) { setSpeed(0); toast('⚠️ Ворожа орда прийшла туди, де ти стоїш! Час зупинено.', 'bad', 5000); }
     } else $('#hud-date').textContent = GM().dateStr(G.time);
   }
-  function loop(now) { timeFlow(now || 0); if ($('#screen-game').classList.contains('active') && !UI.inCombat && !UI.inDungeon) ISK.render.draw(); requestAnimationFrame(loop); }
+  let gpT = 0;
+  function loop(now) {
+    timeFlow(now || 0);
+    if ($('#screen-game').classList.contains('active') && !UI.inCombat && !UI.inDungeon && !UI.inEstate) ISK.render.draw();
+    if (now - gpT > 4000) { gpT = now; if (UI.G && ISK.panels2) ISK.panels2.goddessPopup(); }
+    requestAnimationFrame(loop);
+  }
   function showScreen(id) { document.querySelectorAll('.screen').forEach((s) => s.classList.toggle('active', s.id === id)); }
-  function startGame(G) { UI.G = G; showScreen('screen-game'); ISK.render.init($('#map'), G); refresh(); A().setMood('calm'); }
+  function startGame(G) {
+    UI.G = G; showScreen('screen-game'); ISK.render.init($('#map'), G); refresh(); A().setMood('calm');
+    if (ISK.estate) ISK.estate.close();
+    // v4: світ живе сам — годинник іде за замовчуванням (повільно); пауза кнопкою ⏸ або пробілом
+    let sp = 1; try { const v = localStorage.getItem('dyvo_speed'); if (v !== null) sp = +v; } catch (e) { /* ignore */ }
+    setSpeed(sp);
+    if (ISK.twitch) ISK.twitch.autoStart();
+  }
 
+  // generic right-click: any item row / service tile gets a context menu mirroring its buttons
+  window.addEventListener('contextmenu', (e) => {
+    if (e.target.closest('#map')) return;
+    e.preventDefault();
+    const row = e.target.closest('.item, .svc, .slot, .choice');
+    if (!row) return;
+    const btns = [...row.querySelectorAll('button')].filter((b) => !b.disabled);
+    const name = (row.querySelector('.nm') || row).textContent.trim().slice(0, 40);
+    const items = [{ icon: '📌', label: name, disabled: true }, '-'];
+    if (!btns.length) items.push({ icon: '👆', label: 'Відкрити', fn: () => row.click() });
+    for (const b of btns) items.push({ icon: '▸', label: b.textContent.trim().slice(0, 34) || b.title || 'Дія', fn: () => b.click() });
+    ISK.panels2.contextMenu(e.clientX, e.clientY, items);
+  });
   Object.assign(UI, { setSpeed, h, $, modal, closeTop, closeAll, confirm: confirmBox, alert: alertBox, toast, cutin, sparkle, levelUp, refresh, renderLocation, showInfo, startTravel, sleep, bindMap, loop, showScreen, startGame, showNews, checkMainQuest, biomeAt, nodeName, SVC });
   ISK.ui = UI;
 })();

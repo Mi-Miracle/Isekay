@@ -18,7 +18,10 @@
     const P = POL().initPolitics(world);
     const player = PL().newPlayer(popts);
     player.location = 'b:' + world.startBarony;
-    const G = { version: 3, seed, world, P, player, time: 0, boards: {}, cleared: {}, dungeon: null, discovered: {}, notices: [], hires: {}, startDay: 0, sites: {}, worldOpts: world.opts };
+    const G = { version: 4, seed, world, P, player, time: 0, boards: {}, cleared: {}, dungeon: null, discovered: {}, notices: [], hires: {}, startDay: 0, sites: {}, worldOpts: world.opts, difficulty: (popts && popts.difficulty) || 'normal', life: {} };
+    ISK.difficulty = G.difficulty;
+    if (player.cheat === 'sailor') player.ship = true;
+    if (ISK.life) ISK.life.init(G);
     discoverAround(G, 30);
     if (player.cheat === 'mapmaster') { for (const B of world.baronies) G.discovered['b:' + B.id] = 1; for (const Dg of world.dungeons) G.discovered['d:' + Dg.id] = 1; }
     for (const st of P.realms) { const R = world.realms[st.id]; if (R.isDemon) continue; if (R.raceKey === player.race) st.playerRep += 15; if (player.cheat === 'polyglot') st.playerRep += 20; }
@@ -35,6 +38,7 @@
   }
 
   function passTime(G, days) {
+    if (ISK.life) ISK.life.beforeTime(G, days);
     const before = day(G); G.time += days; const after = day(G);
     const news = [];
     for (let d = before + 1; d <= after; d++) {
@@ -42,6 +46,7 @@
       POL().tick(G.world, G.P, d);
       for (const c of G.P.chronicle) { if (c === n0) break; news.push(c); }
       dailyPlayer(G, d);
+      if (ISK.life) ISK.life.daily(G, d);
     }
     return news;
   }
@@ -118,6 +123,7 @@
     if (kind === 'sea') {
       if (!rng.chance(0.18 * Math.min(2, days))) return null;
       const lvl = Math.max(3, p.level + rng.int(-1, 2));
+      if (p.ship && rng.chance(0.55)) return { type: 'naval', foe: rng.pick(['pirate', 'pirate', 'navy', 'kraken']), lvl };
       if (rng.chance(0.4)) return { type: 'combat', enemies: [ISK.combat.makeEnemy('naga', lvl, { name: 'Морський змій', icon: '🐉' })], text: 'Щось величезне піднімається з глибин!' };
       return { type: 'combat', enemies: [ISK.combat.makeEnemy('pirate', lvl), ISK.combat.makeEnemy('pirate', lvl - 1)], text: 'Пірати на абордаж! «Йо-хо-хо і пляшка рому!»' };
     }
@@ -132,7 +138,7 @@
     }
     const b = w.cellBarony[cell];
     let lvl = b >= 0 ? w.baronies[b].danger : 28; if (lm) lvl = Math.max(lvl, lm.lvl);
-    lvl = Math.max(1, lvl + rng.int(-1, 1));
+    lvl = Math.max(1, lvl + rng.int(-1, 1), Math.floor(p.level * 0.7) + rng.int(-1, 1));
     if (b >= 0 && w.baronies[b].occ >= 0 && rng.chance(0.4)) return { type: 'combat', enemies: [ISK.combat.makeEnemy('soldier', lvl + 1, { name: 'Дезертир' }), ISK.combat.makeEnemy('bandit', lvl, { name: 'Мародер' })], text: 'Дезертири з фронту вирішили, що твій гаманець — законний трофей!' };
     let keys;
     if (lm) keys = lm.monsters.filter((k) => D().MONSTERS[k]);
@@ -152,6 +158,7 @@
     const [k, id] = node.split(':');
     if (k === 'b') { const B = G.world.baronies[+id]; p.stat.continents[B.cont] = 1; }
     for (const q of p.quests) {
+      if ((q.type === 'visit' || q.type === 'spy' || q.type === 'escort') && q.to === node && !q.progress) { q.progress = 1; out.push({ type: 'quest', q, text: q.type === 'escort' ? `🛡️ Клієнта доставлено цілим (і балакучим). Повертайся до гільдії!` : q.type === 'spy' ? `🕵️ Ти тихенько все розвідав у ${G.world.baronies[+id] ? G.world.baronies[+id].name : 'цьому місці'}. Повертайся з доповіддю!` : `🧭 Місце розвідано: ${q.title}. Повертайся по нагороду!` }); }
       if (q.type === 'deliver' && q.to === node && PL().hasItem(p, 'package')) { q.progress = 1; PL().removeItem(p, 'package'); out.push({ type: 'quest', q, text: `📦 Посилку доставлено до ${G.world.baronies[+id].name}!` }); }
       if (q.type === 'bounty' && q.at === node && !q.progress) out.push({ type: 'bounty', q });
     }
@@ -186,6 +193,10 @@
       const far = w.baronies.filter((b) => b.id !== bid && b.land === B.land && !POL().isDemon(G.P, b.owner) && Math.hypot(b.x - B.x, b.y - B.y) > 14 && Math.hypot(b.x - B.x, b.y - B.y) < 45);
       if (far.length) { const T = rng.pick(far); const dist = Math.hypot(T.x - B.x, T.y - B.y); mk({ type: 'deliver', to: 'b:' + T.id, title: `Доставка до ${T.name}`, desc: `Віднеси посилку до ${T.name}. Посилка тихенько муркоче.`, gold: Math.round(30 + dist * 6 + lvl * 4), pts: 12 + rank * 3, xp: 25 + lvl * 5, deadline: day(G) + Math.round(dist / 3 + 14), progress: 0 }); }
       const dg = w.dungeons.filter((d) => !d.final && d.type !== 'hellgate' && !G.cleared[d.id] && d.tier <= rank / 1.6 + 1.6).sort((a, b) => Math.hypot(a.x - B.x, a.y - B.y) - Math.hypot(b.x - B.x, b.y - B.y))[0];
+      // v4: exploration & escort contracts
+      const lms = w.landmarks.map((L) => ({ L, B: w.baronies.filter((b) => b.land === B.land).sort((a, b2) => Math.hypot(a.x - L.x, a.y - L.y) - Math.hypot(b2.x - L.x, b2.y - L.y))[0] })).filter((o) => o.B && o.B.id !== bid && Math.hypot(o.B.x - o.L.x, o.B.y - o.L.y) < o.L.r + 6 && Math.hypot(o.B.x - B.x, o.B.y - B.y) < 60);
+      if (lms.length && rng.chance(0.6)) { const o = rng.pick(lms); const dist = Math.hypot(o.B.x - B.x, o.B.y - B.y); mk({ type: 'visit', to: 'b:' + o.B.id, title: `Розвідка: ${o.L.icon} ${o.L.name}`, desc: `Картографи гільдії хочуть знати, що там у «${o.L.name}». ${rng.pick(['Минулий розвідник досі не повернувся. Але він завжди запізнюється.', 'Візьми олівець. І лопату. І запасні штани.', 'Кажуть, там гарні краєвиди. І монстри. Але краєвиди!'])}`, gold: Math.round(40 + dist * 5 + lvl * 4), pts: 14 + rank * 3, xp: 40 + lvl * 8, progress: 0, fame: 6 }); }
+      if (far.length && rng.chance(0.45)) { const T = rng.pick(far); const dist = Math.hypot(T.x - B.x, T.y - B.y); const who = rng.pick(['торговця сиром', 'мандрівного барда', 'дуже важливого гуся', 'ученого-ботаніка', 'бабусю з трьома валізами', 'принца інкогніто (всі знають)']); mk({ type: 'escort', to: 'b:' + T.id, title: `Супровід ${who} до ${T.name}`, desc: `Захисти ${who} по дорозі до ${T.name}. Клієнт балакучий — терпіння теж входить в оплату.`, gold: Math.round(50 + dist * 7 + lvl * 5), pts: 16 + rank * 4, xp: 35 + lvl * 7, progress: 0, deadline: day(G) + Math.round(dist / 3 + 18) }); }
       if (dg) mk({ type: 'clear', dungeon: dg.id, title: `Зачистка: ${dg.name}`, desc: `Підземелля рівня ${dg.level}. Переможи боса й повертайся.`, gold: 80 + dg.level * 30, pts: 30 + dg.tier * 25, xp: 60 + dg.level * 20, progress: 0, fame: 10 + dg.tier * 4 });
       if (rank >= 1 && rng.chance(0.7)) {
         const near = w.baronies.filter((b) => b.id !== bid && b.land === B.land && Math.hypot(b.x - B.x, b.y - B.y) < 24 && !POL().isDemon(G.P, b.owner));
@@ -245,6 +256,9 @@
       else if (q.type === 'hunt') out.push({ node: q.at || 'b:' + q.from, icon: '🐾', title: q.title });
       else if (q.type === 'horde') { const a = G.P.armies.find((x) => x.id === q.army); if (a) out.push({ node: 'b:' + a.node, icon: '🔥', title: q.title }); }
       else if (q.type === 'merc') out.push({ node: 'b:' + q.from, icon: '⚔️', title: q.title + ' (бій у гільдії)' });
+      else if (q.type === 'visit' || q.type === 'escort') out.push({ node: q.to, icon: q.type === 'escort' ? '🛡️' : '🧭', title: q.title });
+      else if (q.type === 'spy') out.push({ node: q.to, icon: '🕵️', title: q.title });
+      else if (q.type === 'duel') out.push({ node: 'b:' + q.from, icon: '🤺', title: q.title });
     }
     if (!p.guild.registered) {
       const S = G.world.baronies[G.world.startBarony];
@@ -282,7 +296,8 @@
     const rep = (G.P.realms[B.owner] && G.P.realms[B.owner].playerRep) || 0;
     const war = B.owner >= 0 && POL().warsOf(G.P, B.owner).length ? 1.15 : 1;
     const social = 1 - Math.min(0.15, G.player.social * 0.02);
-    return (1.05 - rep / 500) * war * social;
+    const ev = ISK.life && ISK.life.eventAt(G, B.id); const fest = ev && (ev.key === 'festival' || ev.key === 'goblin_market') ? 0.85 : 1;
+    return (1.05 - rep / 500) * war * social * fest;
   }
 
   // ---------------- Gathering & crafting ----------------
@@ -619,6 +634,8 @@
     for (const q of p.quests) if (q.type === 'clear' && q.dungeon === Dg.id) q.progress = 1;
     if (first) PL().addFame(p, 8 + Dg.tier * 6);
     if (Dg.relic && first) { PL().addItem(p, 'relic_shard'); p.relics++; p.flags['relic' + Dg.relicIndex] = true; out.relic = true; }
+    if (Dg.artifact && !(G.life && G.life.artTaken && G.life.artTaken[Dg.artifact])) { G.life = G.life || {}; G.life.artTaken = G.life.artTaken || {}; G.life.artTaken[Dg.artifact] = 1; PL().addItem(p, Dg.artifact); out.artifact = Dg.artifact; }
+    if (ISK.life) ISK.life.onDungeon(G, Dg);
     if (Dg.final) { p.flags.demonKing = true; G.P.demonKingDead = true; PL().addFame(p, 1500); for (const a of G.P.armies) if (POL().isDemon(G.P, a.realm)) a.size = Math.floor(a.size * 0.3); }
     G.dungeon = null; return out;
   }
@@ -635,12 +652,15 @@
     for (const [id, n] of Object.entries(r.items)) PL().addItem(p, id, n);
     p.stat.wins++;
     if (p.food) { p.food.battles--; if (p.food.battles <= 0) p.food = null; }
+    if (p.spouse && p.spouse.kind === 'healer') p.hp = Math.min(PL().maxHp(p), p.hp + Math.round(PL().maxHp(p) * 0.25));
+    for (const c of p.party) c.affection = (c.affection || 0) + 1;
+    for (const q of p.quests) if (q.type === 'duel' && b.opts.questId === q.id) q.progress = 1;
     checkAchievements(G);
     return { xr, cr, petUp, compUps, fame };
   }
   function onDefeat(G) {
     const p = G.player; p.stat.deaths++;
-    const lost = p.cheat === 'reincarn' ? 0 : Math.floor(p.gold * 0.3); p.gold -= lost;
+    const lost = p.cheat === 'reincarn' ? 0 : Math.floor(p.gold * (G.difficulty === 'hell' ? 0.5 : G.difficulty === 'easy' ? 0.1 : 0.3)); p.gold -= lost;
     const cur = WM().nodeXY(G.world, p.location);
     let best = null, bd = Infinity;
     for (const B of G.world.baronies) { if (!WM().SETTLEMENT[B.type].services.includes('temple')) continue; const d = Math.hypot(B.x - cur.x, B.y - cur.y); if (d < bd) { bd = d; best = B; } }
@@ -666,16 +686,19 @@
 
   // ---------------- Save / load ----------------
   function serialize(G) {
-    return JSON.stringify({ v: 3, worldOpts: G.worldOpts || G.world.opts || {}, sites: G.sites || {}, seed: G.seed, time: G.time, player: G.player, boards: G.boards, cleared: G.cleared, dungeon: G.dungeon, discovered: G.discovered, politics: POL().serialize(G.world, G.P), startDay: G.startDay, savedAt: Date.now() });
+    return JSON.stringify({ v: 4, difficulty: G.difficulty, life: G.life || {}, worldOpts: G.worldOpts || G.world.opts || {}, sites: G.sites || {}, seed: G.seed, time: G.time, player: G.player, boards: G.boards, cleared: G.cleared, dungeon: G.dungeon, discovered: G.discovered, politics: POL().serialize(G.world, G.P), startDay: G.startDay, savedAt: Date.now() });
   }
   function deserialize(str) {
     const s = JSON.parse(str);
-    if (s.v !== 3) throw new Error('Збереження зі старої версії гри несумісне з новим, більшим Дивосвітом v3.');
+    if (s.v !== 4) throw new Error('Збереження зі старої версії гри несумісне з новим Дивосвітом v4 (світ став ще більшим).');
     const world = WM().generateWorld(s.seed, s.worldOpts || {});
     const P = POL().restore(world, s.politics);
     for (const bid of s.player.holdings || []) world.baronies[bid].holder = 'player';
     for (const k of Object.keys(D().PROFESSIONS)) s.player.professions[k] = s.player.professions[k] || { lvl: 1, xp: 0 };
-    return { version: 3, sites: s.sites || {}, worldOpts: s.worldOpts || {}, seed: s.seed, world, P, player: s.player, time: s.time, boards: s.boards || {}, cleared: s.cleared || {}, dungeon: s.dungeon, discovered: s.discovered || {}, notices: [], hires: {}, startDay: s.startDay || 0 };
+    ISK.difficulty = s.difficulty || 'normal';
+    for (const k of ['jackSkills', 'children']) s.player[k] = s.player[k] || [];
+    s.player.lordRel = s.player.lordRel || {}; if (!('artifact' in s.player.equipment)) s.player.equipment.artifact = null;
+    return { version: 4, difficulty: s.difficulty || 'normal', life: s.life || {}, sites: s.sites || {}, worldOpts: s.worldOpts || {}, seed: s.seed, world, P, player: s.player, time: s.time, boards: s.boards || {}, cleared: s.cleared || {}, dungeon: s.dungeon, discovered: s.discovered || {}, notices: [], hires: {}, startDay: s.startDay || 0 };
   }
 
   ISK.game = {

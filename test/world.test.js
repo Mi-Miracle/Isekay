@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert');
-['rng', 'data', 'content', 'world', 'politics', 'heroes', 'player', 'combat', 'game'].forEach((f) => require(`../src/js/${f}.js`));
+['rng', 'data', 'content', 'content2', 'world', 'politics', 'heroes', 'player', 'combat', 'game', 'life'].forEach((f) => require(`../src/js/${f}.js`));
 const { world: WM, politics: POL, player: PL, combat: C, game: GM, data: D } = globalThis.ISK;
 
 for (const seed of [1, 42, 2026]) {
@@ -114,4 +114,59 @@ test('v3: gear recipes, crafting, class tier III and loot', () => {
   p.classes.primary = 'berserker'; p.classXp.berserker = { lvl: 25, xp: 0, sp: 0, adv: 'warlord', master: true };
   assert.ok(PL.knownSkills(p).some((s) => s.id === 'titan_smash'));
   const gid = D.randomGear(20, 3); assert.ok(D.getItem(gid), gid);
+});
+
+test('v4: level cap 100, class grades, jack-of-all-trades skills', () => {
+  const p = PL.newPlayer({ cheat: 'jack' });
+  PL.addXp(p, 1e9); assert.strictEqual(p.level, D.LEVEL_CAP); assert.strictEqual(D.LEVEL_CAP, 100);
+  PL.addXp(p, 1e6); assert.strictEqual(p.level, 100, 'no levels above cap');
+  const cx = { lvl: 1, xp: 0, sp: 0 };
+  assert.deepStrictEqual([D.classTier('swordsman', cx).tier, D.classTier('swordsman', cx).grade], [0, 1]);
+  cx.lvl = 9; assert.strictEqual(D.classTier('swordsman', cx).grade, 3);
+  cx.lvl = 15; cx.adv = D.CLASSES.swordsman.adv[0].id; assert.strictEqual(D.classTier('swordsman', cx).tier, 1);
+  cx.lvl = 25; cx.master = true; assert.strictEqual(D.classTier('swordsman', cx).tier, 2);
+  cx.lvl = 35; cx.ascended = true; const T = D.classTier('swordsman', cx); assert.strictEqual(T.tier, 3); assert.ok(T.title.includes('III') || T.title.includes('II') || T.title.includes('I'));
+  for (const k of Object.keys(D.CLASSES)) { const C = D.CLASSES[k]; assert.ok(C.ascend && C.adv.length, 'class has 3 promotions: ' + k); }
+  assert.ok(D.CLASSES.jack && D.CLASSES.jack.hidden);
+  const idx = D.skillIndex(); assert.ok(idx.size > 80, 'many skills: ' + idx.size);
+  p.classes.primary = 'jack'; p.classXp.jack = { lvl: 1, xp: 0, sp: 0 }; p.jackSkills = ['fireball']; if (idx.has('fireball')) assert.ok(PL.knownSkills(p).some((s) => s.id === 'fireball'));
+  assert.ok(D.JACK_SLOTS(10) > D.JACK_SLOTS(1));
+});
+
+test('v4: combat breaks, boost and difficulty', () => {
+  const p = PL.newPlayer({ cheat: 'luck' }); PL.addXp(p, 5000);
+  const e = C.makeEnemy('goblin', 3); assert.ok(e.weak.length && e.shieldMax > 0);
+  const b = C.startBattle(p, [e]); assert.strictEqual(b.bp, 1);
+  for (let i = 0; i < 60 && !b.over; i++) C.act(b, p, { type: 'attack', quality: 1, boost: b.bp >= 2 ? 1 : 0 });
+  assert.strictEqual(b.over, 'win');
+  ISK.difficulty = 'hell'; const hard = C.makeEnemy('goblin', 3); ISK.difficulty = 'easy'; const easy = C.makeEnemy('goblin', 3); ISK.difficulty = 'normal';
+  assert.ok(hard.maxHp > easy.maxHp, 'difficulty scales enemies');
+});
+
+test('v4: lords, quests, army, naval, seasons, family', () => {
+  const G = GM.newGame(31, { name: 'Лорд', race: 'human', difficulty: 'normal' });
+  const p = G.player; const L = ISK.life; p.gold = 1e6;
+  const env = L.environment(G); assert.ok(env.season && env.weather && env.travel > 0);
+  const withLords = G.world.baronies.find((b) => L.lordsAt(G, b.id).length >= 2); assert.ok(withLords, 'baronies have lords');
+  const lords = L.lordsAt(G, withLords.id); const key = lords[0].key || lords[0].lordKey;
+  const l = lords[0]; assert.ok(l.name && l.kind);
+  const lk = l.key;
+  if (lk) { const q = L.lordQuest(G, lk); assert.ok(q && q.title); assert.strictEqual(L.acceptLordQuest(G, lk), null); assert.ok(p.quests.some((x) => x.lordKey === lk)); L.addLordRel(G, lk, 30); assert.ok(L.lordRel(G, lk) >= 30); }
+  // army
+  p.location = 'b:' + G.world.realms[0].capital; p.social = 3;
+  assert.strictEqual(L.recruit(G, 'infantry', 5), null); assert.strictEqual(L.armyCount(p), 5); assert.ok(L.armyPower(G) > 0);
+  // naval
+  const s = L.startNaval(G, 'pirate', 3); for (let i = 0; i < 80 && !s.over; i++) L.navalAct(G, s, 'volley'); assert.ok(s.over);
+  // world lives: 120 days of time with caravans & events
+  GM.passTime(G, 120); assert.ok(G.time >= 120);
+  const G2 = GM.deserialize(GM.serialize(G)); assert.strictEqual(L.armyCount(G2.player), 5); assert.strictEqual(G2.difficulty, 'normal');
+  assert.ok(key || lk);
+});
+
+test('v4: artifacts, blessings, shops content', () => {
+  assert.ok(D.ARTIFACTS.length >= 12); for (const A of D.ARTIFACTS) assert.ok(D.getItem(A.id), A.id);
+  assert.ok(Object.keys(D.MOUNTS).length >= 12 && Object.keys(D.PETS).length >= 12, 'more animals & transport');
+  const w = WM.generateWorld(31); assert.ok(w.dungeons.filter((d) => d.artifact).length >= 6, 'artifacts placed in dungeons');
+  assert.ok(w.landmarks.length >= 20, 'more landmarks: ' + w.landmarks.length);
+  assert.strictEqual(WM.W, 540);
 });

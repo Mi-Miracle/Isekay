@@ -1,5 +1,5 @@
 // Procedural soundtrack v3: a small step-sequencer composer with several themed tracks
-// (title, field, town, tavern, dungeon, battle, boss, demon). No audio files — everything is synthesized live.
+// (title, field, town, tavern, dungeon, battle, boss, demon + v4: home, winter, desert, sea, festival, sad, forest, naval). No audio files — everything is synthesized live.
 (function () {
   const ISK = (globalThis.ISK = globalThis.ISK || {});
   const N = (semi) => 440 * Math.pow(2, (semi - 9) / 12); // semitone from C4 → Hz
@@ -13,6 +13,14 @@
     dark: { bpm: 72, key: 9, scale: 'minor', prog: [[0, 5, 3, 4], [0, 5, 6, 4]], lead: 'sine', pad: 'sawtooth', drums: 'slow', melody: 0.35, octave: 0, swing: 0 },
     battle: { bpm: 150, key: 4, scale: 'harm', prog: [[0, 5, 6, 4], [0, 3, 6, 4]], lead: 'sawtooth', pad: 'square', drums: 'battle', melody: 0.9, octave: 1, swing: 0 },
     boss: { bpm: 164, key: 2, scale: 'harm', prog: [[0, 1, 0, 6], [0, 5, 4, 4]], lead: 'square', pad: 'sawtooth', drums: 'battle', melody: 1, octave: 1, swing: 0 },
+    home: { bpm: 84, key: 5, scale: 'major', prog: [[0, 5, 3, 4], [0, 2, 3, 4]], lead: 'triangle', pad: 'sine', drums: 'soft', melody: 0.55, octave: 1, swing: 0.18 },
+    winter: { bpm: 76, key: 1, scale: 'minor', prog: [[0, 5, 2, 6], [0, 3, 4, 4]], lead: 'sine', pad: 'triangle', drums: 'slow', melody: 0.5, octave: 1, swing: 0 },
+    desert: { bpm: 104, key: 4, scale: 'harm', prog: [[0, 1, 0, 1], [0, 6, 5, 4]], lead: 'square', pad: 'sine', drums: 'polka', melody: 0.75, octave: 1, swing: 0.08 },
+    sea: { bpm: 112, key: 7, scale: 'dorian', prog: [[0, 6, 3, 0], [0, 6, 4, 4]], lead: 'triangle', pad: 'sawtooth', drums: 'polka', melody: 0.85, octave: 1, swing: 0.22 },
+    festival: { bpm: 140, key: 0, scale: 'major', prog: [[0, 3, 4, 0], [0, 3, 4, 4]], lead: 'square', pad: 'triangle', drums: 'rock', melody: 1, octave: 1, swing: 0.1 },
+    sad: { bpm: 64, key: 9, scale: 'minor', prog: [[0, 5, 3, 6], [0, 5, 4, 4]], lead: 'sine', pad: 'sine', drums: 'slow', melody: 0.4, octave: 1, swing: 0 },
+    forest: { bpm: 90, key: 2, scale: 'dorian', prog: [[0, 3, 0, 6], [0, 3, 4, 4]], lead: 'triangle', pad: 'sine', drums: 'soft', melody: 0.65, octave: 1, swing: 0.12 },
+    naval: { bpm: 156, key: 9, scale: 'minor', prog: [[0, 5, 6, 4], [0, 5, 3, 4]], lead: 'sawtooth', pad: 'square', drums: 'battle', melody: 0.9, octave: 1, swing: 0 },
     demon: { bpm: 84, key: 4, scale: 'phrygian', prog: [[0, 1, 0, 6], [0, 1, 3, 1]], lead: 'sawtooth', pad: 'sawtooth', drums: 'slow', melody: 0.5, octave: 0, swing: 0 },
   };
   const DRUMS = {

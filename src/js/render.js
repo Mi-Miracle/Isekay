@@ -1,7 +1,7 @@
 // Map renderer v2: smooth terrain, always-visible feudal regions, zone tints, sea lanes, pixel settlements, armies, quest markers, minimap, WASD.
 (function () {
   const ISK = (globalThis.ISK = globalThis.ISK || {});
-  const S = 8;
+  const S = 7;
   const EMOJI = '"Segoe UI Emoji","Noto Color Emoji","Apple Color Emoji",sans-serif';
   const TCOL = { 0: [22, 52, 92], 1: [36, 86, 140], 2: [222, 206, 158], 3: [128, 170, 88], 4: [62, 118, 62], 5: [150, 150, 96], 6: [128, 118, 108], 7: [235, 238, 245], 8: [222, 190, 120], 9: [172, 186, 178], 10: [86, 104, 72], 11: [70, 34, 36], 12: [40, 102, 60] };
   const hexToRgb = (h) => { const n = parseInt(h.slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; };
@@ -246,20 +246,27 @@
       if (!G.discovered['d:' + Dg.id] && !(G.player.flags.relicsRevealed && (Dg.relic || Dg.final))) continue;
       const x = Dg.x * S + S / 2, y = Dg.y * S + S / 2; const s = (Dg.final ? 26 : 16) * Math.max(0.9, Math.min(1.5, inv * 1.2));
       if (Dg.relic && !G.cleared[Dg.id] && G.player.flags.relicsRevealed) { g.beginPath(); g.arc(x, y, s * 0.8 + Math.sin(R.t / 12) * 2, 0, 7); g.fillStyle = 'rgba(255,126,182,0.35)'; g.fill(); }
+      // v4: difficulty ring (green easy → red deadly) + highlight pulse
+      const dl = Dg.level - G.player.level; const dcol = G.cleared[Dg.id] ? '#7cd67c' : dl <= -5 ? '#7cd67c' : dl <= 2 ? '#ffd36e' : dl <= 8 ? '#ff9a40' : '#ff4a5a';
+      if (!G.cleared[Dg.id]) { g.beginPath(); g.arc(x, y, s * 0.78 + (R.hl ? Math.sin(R.t / 8) * 3 : 0), 0, 7); g.strokeStyle = dcol; g.globalAlpha = R.hl ? 0.95 : 0.55; g.lineWidth = (R.hl ? 3 : 2) * inv + 0.6; g.stroke(); g.globalAlpha = 1; }
       g.beginPath(); g.arc(x, y, s * 0.55, 0, 7); g.fillStyle = G.cleared[Dg.id] ? 'rgba(40,60,40,0.85)' : 'rgba(25,10,30,0.85)'; g.fill();
       g.lineWidth = 1.5 * inv; g.strokeStyle = Dg.final ? '#ff5c3c' : '#c9a6ff'; g.stroke();
+      if (Dg.artifact && !G.cleared[Dg.id]) { g.font = `${s * 0.45}px ${EMOJI}`; g.fillText('🏺', x + s * 0.55, y - s * 0.5); }
+      if (Dg.season !== undefined && Dg.season !== null) { g.font = `${s * 0.42}px ${EMOJI}`; g.fillText(ISK.data.SEASONS[Dg.season].icon, x - s * 0.58, y - s * 0.5); }
       g.font = `${s * 0.72}px ${EMOJI}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = '#fff'; g.fillText(G.cleared[Dg.id] ? '✔️' : Dg.icon, x, y + 1);
-      if (z1 > 1.3) text(g, `${Dg.name} (${Dg.level})`, x, y + s * 0.95, 10 * inv + 2, '#e8d6ff', 600, 3 * inv);
+      if (z1 > 1.0 || R.hl) text(g, `${Dg.name} (${Dg.level})`, x, y + s * 0.95, 10 * inv + 2, '#e8d6ff', 600, 3 * inv);
     }
     // smooth world-clock fraction (time passes gradually while travelling / time-flow)
     const frac = G.time - Math.floor(G.time);
     // resource sites
-    if (z1 > 1.05) for (const B of w.baronies) {
+    if (z1 > 0.75 || R.hl) for (const B of w.baronies) {
       if (!vis(B.x * S, B.y * S)) continue;
-      if (!B.sites || !B.sites.length || !G.discovered['b:' + B.id]) continue;
-      B.sites.forEach((st, k) => { const S2 = ISK.data.RESOURCE_SITES[st.key]; if (!S2) return; const x = B.x * S + S / 2 + (k ? -14 : 14), y = B.y * S + S / 2 + 10;
-        g.beginPath(); g.arc(x, y, 6.5, 0, 7); g.fillStyle = 'rgba(15,20,30,0.65)'; g.fill(); g.strokeStyle = 'rgba(255,230,160,0.7)'; g.lineWidth = 1; g.stroke();
-        g.font = `9px ${EMOJI}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = '#fff'; g.fillText(S2.icon, x, y + 0.5);
+      if (!G.discovered['b:' + B.id]) continue;
+      if (B.type === 'mine') { const x = B.x * S + S / 2, y = B.y * S + S / 2; g.beginPath(); g.arc(x, y, 13 + (R.hl ? Math.sin(R.t / 9) * 2 : 0), 0, 7); g.strokeStyle = 'rgba(200,170,120,0.85)'; g.lineWidth = 1.6 * inv + 0.5; g.setLineDash([4, 3]); g.stroke(); g.setLineDash([]); }
+      if (!B.sites || !B.sites.length) continue;
+      B.sites.forEach((st, k) => { const S2 = ISK.data.RESOURCE_SITES[st.key]; if (!S2) return; const sk = Math.max(1, Math.min(1.8, inv * 1.1)); const x = B.x * S + S / 2 + (k === 0 ? 14 : k === 1 ? -14 : 0) * sk, y = B.y * S + S / 2 + (k === 2 ? 18 : 10) * sk;
+        g.beginPath(); g.arc(x, y, 6.5 * sk + (R.hl ? 1.5 : 0), 0, 7); g.fillStyle = st.temp ? 'rgba(80,50,10,0.8)' : 'rgba(15,20,30,0.7)'; g.fill(); g.strokeStyle = R.hl ? '#ffe36e' : 'rgba(255,230,160,0.75)'; g.lineWidth = R.hl ? 2 : 1; g.stroke();
+        g.font = `${9 * sk}px ${EMOJI}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = '#fff'; g.fillText(S2.icon, x, y + 0.5);
         if (z1 > 2.2) text(g, S2.name, x, y + 11, 5.5, '#ffe9b8', 600, 2); });
     }
     // recent battles: dust clouds & crossed swords
@@ -316,6 +323,15 @@
       g.font = `${8 * k}px ${EMOJI}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = '#000'; g.fillText(hh.icon, x, y + 0.5);
       if (z1 > 1.5) text(g, `${hh.name.split(' ')[0]} · ${hh.lvl}`, x, y - 10 * k, 6 * k + 1, hh.rival ? '#ffc2dc' : '#ffe9a8', 700, 2.5);
     }
+    // v4: trade caravans walking the roads
+    for (const c of (G.life && G.life.caravans) || []) {
+      const pos = unitPos(c); if (!vis(pos.x, pos.y)) continue; const k = Math.max(0.9, Math.min(1.5, inv * 1.15));
+      const bob = Math.abs(Math.sin(R.t / 6 + c.id)) * 1.5 * k;
+      g.save(); g.translate(pos.x, pos.y - 4 * k - bob); if (pos.dir < 0) g.scale(-1, 1);
+      g.font = `${10 * k}px ${EMOJI}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(c.icon, 0, 0); g.fillText('📦', 8 * k, 2 * k);
+      g.restore();
+      if (z1 > 2) text(g, c.name, pos.x, pos.y + 8 * k, 5.5 * k, '#ffe9b8', 600, 2);
+    }
     // labels by zoom
     if (z1 < 1.25 && R.mode !== 'danger') {
       if (!realmLabels || R.t - rlT > 120) { realmLabels = realmLabelPositions(); rlT = R.t; }
@@ -350,7 +366,30 @@
     g.drawImage(ISK.sprites.hero(G.player), px - 8 * pk, py - 16 * pk - hop, 16 * pk, 16 * pk);
     g.imageSmoothingEnabled = true;
     if (G.player.mount !== 'feet' && R.travel) { g.font = `${11 * pk}px ${EMOJI}`; g.fillText(ISK.data.MOUNTS[G.player.mount].icon, px + 9 * pk, py - 2); }
+    drawWeather(g);
     drawMini();
+  }
+  // v4: screen-space seasonal tint and weather particles
+  const FL = Array.from({ length: 160 }, (_, i) => ({ x: Math.random(), y: Math.random(), s: 0.5 + Math.random(), p: i }));
+  function drawWeather(g) {
+    const G = R.G; if (!ISK.life || !G) return; const env = ISK.life.environment(G); const W0 = R.canvas.width, H0 = R.canvas.height;
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    const tint = { winter: 'rgba(200,220,255,0.13)', autumn: 'rgba(255,160,60,0.07)', spring: 'rgba(255,190,230,0.05)', summer: null }[env.season.id];
+    if (tint) { g.fillStyle = tint; g.fillRect(0, 0, W0, H0); }
+    const wk = env.weatherKey; const dp = R.dpr || 1;
+    if (wk === 'rain' || wk === 'storm') {
+      g.strokeStyle = wk === 'storm' ? 'rgba(180,200,255,0.55)' : 'rgba(170,200,255,0.4)'; g.lineWidth = 1 * dp; g.beginPath();
+      const n = wk === 'storm' ? 160 : 100;
+      for (let i = 0; i < n; i++) { const f = FL[i]; const x = ((f.x * W0 + R.t * 3 * f.s * dp) % W0), y = ((f.y * H0 + R.t * 14 * f.s * dp) % H0); g.moveTo(x, y); g.lineTo(x - 3 * dp, y + 11 * dp); }
+      g.stroke();
+      if (wk === 'storm') { g.fillStyle = 'rgba(20,25,50,0.18)'; g.fillRect(0, 0, W0, H0); if (R.t % 240 < 4) { g.fillStyle = 'rgba(255,255,255,0.35)'; g.fillRect(0, 0, W0, H0); } }
+    } else if (wk === 'snow' || (env.season.id === 'winter' && wk !== 'clear')) {
+      g.fillStyle = 'rgba(255,255,255,0.85)';
+      for (let i = 0; i < 130; i++) { const f = FL[i]; const x = ((f.x * W0 + Math.sin(R.t / 40 + f.p) * 20 * dp) % W0 + W0) % W0, y = ((f.y * H0 + R.t * 1.4 * f.s * dp) % H0); g.fillRect(x, y, 2.2 * f.s * dp, 2.2 * f.s * dp); }
+    } else if (wk === 'fog') { const gr = g.createLinearGradient(0, 0, W0, H0); gr.addColorStop(0, 'rgba(220,225,235,0.28)'); gr.addColorStop(0.5, 'rgba(220,225,235,0.12)'); gr.addColorStop(1, 'rgba(220,225,235,0.3)'); g.fillStyle = gr; g.fillRect(0, 0, W0, H0); }
+    else if (wk === 'heat') { g.fillStyle = `rgba(255,180,80,${0.06 + Math.sin(R.t / 30) * 0.02})`; g.fillRect(0, 0, W0, H0); }
+    else if (env.season.id === 'autumn') { for (let i = 0; i < 26; i++) { const f = FL[i]; const x = ((f.x * W0 + R.t * 1.2 * f.s * dp) % W0), y = ((f.y * H0 + R.t * 0.8 * f.s * dp + Math.sin(R.t / 25 + f.p) * 10) % H0); g.font = `${10 * dp}px ${EMOJI}`; g.fillText('🍂', x, y); } }
+    else if (env.season.id === 'spring') { for (let i = 0; i < 18; i++) { const f = FL[i]; const x = ((f.x * W0 + R.t * 1 * f.s * dp) % W0), y = ((f.y * H0 + R.t * 0.6 * f.s * dp) % H0); g.font = `${9 * dp}px ${EMOJI}`; g.fillText('🌸', x, y); } }
   }
 
   function drawMini() {

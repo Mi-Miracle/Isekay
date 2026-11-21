@@ -19,15 +19,38 @@
   };
   const FEMALE_END = /(а|я|ія|ель|іль)$/i;
   function hash(str) { let h = 0; for (const c of String(str)) h = (h * 31 + c.charCodeAt(0)) >>> 0; return h; }
+  const IDS = { 'Богиня Люмі': 'lumi', 'Оповідач': 'narrator', 'Місцевий дід': 'oldman', 'Володар Демонів Малдраґор': 'demonlord', '???': 'demonlord', 'Мірра': 'mirra', 'Ти': 'player' };
+  const VOICE_LIST = [
+    { id: 'lumi', name: 'Богиня Люмі', icon: '🌸', speaker: 'Богиня Люмі', g: 'f', sample: 'Привіт, герою! Це я, твоя найкраща богиня. Ну, єдина. Але найкраща!' },
+    { id: 'narrator', name: 'Оповідач', icon: '📖', speaker: 'Оповідач', g: 'm', sample: 'І так почалася нова глава. Герой ще не знав, що на нього чекає слиз.' },
+    { id: 'oldman', name: 'Сільський дід', icon: '👴', speaker: 'Місцевий дід', g: 'm', sample: 'О, ще один з неба впав! В мої часи герої ходили пішки.' },
+    { id: 'demonlord', name: 'Володар Демонів', icon: '😈', speaker: 'Володар Демонів Малдраґор', g: 'm', sample: 'Я — Малдраґор! Тремтіть, смертні! І не забудьте витерти ноги.' },
+    { id: 'mirra', name: 'Мірра з гільдії', icon: '📋', speaker: 'Мірра', g: 'f2', sample: 'Вітаю в гільдії! Заповніть, будь ласка, сорок сім анкет.' },
+    { id: 'player', name: 'Головний герой', icon: '⭐', speaker: 'Ти', g: 'm', sample: 'Я не збираюся програвати. Принаймні до обіду.' },
+    { id: 'npc_m', name: 'Чоловіки (лорди, НПС, герої)', icon: '🧔', speaker: 'Барон Альберт', g: 'm', sample: 'Ласкаво просимо до мого замку! Не чіпай вази.' },
+    { id: 'npc_f', name: 'Жінки (леді, НПС, героїні)', icon: '👩', speaker: 'Графиня Злата', g: 'f', sample: 'Мандрівнику, ти якраз вчасно. У мене є для тебе завдання.' },
+  ];
+  S.custom = S.custom || {};
+  function idFor(name, g) { return IDS[name] || (g === 'f' || g === 'f2' ? 'npc_f' : 'npc_m'); }
   function profileFor(name, gender) {
     const pr = PROFILES[name];
     const h = hash(name);
     const g = gender || (pr && pr.g) || (FEMALE_END.test(String(name).split(' ')[0]) ? 'f' : 'm');
-    return {
+    const out = {
       g: g === 'f' && !(pr && pr.g) && h % 2 ? 'f2' : g, pr: (pr && pr.pr) || 0.93 + (h % 15) / 100, sp: (pr && pr.sp) || 0.92 + ((h >> 4) % 18) / 100,
       base: (pr && pr.base) || (g === 'f' ? 420 : 180) + (h % 200), wave: (pr && pr.wave) || ['sine', 'triangle', 'square'][h % 3], spread: (pr && pr.spread) || 60 + (h % 80),
     };
+    const c = S.custom[idFor(name, out.g)];
+    if (c) { if (IDS[name]) { out.pr = c.pr; out.sp = c.sp; } else { out.pr *= c.pr; out.sp *= c.sp; } out.base *= c.pr; }
+    return out;
   }
+  function getCustom(id) {
+    if (S.custom[id]) return S.custom[id];
+    const v = VOICE_LIST.find((x) => x.id === id); const pr = v && PROFILES[v.speaker];
+    return IDS[v && v.speaker] && pr ? { pr: pr.pr || 1, sp: pr.sp || 1 } : { pr: 1, sp: 1 };
+  }
+  function setCustom(id, val) { S.custom[id] = val; save(); }
+  function resetCustom(id) { delete S.custom[id]; save(); }
 
   let last = 0;
   function blip(name, ch) {
@@ -74,7 +97,7 @@
       speechSynthesis.cancel();
       const u = new SpeechSynthesisUtterance(String(text).replace(/[«»*()]/g, ''));
       u.voice = v; u.lang = v.lang; u.volume = Math.min(1, S.volume * 1.5);
-      const pr = profileFor(name, gender); u.pitch = Math.max(0.2, Math.min(2, pr.base / 300)); u.rate = 1.05;
+      const pr = profileFor(name, gender); u.pitch = Math.max(0.2, Math.min(2, pr.base / 300)); u.rate = Math.max(0.5, Math.min(2, 1.05 / pr.sp));
       speechSynthesis.speak(u); return true;
     } catch (e) { return false; }
   }
@@ -98,5 +121,5 @@
   // blips still play while the neural voice isn't installed
   const blipOrig = blip;
   function blip2(name, ch) { if (S.mode === 'neural' && !S.installed) { const m = S.mode; S.mode = 'blip'; blipOrig(name, ch); S.mode = m; return; } blipOrig(name, ch); }
-  ISK.voice = { blip: blip2, say, stop, setMode, setVolume, settings: S, hasTTS: () => !!ukVoice(), hasNeural: () => !!(native && native.voiceInstall), install, refreshStatus, speaking: () => !!(audioEl && !audioEl.paused) };
+  ISK.voice = { blip: blip2, say, stop, setMode, setVolume, settings: S, hasTTS: () => !!ukVoice(), hasNeural: () => !!(native && native.voiceInstall), install, refreshStatus, speaking: () => !!(audioEl && !audioEl.paused), voiceList: () => VOICE_LIST, getCustom, setCustom, resetCustom };
 })();

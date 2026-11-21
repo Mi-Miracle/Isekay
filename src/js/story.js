@@ -93,24 +93,25 @@
     flash.classList.remove('on'); await UI().sleep(300); flash.remove(); $('#screen-story').classList.remove('shake');
     A().play('goddess');
     await dialog([
-      { bg: 'void', who: 'Богиня Люмі', portrait: '👼', text: 'Ой! Ой-ой-ой! Привіт! Ти мене чуєш? Чудово! Ти, е-е-е... трохи помер. Вибач. Я відволіклася, коли керувала вантажівкою долі.' },
+      { bg: 'void', who: 'Богиня Люмі', portrait: SP().goddess(['happy','wink','happy2'][Math.floor(Math.random()*3)]), text: 'Ой! Ой-ой-ой! Привіт! Ти мене чуєш? Чудово! Ти, е-е-е... трохи помер. Вибач. Я відволіклася, коли керувала вантажівкою долі.' },
       { who: 'Богиня Люмі', text: 'Але гарна новина! Я — Люмі, богиня перероджень, — відправлю тебе в чарівний світ ДИВОСВІТ! Мечі, магія, ельфи, гільдії, королівства й Імперія з десятком васалів!' },
       { who: 'Богиня Люмі', text: 'Там, щоправда, Володар Демонів шле легіони з-за моря, орди вилазять з Лісу Смерті, і податки. Але це дрібниці!' },
     ], { stage });
     stage.querySelectorAll('.dialog').forEach((d) => d.remove()); setPortrait(stage, null);
     const pdata = await creation(stage, origin);
     if (pdata.race === 'god') {
-      setPortrait(stage, '👼');
+      setPortrait(stage, SP().goddess('wink'));
       await dialog([{ who: 'Богиня Люмі', text: 'Бог? Ти хочеш бути БОГОМ? Ну... гаразд! Натискаю кнопку «Божественність»... ой.' }, { who: 'Богиня Люмі', text: '...кнопка заїла. Ти тепер гоблін. Зелений. Маленький. З великими вухами. Але ж який милий! Гоблін — це майже бог, тільки... ні.' }], { stage });
       pdata.race = 'goblin'; pdata.flags = { godGoblin: true };
       stage.querySelectorAll('.dialog').forEach((d) => d.remove()); setPortrait(stage, null);
     }
     const cheat = await roulette(stage); pdata.cheat = cheat;
-    setPortrait(stage, '👼');
+    setPortrait(stage, SP().goddess('wink'));
     await dialog([
       { who: 'Богиня Люмі', text: `Чудово, ${pdata.name}! Твоє благословення — «${D().CHEATS[cheat].name}». ${D().CHEATS[cheat].desc}` },
+      ...(cheat === 'jack' ? [{ who: 'Богиня Люмі', portrait: SP().goddess('shock'), text: 'ЩО?! Секретний джекпот! «Майстер на всі руки»! Це ж випадає раз на тисячу перероджень! Тепер у гільдії тобі відкриється особливий клас, що вчиться в усіх. Я в шоці. Я щаслива. Я йду пити чай.' }] : []),
       { who: 'Богиня Люмі', text: 'Порада: знайди Гільдію шукачів пригод (я позначу ❗ на мапі). Зареєструйся, обери клас, здобувай славу і титули. І не помирай одразу — у мене звітність.' },
-      { who: 'Богиня Люмі', text: 'Ну все, па-па! Тримай кулачки! ✨ *штовхає тебе в портал*' },
+      { who: 'Богиня Люмі', text: 'Ну все, па-па! Тримай кулачки! І... я іноді дзвонитиму. Просто перевірити. Не через самотність. Зовсім ні. ✨ *штовхає тебе в портал*' },
     ], { stage });
     $('#story-bg').className = 'world'; setPortrait(stage, null);
     stage.querySelectorAll('.dialog').forEach((d) => d.remove());
@@ -132,12 +133,13 @@
 
   function creation(stage, origin) {
     return new Promise((resolve) => {
-      const st = { gender: 'm', race: 'human', look: { hair: 0, hairColor: 0, eyes: 0, costume: 'c_default' } };
+      const st = { difficulty: 'normal', gender: 'm', race: 'human', look: { hair: 0, hairColor: 0, eyes: 0, costume: 'c_default' } };
       const name = h('input', { value: 'Хіро', maxlength: 18 }); const seedIn = h('input', { placeholder: 'випадковий', inputmode: 'numeric' });
       const preview = h('div', { class: 'preview' });
       const fake = () => ({ race: st.race === 'god' ? 'human' : st.race, gender: st.gender, look: st.look, equipment: { weapon: 'w_sword_0_0' }, classes: {} });
       const upd = () => { preview.innerHTML = ''; preview.appendChild(SP().img(SP().hero(fake()), 160, 'bob')); if (st.race === 'god') preview.appendChild(h('div', { class: 'godglow' }, '✨')); raceDesc.textContent = D().RACES[st.race].desc; };
       const raceDesc = h('div', { class: 'muted', style: { fontSize: '13px', minHeight: '36px' } });
+      const diffDesc = h('div', { class: 'muted', style: { fontSize: '12px' } }, ISK.combat.DIFF.normal.desc);
       const choiceRow = (items, cur, set) => { const row = h('div', { class: 'row wrap' }); items.forEach(([v, label]) => row.appendChild(h('button', { class: 'btn small' + (cur() === v ? ' primary' : ''), onclick: () => { set(v); [...row.children].forEach((b) => b.classList.remove('primary')); row.children[items.findIndex((x) => x[0] === v)].classList.add('primary'); upd(); } }, label))); return row; };
       const swatches = (cols, cur, set) => { const row = h('div', { class: 'row wrap' }); cols.forEach((c, i) => row.appendChild(h('div', { class: 'sw' + (cur() === i ? ' sel' : ''), style: { background: c }, onclick: (e) => { set(i); [...row.children].forEach((b) => b.classList.remove('sel')); e.currentTarget.classList.add('sel'); upd(); } }))); return row; };
       const card = h('div', { class: 'create-card' }, h('h2', null, 'Анкета переродженця'),
@@ -152,10 +154,11 @@
             h('div', { class: 'field' }, h('label', null, 'Колір волосся'), swatches(D().HAIR_COLORS, () => st.look.hairColor, (v) => { st.look.hairColor = v; })),
             h('div', { class: 'field' }, h('label', null, 'Очі'), swatches(D().EYE_COLORS, () => st.look.eyes, (v) => { st.look.eyes = v; })),
             h('div', { class: 'field' }, h('label', null, 'Вбрання'), choiceRow([['c_default', '👕 Подорожній'], ['c_school', '🎽 Шкільна форма'], ['c_hoodie', '🧥 Худі'], ['c_pajama', '😺 Піжама']], () => st.look.costume, (v) => { st.look.costume = v; })),
+            h('div', { class: 'field span2' }, h('label', null, 'Складність'), choiceRow(Object.entries(ISK.combat.DIFF).map(([k, d]) => [k, d.name]), () => st.difficulty, (v) => { st.difficulty = v; diffDesc.textContent = ISK.combat.DIFF[v].desc; }), diffDesc),
             h('div', { class: 'field' }, h('label', null, 'Зерно світу (необов\'язково)'), seedIn),
             h('div', { class: 'field' }, h('label', null, 'Минуле життя'), h('div', { style: { padding: '8px 0' } }, origin)))),
         h('div', { class: 'row', style: { justifyContent: 'flex-end', marginTop: '14px' } }, h('button', { class: 'btn primary big', style: { minWidth: '220px' }, onclick: () => {
-          card.remove(); resolve({ name: (name.value || 'Хіро').trim().slice(0, 18), gender: st.gender, race: st.race, look: { ...st.look }, origin, seed: seedIn.value ? Math.abs(parseInt(seedIn.value, 10)) || 1 : null });
+          card.remove(); resolve({ difficulty: st.difficulty, name: (name.value || 'Хіро').trim().slice(0, 18), gender: st.gender, race: st.race, look: { ...st.look }, origin, seed: seedIn.value ? Math.abs(parseInt(seedIn.value, 10)) || 1 : null });
         } }, 'Далі ➜')));
       stage.appendChild(card); upd();
       if (globalThis.ISK_AUTOPLAY && !globalThis.ISK_HOLD) setTimeout(() => card.querySelector('.btn.primary.big').click(), 10);
@@ -176,7 +179,7 @@
         const k = keys[idx]; desc.textContent = `${D().CHEATS[k].icon} ${D().CHEATS[k].name}: ${D().CHEATS[k].desc}`; A().play('goddess'); UI().sparkle(innerWidth / 2, innerHeight / 2, 16);
         btns.append(h('button', { class: 'btn primary', onclick: () => { card.remove(); resolve(k); } }, 'Беру!'));
         if (!rerolled) btns.append(h('button', { class: 'btn', onclick: () => { rerolled = true; desc.textContent = 'Люмі: «Ну гаразд, ще разок. Але тільки один! У мене ліміт.»'; spin(); } }, '🔄 Ще раз (один раз)'));
-        btns.append(h('button', { class: 'btn ghost', onclick: () => { desc.textContent = 'Люмі: «Ох, ці твої очі... Обирай, тільки нікому не кажи!»'; btns.innerHTML = ''; slots.forEach((s, i) => { s.style.cursor = 'pointer'; s.onclick = () => { card.remove(); resolve(keys[i]); }; }); } }, '🥺 Будь ласка, можна самому?'));
+        btns.append(h('button', { class: 'btn ghost', onclick: () => { desc.textContent = 'Люмі: «Ох, ці твої очі... Обирай, тільки нікому не кажи!»'; btns.innerHTML = ''; slots.forEach((s, i) => { if (D().CHEATS[keys[i]].secret) { s.style.opacity = 0.25; s.title = 'Тільки рулетка!'; return; } s.style.cursor = 'pointer'; s.onclick = () => { card.remove(); resolve(keys[i]); }; }); } }, '🥺 Будь ласка, можна самому?'));
         if (globalThis.ISK_AUTOPLAY) setTimeout(() => btns.querySelector('.btn.primary').click(), 5);
       };
       btns.append(h('button', { class: 'btn pink big', style: { minWidth: '200px' }, onclick: spin }, '🎰 Крутити!'));
@@ -190,7 +193,7 @@
   async function goddessCall(lines) {
     if (globalThis.ISK_AUTOPLAY) return;
     A().play('goddess'); const stage = overlayStage('radial-gradient(circle at 50% 35%, rgba(255,240,250,.92), rgba(120,100,200,.85))');
-    setPortrait(stage, '👼'); await dialog(lines.map((t) => ({ who: 'Богиня Люмі', text: t })), { stage }); stage.remove();
+    setPortrait(stage, SP().goddess('wink')); await dialog(lines.map((t) => ({ who: 'Богиня Люмі', text: t })), { stage }); stage.remove();
   }
   async function npcTalk(name, text, sprite) {
     const stage = overlayStage('rgba(6,8,16,.55)'); setPortrait(stage, sprite); await dialog([{ who: name, text }], { stage }); stage.remove();
@@ -201,7 +204,7 @@
     setPortrait(stage, SP().boss('citadel'));
     await dialog([
       { who: 'Володар Демонів Малдраґор', text: '«Ні-і-і! Як?! Я ж прочитав «Як перемогти героя за 7 днів»! ...Слухай, а можна я просто піду на пенсію? Розводитиму кактуси.»' },
-      { who: 'Богиня Люмі', portrait: '👼', text: `${p.name}! ТИ ЗРОБИВ ЦЕ! Володаря Демонів переможено! Легіони Темряви розбігаються! Я отримаю премію! Ой, тобто — ти отримаєш вічну славу!` },
+      { who: 'Богиня Люмі', portrait: SP().goddess(['happy','wink','happy2'][Math.floor(Math.random()*3)]), text: `${p.name}! ТИ ЗРОБИВ ЦЕ! Володаря Демонів переможено! Легіони Темряви розбігаються! Я отримаю премію! Ой, тобто — ти отримаєш вічну славу!` },
       { who: 'Богиня Люмі', text: 'Можу повернути тебе додому... або лишайся в Дивосвіті. Тобі тут явно подобається. Стань герцогом, відкрий таверну, досягни рангу SSS!' },
       { who: 'Оповідач', portrait: SP().hero(p), text: `І так ${p.name}, колишній ${p.origin}, став Легендою Дивосвіту. Барди співають про героя, якого збила вантажівка. Пісня має 47 куплетів. Жоден не римується.\n\n✨ КІНЕЦЬ (але світ живе далі!) ✨` },
     ], { stage });

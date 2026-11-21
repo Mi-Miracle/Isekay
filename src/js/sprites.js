@@ -209,7 +209,8 @@
     const D = ISK.data; const r = (n) => { h = (h * 1103515245 + 12345) >>> 0; return h % n; };
     const races = Object.keys(D.RACES).filter((x) => x !== 'god');
     const R = D.RACES[opts.race || races[r(races.length)]];
-    const c = humanoid({ skin: R.skin, hair: D.HAIR_COLORS[r(10)], hairStyle: r(6), eyes: D.EYE_COLORS[r(6)], body: ['#8a5a3a', '#3a6a8a', '#7a2a4a', '#4a7a3a', '#6a6a7a', '#b08a3a'][r(6)], feat: R.feat, weapon: opts.weapon, beard: opts.beard, hat: opts.hat });
+    const hs = opts.female === true ? [1, 3, 4][r(3)] : opts.female === false ? [0, 2, 5][r(3)] : r(6);
+    const c = humanoid({ skin: R.skin, hair: opts.hair || D.HAIR_COLORS[r(10)], hairStyle: hs, eyes: D.EYE_COLORS[r(6)], body: opts.body || ['#8a5a3a', '#3a6a8a', '#7a2a4a', '#4a7a3a', '#6a6a7a', '#b08a3a'][r(6)], feat: R.feat, weapon: opts.weapon, beard: opts.beard ?? (opts.female === false && r(3) === 0), hat: opts.hat, hatBrim: opts.hatBrim, crown: opts.crown, cape: opts.cape, glow: opts.glow });
     cache.set(k, c); return c;
   }
 
@@ -251,5 +252,52 @@
     cache.set(k, c); return c;
   }
 
-  ISK.sprites = { monster, boss, hero, npc, icon, img, humanoid, forEnemy, forCompanion, forPet };
+  // lords: king (crown + red cape), duke (crown + purple), count (cape), baron (hat)
+  function lord(l) {
+    const k = l.kind; const rich = { king: '#8a1a2a', duke: '#4a2a7a', count: '#1f4a6a', baron: '#5a4a2a' }[k];
+    return npc('lord' + l.portrait + k, { female: !!l.female, race: l.race, body: rich, crown: k === 'king' || k === 'duke', cape: k === 'king' ? '#b01e2e' : k === 'duke' ? '#6a3aa0' : k === 'count' ? '#2a5a8a' : null, hat: k === 'baron' ? '#3a2a1a' : null, hatBrim: k === 'baron', glow: k === 'king' ? '#ffe9a0' : null });
+  }
+
+  // ---- goddess Lumi: 32×32 hand-drawn pixel portrait with expressions ----
+  function goddess(expr = 'happy') {
+    const k = 'g:' + expr; if (cache.has(k)) return cache.get(k);
+    const c = canvas(32, 32), g = c.getContext('2d');
+    const px = (x, y, col, w = 1, hh = 1) => { g.fillStyle = col; g.fillRect(x, y, w, hh); };
+    const O = '#2a1430', HAIR = '#ffc9e6', HAIR2 = '#ff9fcf', HAIRL = '#fff0f8', SKIN = '#ffe4d6', SKIN2 = '#f6c4b0', EYE = '#4aa8ff', EYE2 = '#2a5ad8', GOLD = '#ffd36e', DRESS = '#ffffff', DRESS2 = '#dfe6ff';
+    // halo
+    for (let x = 9; x <= 22; x++) { px(x, 1, GOLD); } px(8, 2, GOLD); px(23, 2, GOLD); for (let x = 9; x <= 22; x++) px(x, 3, '#fff3b8');
+    // wings (behind)
+    for (let i = 0; i < 7; i++) { px(1 + i % 2, 14 + i, '#ffffff', 4 - (i >> 1), 1); px(27 + (i % 2 ? -1 : 0), 14 + i, '#ffffff', 4 - (i >> 1), 1); }
+    px(0, 15, O); px(31, 15, O);
+    // hair back (long)
+    px(7, 5, O, 18, 1); px(6, 6, O); px(25, 6, O);
+    for (let y = 6; y < 29; y++) { const wv = y > 20 ? Math.round(Math.sin(y * 0.9)) : 0; px(6 + wv, y, O); px(25 - wv, y, O); px(7 + wv, y, HAIR2, 18 - wv * 2, 1); }
+    for (let y = 6; y < 28; y += 3) { px(8, y, HAIR); px(23, y + 1, HAIR); }
+    // face
+    px(10, 9, SKIN, 12, 11); px(9, 10, SKIN, 1, 8); px(22, 10, SKIN, 1, 8); px(11, 20, SKIN, 10, 1); px(12, 21, SKIN2, 8, 1);
+    // fringe / bangs
+    px(8, 6, HAIR, 16, 3); px(9, 9, HAIR, 3, 2); px(15, 9, HAIR, 2, 2); px(20, 9, HAIR, 3, 2); px(12, 7, HAIRL, 3, 1); px(18, 6, HAIRL, 2, 1); px(10, 11, HAIR, 1, 3); px(21, 11, HAIR, 1, 3);
+    // flower hairpin
+    px(22, 7, '#ff6fa8', 2, 2); px(23, 6, '#ffd36e');
+    // eyes by expression
+    const eye = (x, closed) => { if (closed) { px(x, 14, O, 4, 1); px(x - 1, 13, O); px(x + 4, 13, O); return; } px(x, 12, O, 4, 1); px(x, 13, EYE, 4, 3); px(x, 15, EYE2, 4, 1); px(x + 1, 13, '#ffffff'); px(x + 2, 14, '#ffffff'); px(x, 13, O, 1, 3); px(x + 3, 13, EYE2); };
+    if (expr === 'wink') { eye(11, false); eye(17, true); } else if (expr === 'happy2') { eye(11, true); eye(17, true); } else { eye(11, false); eye(17, false); }
+    if (expr === 'shock') { px(12, 14, '#ffffff'); px(18, 14, '#ffffff'); }
+    // blush
+    px(10, 17, '#ff9aa8', 2, 1); px(20, 17, '#ff9aa8', 2, 1);
+    // mouth
+    if (expr === 'sad') { px(14, 19, O, 4, 1); px(13, 20, O); px(18, 20, O); px(21, 13, '#7fd0ff', 1, 3); }
+    else if (expr === 'shock') { px(15, 18, O, 2, 1); px(14, 19, O); px(17, 19, O); px(15, 20, O, 2, 1); px(15, 19, '#c0405a', 2, 1); }
+    else if (expr === 'angry') { px(14, 19, O, 4, 1); px(11, 11, O, 3, 1); px(18, 11, O, 3, 1); }
+    else { px(14, 18, O); px(17, 18, O); px(15, 19, O, 2, 1); px(15, 18, '#ff7a8a', 2, 1); }
+    // dress / shoulders
+    px(13, 22, SKIN, 6, 1); px(9, 23, DRESS, 14, 9); px(8, 24, DRESS, 1, 8); px(23, 24, DRESS, 1, 8);
+    px(15, 23, GOLD, 2, 1); px(15, 24, '#ff6fa8', 2, 2); for (let x = 9; x < 23; x += 2) px(x, 31, DRESS2); px(9, 23, GOLD); px(22, 23, GOLD);
+    px(8, 23, O); px(23, 23, O); px(7, 24, O, 1, 8); px(24, 24, O, 1, 8);
+    // sparkle
+    if (expr === 'happy' || expr === 'wink') { px(28, 4, '#fff3b8'); px(27, 5, '#fff3b8', 3, 1); px(28, 6, '#fff3b8'); }
+    cache.set(k, c); return c;
+  }
+
+  ISK.sprites = { monster, boss, hero, npc, lord, goddess, icon, img, humanoid, forEnemy, forCompanion, forPet };
 })();
