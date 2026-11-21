@@ -1,0 +1,17 @@
+name: TTS smoke test
+on:
+  push:
+    branches: [tts-check]
+jobs:
+  tts:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - run: npm install
+      - run: node tts.js "Вітаю в Дивосвіті! Тебе щойно збила вантажівка." f out.mp3
+      - run: node tts.js "Я Володар Демонів Малдраґор!" m out2.mp3
