@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert');
-['rng', 'data', 'world', 'politics', 'player', 'combat', 'game'].forEach((f) => require(`../src/js/${f}.js`));
+['rng', 'data', 'content', 'world', 'politics', 'heroes', 'player', 'combat', 'game'].forEach((f) => require(`../src/js/${f}.js`));
 const { world: WM, politics: POL, player: PL, combat: C, game: GM, data: D } = globalThis.ISK;
 
 for (const seed of [1, 42, 2026]) {
@@ -82,4 +82,36 @@ test('game: quests, dungeon, house, land, pets, save/load', () => {
   assert.deepStrictEqual(G2.world.baronies.map((b) => b.owner), G.world.baronies.map((b) => b.owner));
   assert.strictEqual(G2.player.quests.length, 1);
   assert.ok(G2.player.house && G2.player.pets.length === 1);
+});
+
+test('v3: each non-human race has its own kingdom; empire is human-only', () => {
+  const w = WM.generateWorld(9);
+  const races = new Set(w.realms.map((r) => r.raceKey));
+  for (const r of ['human', 'elf', 'darkelf', 'dwarf', 'orc', 'goblin', 'beast', 'halfling', 'dragonkin', 'demon']) assert.ok(races.has(r), 'race kingdom: ' + r);
+  const E = w.realms.find((r) => r.isEmpire);
+  for (const r of w.realms.filter((x) => x.liege === E.id)) assert.strictEqual(r.raceKey, 'human');
+  assert.ok(w.realms.some((r) => r.raceKey === 'human' && r.liege < 0 && !r.isEmpire), 'independent human kingdoms exist');
+  assert.ok(w.baronies.some((b) => b.sites && b.sites.length), 'resource sites');
+});
+
+test('v3: heroes, patrol armies and AI economy run', () => {
+  const w = WM.generateWorld(2026); const P = POL.initPolitics(w);
+  for (let d = 1; d <= 400; d++) POL.tick(w, P, d);
+  assert.ok(P.heroes.length >= 8);
+  assert.ok(P.armies.some((a) => a.patrol), 'standing patrols');
+  assert.ok(P.realms.some((r) => r.built > 0), 'kingdoms build');
+});
+
+test('v3: gear recipes, crafting, class tier III and loot', () => {
+  assert.ok(D.getItem('w_katana_7_4'), 'divine mythic katana exists');
+  assert.ok(D.getItem('a_body_chain_3_2'));
+  assert.ok(D.getItem('u_truck_blade'));
+  const G = GM.newGame(77, { name: 'Т', race: 'dwarf', cheat: 'crafter' });
+  const p = G.player; p.gold = 9999;
+  const r = D.gearRecipe('w_sword_1_0'); for (const [k, n] of Object.entries(r.needs)) PL.addItem(p, k, n);
+  p.professions.smithing.lvl = 10;
+  const res = GM.craftGear(G, 'w_sword_1_0', 1); assert.ok(res.id);
+  p.classes.primary = 'berserker'; p.classXp.berserker = { lvl: 25, xp: 0, sp: 0, adv: 'warlord', master: true };
+  assert.ok(PL.knownSkills(p).some((s) => s.id === 'titan_smash'));
+  const gid = D.randomGear(20, 3); assert.ok(D.getItem(gid), gid);
 });

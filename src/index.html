@@ -2,7 +2,7 @@
 <html lang="uk">
 <head>
   <meta charset="UTF-8" />
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; media-src 'self' data:;" />
   <title>Хроніки Дивосвіту</title>
   <link rel="stylesheet" href="style.css" />
 </head>
@@ -22,9 +22,10 @@
           <button class="btn big ghost" data-act="quit">🚪 Вийти</button>
         </div>
         <div id="update-box" class="update-box hidden"></div>
+        <div id="title-gag" class="title-gag"></div>
         <div class="title-foot">
           <div class="dev">Розробник: <b>Mi-Miracle</b> · Twitch: <b>mi_miracle</b></div>
-          <div class="ver" id="app-version">v2.0.0 · Зроблено з любов'ю, кавою і вантажівкою-куном</div>
+          <div class="ver" id="app-version">v3.0.0 · Зроблено з любов'ю, кавою і вантажівкою-куном</div>
         </div>
       </div>
     </section>
@@ -64,15 +65,40 @@
         <button data-mode="political">🏳️ Політична</button>
         <button data-mode="dejure">📜 Де-юре</button>
         <button data-mode="danger">☠️ Небезпека</button>
-        <button id="btn-center" title="До героя (Space)">🎯</button>
+        <button id="btn-center" title="До героя (F)">🎯</button>
+      </div>
+      <div id="time-ctrl" title="Хід часу: армії марширують, герої мандрують (Пробіл — пауза, +/− — швидкість)">
+        <span class="tc-label">⏳ Час</span>
+        <button data-speed="0" class="active" title="Пауза">⏸</button>
+        <button data-speed="1" title="Повільно">▶</button>
+        <button data-speed="2" title="Швидко">⏩</button>
+        <button data-speed="3" title="Дуже швидко">⏭</button>
       </div>
       <canvas id="minimap" title="Мінімапа: клік — перейти"></canvas>
       <div id="location-panel"></div>
       <aside id="info-panel" class="hidden"></aside>
       <div id="news-ticker"></div>
       <div id="travel-bar" class="hidden"><div class="tb-text" id="travel-text">Подорож...</div><div class="tb-bar"><div id="travel-fill"></div></div><button class="btn small" id="travel-stop">✋ Зупинитись</button></div>
-      <div id="keys-hint">WASD — рух мапи · Q/E — масштаб · Space — до героя</div>
+      <div id="keys-hint">WASD — мапа · Q/E — масштаб · F — до героя · Пробіл — хід часу · ` — чіт-меню</div>
     </section>
+  </div>
+  <div id="intro" class="hidden">
+    <div class="intro-sparks"></div>
+    <div class="intro-presents">Mi-Miracle представляє</div>
+    <div class="intro-truck">🚚<span class="intro-honk">БІП-БІП!</span></div>
+    <div class="intro-flash"></div>
+    <div class="intro-logo">ХРОНІКИ<span>ДИВОСВІТУ</span></div>
+    <div class="intro-sub">«Перероджений в іншому світі… знову. Цього разу — з картою.»</div>
+    <div class="intro-skip">клікни, щоб пропустити</div>
+  </div>
+  <div id="update-overlay" class="hidden">
+    <div class="upd-card">
+      <div class="upd-icon">🌸</div>
+      <h2 id="upd-title">Оновлення</h2>
+      <div id="upd-text" class="muted">…</div>
+      <div class="upd-bar"><div id="upd-bar"></div></div>
+      <div id="upd-pct" class="muted">0%</div>
+    </div>
   </div>
   <div id="overlay" class="hidden"></div>
   <div id="modal-root"></div>
@@ -80,12 +106,15 @@
 
   <script src="js/rng.js"></script>
   <script src="js/data.js"></script>
+  <script src="js/content.js"></script>
   <script src="js/world.js"></script>
   <script src="js/politics.js"></script>
+  <script src="js/heroes.js"></script>
   <script src="js/player.js"></script>
   <script src="js/combat.js"></script>
   <script src="js/game.js"></script>
   <script src="js/audio.js"></script>
+  <script src="js/music.js"></script>
   <script src="js/voice.js"></script>
   <script src="js/sprites.js"></script>
   <script src="js/render.js"></script>

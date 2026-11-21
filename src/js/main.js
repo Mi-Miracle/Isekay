@@ -4,23 +4,57 @@
   const UI = ISK.ui; const $ = UI.$; const h = UI.h;
   const native = window.isekayNative || null;
 
-  async function updates() {
-    if (!native || !native.checkUpdate) return;
+  // ---- automatic update at launch: found → download → restart, no questions asked ----
+  async function autoUpdate() {
+    if (!native || !native.checkUpdate) return false;
     try { const v = await native.version(); $('#app-version').textContent = `v${v} · Зроблено з любов'ю, кавою і вантажівкою-куном`; } catch (e) { /* ignore */ }
-    const info = await native.checkUpdate().catch(() => null);
-    if (!info || !info.available) return;
-    const box = $('#update-box'); box.classList.remove('hidden'); box.innerHTML = '';
-    const prog = h('div', { class: 'prog hidden' }, h('div', { style: { width: '0%' } }));
-    const btn = h('button', { class: 'btn pink small', onclick: async () => { btn.disabled = true; btn.textContent = 'Завантаження...'; prog.classList.remove('hidden'); await native.installUpdate(info); } }, `⬇️ Оновити до v${info.latest}`);
-    box.append(h('div', null, h('b', null, '✨ Доступне оновлення! '), `v${info.current} → v${info.latest}`, h('div', { class: 'muted', style: { fontSize: '12px' } }, info.portable ? 'Нова портативна версія завантажиться поруч і запуститься сама.' : 'Встановиться автоматично після перезапуску.')), btn, prog);
-    native.onUpdateProgress((v) => { prog.firstChild.style.width = v + '%'; if (v >= 100) btn.textContent = 'Перезапуск...'; });
-    native.onUpdateError((e) => { btn.disabled = false; btn.textContent = 'Помилка, ще раз'; UI.toast('Оновлення: ' + e, 'bad', 6000); });
+    const info = await Promise.race([native.checkUpdate().catch(() => null), UI.sleep(6000).then(() => null)]);
+    if (!info || !info.available) return false;
+    const ov = $('#update-overlay'); ov.classList.remove('hidden');
+    $('#upd-title').textContent = `Оновлення v${info.current} → v${info.latest}`;
+    $('#upd-text').textContent = ['Богиня Люмі завантажує новий патч світу…', 'Гноми перекладають рейки реальності…', 'Слизи переїжджають у нові підземелля…', 'Вантажівка-кун везе оновлення…'][Math.floor(Math.random() * 4)];
+    const bar = $('#upd-bar');
+    return new Promise((resolve) => {
+      native.onUpdateProgress((v) => { bar.style.width = v + '%'; $('#upd-pct').textContent = v + '%'; if (v >= 100) $('#upd-text').textContent = 'Готово! Перезапуск світу…'; });
+      native.onUpdateError((e) => { $('#upd-text').textContent = 'Не вдалося оновитися: ' + e + '. Запускаю поточну версію.'; setTimeout(() => { ov.classList.add('hidden'); resolve(false); }, 2500); });
+      native.installUpdate(info).then((ok) => { if (!ok) { ov.classList.add('hidden'); resolve(false); } }).catch(() => { ov.classList.add('hidden'); resolve(false); });
+    });
+  }
+
+  // ---- animated intro splash ----
+  function intro() {
+    const el = $('#intro'); if (!el) return Promise.resolve();
+    el.classList.remove('hidden');
+    return new Promise((resolve) => {
+      let done = false;
+      const finish = () => { if (done) return; done = true; el.classList.add('fade'); setTimeout(() => { el.classList.add('hidden'); el.classList.remove('fade'); resolve(); }, 500); };
+      const sparks = el.querySelector('.intro-sparks');
+      for (let i = 0; i < 40; i++) { const sp = h('i', { style: { left: Math.random() * 100 + '%', top: Math.random() * 100 + '%', animationDelay: (2.4 + Math.random() * 1.6) + 's', fontSize: (8 + Math.random() * 18) + 'px' } }, ['✦', '✧', '★', '✿'][i % 4]); sparks.appendChild(sp); }
+      el.addEventListener('click', finish); window.addEventListener('keydown', finish, { once: true });
+      setTimeout(finish, 5600);
+    });
+  }
+
+  function titleGags() {
+    const box = $('#title-gag'); if (!box) return; let i = Math.floor(Math.random() * ISK.data.TITLE_GAGS.length);
+    const show = () => { box.classList.remove('in'); setTimeout(() => { box.textContent = ISK.data.TITLE_GAGS[i++ % ISK.data.TITLE_GAGS.length]; box.classList.add('in'); }, 400); };
+    show(); setInterval(show, 7000);
+  }
+
+  async function offerVoice() {
+    if (!ISK.voice.hasNeural() || localStorage.getItem('dyvo_voice_asked')) return;
+    await ISK.voice.refreshStatus(); if (ISK.voice.settings.installed) return;
+    localStorage.setItem('dyvo_voice_asked', '1');
+    if (await UI.confirm('🎙️ Українська нейроозвучка!\n\nПерсонажі говоритимуть справжніми голосами (Микита, Тетяна, Лада). Працює без інтернету після одноразового завантаження ~80 МБ.\n\nЗавантажити зараз? (можна й пізніше в Налаштуваннях)', 'Завантажити', 'Пізніше')) {
+      UI.toast('⬇️ Завантажую нейроголоси у фоні…', 'good', 4000);
+      ISK.voice.install((v) => { if (v % 25 === 0) UI.toast(`🎙️ Нейроозвучка: ${v}%`, '', 1500); }).then((r) => UI.toast(r && r.ok ? '🎙️ Озвучку встановлено! Люмі вже прочищає горло.' : '⚠️ Не вдалося завантажити озвучку: ' + ((r && r.error) || '?'), r && r.ok ? 'epic' : 'bad', 6000));
+    }
   }
 
   function boot() {
     ISK.story.titleBg(); ISK.story.titleRefresh(); UI.bindMap(); UI.loop();
     document.querySelectorAll('.title-menu [data-act]').forEach((b) => b.addEventListener('click', () => {
-      ISK.audio.ensure(); ISK.audio.play('click'); ISK.audio.music('calm');
+      ISK.audio.ensure(); ISK.audio.play('click'); ISK.audio.music('title');
       const act = b.dataset.act;
       if (act === 'new') ISK.story.newGameFlow();
       if (act === 'continue') { const last = localStorage.getItem('dyvo_last'); if (last) ISK.panels.load(last); }
@@ -34,7 +68,9 @@
     });
     window.addEventListener('beforeunload', () => { try { ISK.panels.autosave(); } catch (e) { /* ignore */ } });
     setInterval(() => { if (UI.G && !UI.inCombat && !UI.inDungeon && !UI.travelling) ISK.panels.autosave(); }, 120000);
-    if (location.search.includes('selftest')) selftest(); else updates();
+    titleGags();
+    if (location.search.includes('selftest')) selftest();
+    else (async () => { autoUpdate(); await intro(); await UI.sleep(1500); if ($('#update-overlay').classList.contains('hidden')) offerVoice(); })();
   }
 
   async function selftest() {
@@ -117,6 +153,35 @@
         if (before !== after) errors.push('save/load mismatch');
       });
       UI.cutin('LEVEL UP!', 'Рівень 15 · +3 очки характеристик', '#ffd36e'); await UI.sleep(300); await shot('25_cutin');
+      // ---- v3 features ----
+      await step('v3_realms', async () => { ISK.panels.realms(); await UI.sleep(150); document.querySelector('.tabs button[data-id="races"]')?.click(); await shot('26_races'); document.querySelector('.tabs button[data-id="heroes"]')?.click(); await shot('27_heroes'); UI.closeAll(); });
+      await step('v3_armies', async () => {
+        const UI2 = UI; const G3 = UI2.G; const a = G3.P.armies.find((x) => x.path && x.path.length) || G3.P.armies[0];
+        if (a) { ISK.render.centerOn('b:' + a.node, 1.6); }
+        UI2.setSpeed(2); for (let i = 0; i < 30; i++) await UI2.sleep(100); UI2.setSpeed(0); await shot('28_armies_marching');
+        ISK.render.centerOn(G3.player.location, 0.3); await UI2.sleep(300); await shot('29_world_overview');
+      });
+      await step('v3_sites_heroes', async () => {
+        const G3 = UI.G; const p3 = G3.player; const B = G3.world.baronies.find((b) => b.sites && b.sites.length && !ISK.politics.isDemon(G3.P, b.owner));
+        p3.location = 'b:' + B.id; G3.discovered['b:' + B.id] = 1;
+        const hh = ISK.heroes.makeHero(G3.world, G3.P, new ISK.RNG(5)); hh.node = B.id; G3.P.heroes.push(hh);
+        UI.refresh(); ISK.render.centerOn(p3.location, 2.2); UI.showInfo(p3.location); await UI.sleep(300); await shot('30_site_hero');
+        ISK.panels.heroTalk(hh.id); await shot('31_hero_talk'); UI.closeAll();
+        const r = ISK.game.gatherSite(G3, B.id, 0, 1); if (!r) errors.push('gatherSite failed');
+      });
+      await step('v3_forge', async () => {
+        const G3 = UI.G; const p3 = G3.player; const town = G3.world.baronies.find((b) => b.type === 'city' && !ISK.politics.isDemon(G3.P, b.owner));
+        for (const k of ['ore_copper', 'ore_iron', 'leather', 'wood', 'cloth', 'chain_ring', 'hide']) ISK.player.addItem(p3, k, 30); p3.gold += 5000;
+        ISK.panels.openService('smith', town); await UI.sleep(150); document.querySelector('.tabs button[data-id="forge"]')?.click(); await UI.sleep(150); await shot('32_forge'); UI.closeAll();
+        ISK.panels.openService('market', town); await UI.sleep(150); document.querySelector('.tabs button[data-id="tailor"]')?.click(); await UI.sleep(150); await shot('33_tailor'); UI.closeAll();
+        const res = ISK.game.craftGear(G3, 'w_katana_1_0', 1); if (!res || (!res.id && !res.fail)) errors.push('craftGear failed');
+      });
+      await step('v3_cheats', async () => { ISK.panels.cheats(); await shot('34_cheats'); UI.closeAll(); });
+      await step('v3_skills3', async () => {
+        const p3 = UI.G.player; const c = p3.classes.primary; const cx = p3.classXp[c]; cx.lvl = 22; cx.adv = ISK.data.CLASSES[c].adv[0].id; cx.sp = 3;
+        ISK.panels.skills(); await UI.sleep(150); await shot('35_class3'); UI.closeAll();
+      });
+      await step('v3_intro', async () => { document.getElementById('intro').classList.remove('hidden'); document.getElementById('intro').querySelectorAll('*').forEach((e) => { e.style.animationDelay = '0s'; e.style.animationDuration = '0.01s'; }); await UI.sleep(400); await shot('36_intro'); document.getElementById('intro').classList.add('hidden'); });
     } catch (e) { errors.push('fatal: ' + (e.stack || e)); }
     if (native) { await native.report({ errors }); native.quit(); } else console.log('SELFTEST', errors);
   }

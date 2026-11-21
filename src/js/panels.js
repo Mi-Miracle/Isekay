@@ -17,6 +17,7 @@
     if (it.lvl && ['weapon', 'armor', 'offhand'].includes(it.kind)) parts.push(`рів. ${it.lvl}`);
     if (it.kind === 'costume') parts.push('вбрання');
     if (it.use) { const u = it.use; if (u.hp) parts.push(`+${u.hp}❤️`); if (u.mp) parts.push(`+${u.mp}🔷`); if (u.dmg) parts.push(`${u.dmg} шкоди всім`); if (u.buff) parts.push(`баф`); if (u.food) parts.push(`ситість: ${u.food.battles} боїв`); if (u.revive) parts.push('воскресіння'); }
+    if (it.unique) parts.unshift('★ унікальна');
     if (it.desc) parts.push(it.desc);
     return parts.filter(Boolean).join(' · ');
   }
@@ -97,13 +98,20 @@
             h('div', { class: 'choice-grid' }, C.adv.map((a) => h('div', { class: 'choice', onclick: async () => { if (!(await UI().confirm(`Стати «${a.name}»?\n${a.desc}`))) return; cx.adv = a.id; A().play('level'); UI().cutin(a.name.toUpperCase(), 'Нове підвищення класу!', '#b77bff'); reopen(skills); } },
               h('div', { class: 'ic' }, a.icon), h('div', { class: 'nm' }, a.name), h('div', { class: 'ds' }, a.desc), h('div', { class: 'ds', style: { color: 'var(--cyan)' } }, a.skills.map((s) => s.icon + ' ' + s.name).join(', ')))))));
         }
+        const A2 = cx.adv ? C.adv.find((a) => a.id === cx.adv) : null;
+        if (L >= 20 && A2 && A2.master && !cx.master) {
+          const M = A2.master;
+          wrap.appendChild(h('div', { class: 'quest main' }, h('div', { class: 't' }, `⏫ Клас ІІІ: ${M.icon} ${M.name}`), h('div', { class: 'd' }, `${M.desc} Нові навички: ${M.skills.map((x) => x.icon + ' ' + x.name).join(', ')}.`),
+            h('button', { class: 'btn primary', style: { marginTop: '6px' }, onclick: () => { cx.master = true; A().play('win'); UI().cutin(M.name.toUpperCase(), 'КЛАС ІІІ ВІДКРИТО!', '#ff9df0'); UI().sparkle(innerWidth / 2, innerHeight / 2, 30); reopen(skills); } }, `⏫ Стати «${M.name}»`)));
+        }
+        wrap.appendChild(h('div', { class: 'muted', style: { fontSize: '12.5px' } }, `Шлях: ${C.name} → ${A2 ? A2.name : 'клас ІІ (рів. 10)'} → ${A2 && A2.master ? A2.master.name : 'клас ІІІ'} (рів. 20) → ${C.ascend.name} (рів. 30, вознесіння у тренера) · макс. рівень класу ${D().CLASS_CAP || 30}`));
         const grid = h('div', { class: 'items' });
         for (const sk of D().allSkillsOf(c)) {
           if (sk.adv && cx.adv && sk.adv !== cx.adv) continue;
           if (sk.adv && !cx.adv) continue;
-          const ok = sk.lvl <= L && (!sk.ascend || cx.ascended); const r = PL().skillRank(p, sk.id); const rs = PL().rankSkill(sk, r);
+          const ok = sk.lvl <= L && (!sk.ascend || cx.ascended) && (!sk.master || cx.master); const r = PL().skillRank(p, sk.id); const rs = PL().rankSkill(sk, r);
           grid.appendChild(h('div', { class: 'item', style: { opacity: ok ? 1 : 0.45 } }, h('div', { class: 'ic' }, sk.icon),
-            h('div', { style: { flex: 1 } }, h('div', { class: 'nm' }, `${sk.name}${ok ? ` ★${r}` : sk.ascend ? ' 🔒 вознесіння' : ` 🔒 рів. ${sk.lvl}`}`), h('div', { class: 'ds' }, `🔷${rs.mp}${sk.cd ? ` · ⏱${sk.cd}` : ''}${rs.power ? ` · сила ×${rs.power.toFixed(2)}` : ''} · ${sk.desc}`)),
+            h('div', { style: { flex: 1 } }, h('div', { class: 'nm' }, `${sk.name}${ok ? ` ★${r}` : sk.ascend ? ' 🔒 вознесіння (рів. 30)' : sk.master && !cx.master ? ` 🔒 клас ІІІ (рів. ${sk.lvl})` : ` 🔒 рів. ${sk.lvl}`}`), h('div', { class: 'ds' }, `🔷${rs.mp}${sk.cd ? ` · ⏱${sk.cd}` : ''}${rs.power ? ` · сила ×${rs.power.toFixed(2)}` : ''} · ${sk.desc}`)),
             ok && r < 5 ? h('div', { class: 'acts' }, h('button', { class: 'btn small primary', disabled: !cx.sp, onclick: () => { PL().upgradeSkill(p, c, sk.id); A().play('magic'); reopen(skills); } }, '⬆ ранг')) : null));
         }
         wrap.appendChild(grid);
@@ -170,12 +178,18 @@
           h('div', { class: 'k' }, 'Землі'), h('div', null, `${owned.length} баронств · ${R.duchies.length} герцогств · столиця: ${w.baronies[R.capital].name}`),
           R.isDemon ? null : [h('div', { class: 'k' }, 'Казна / військо'), h('div', null, `🪙 ${Math.round(st.gold).toLocaleString('uk')} · ⚔️ ${Math.round(st.manpower).toLocaleString('uk')}${army ? ` · у полі ${army.toLocaleString('uk')}` : ''}`)],
           R.isDemon ? [h('div', { class: 'k' }, 'Легіони'), h('div', null, `${army.toLocaleString('uk')} у полі · наступне вторгнення ~${GM().dateStr(P.nextInvasion)}`)] : null,
+          R.isDemon ? null : [h('div', { class: 'k' }, 'Курс ШІ'), h('div', null, `${{ build: '🏗️ будівництво', trade: '🐪 торгівля', army: '⚒️ армія', war: '⚔️ війна' }[st.focus || 'build']} · дохід ${st.income ?? '?'}🪙/день · збудовано ${st.built || 0}${st.levy ? ` · казарми ${st.levy}` : ''}`)],
+          (st.trade || []).length ? [h('div', { class: 'k' }, 'Торгівля'), h('div', null, st.trade.map((a) => h('span', { class: 'tag', style: { marginRight: '4px' } }, '🐪 ' + w.realms[a].name)))] : null,
+          P.armies.some((a) => a.realm === st.id) ? [h('div', { class: 'k' }, 'Армії'), h('div', null, P.armies.filter((a) => a.realm === st.id).map((a) => h('div', { style: { fontSize: '13px' } }, `${a.patrol ? '🛡️' : a.icon || '⚑'} ${a.name}: ${a.size.toLocaleString('uk')}${a.mix ? ` (🗡️${a.mix[0]}% 🏹${a.mix[1]}% 🐎${a.mix[2]}% 🔮${a.mix[3]}%)` : ''} — ${w.baronies[a.node].name}${a.heroName ? ` · з героєм ${a.heroName}` : ''}`)))] : null,
           h('div', { class: 'k' }, 'Союзники'), h('div', null, st.alliances.length ? st.alliances.map((a) => h('span', { class: 'tag ally', style: { marginRight: '4px' } }, w.realms[a].name)) : '—'),
           h('div', { class: 'k' }, 'Війни'), h('div', null, wars.length ? wars.map((x) => h('span', { class: 'tag war', style: { marginRight: '4px' } }, x.name)) : R.isDemon ? 'з усім світом' : 'мир'))));
     };
     UI().modal({ title: 'Держави Дивосвіту', icon: '👑', tabs: [
       { id: 'empire', label: '🏛️ Імперія', render: () => { const E = w.realms.find((r) => r.isEmpire); const list = [E, ...w.realms.filter((r) => r.liege === E.id)]; return h('div', null, h('div', { class: 'muted', style: { marginBottom: '8px' } }, `Імперія та її ${list.length - 1} васальних королівств діють як блок: разом воюють і разом обороняються. Васали можуть повстати за незалежність.`), list.map((r) => card(P.realms[r.id]))); } },
-      { id: 'list', label: '👑 Королівства', render: () => h('div', null, w.realms.filter((r) => !r.isEmpire && r.liege < 0 && !r.isDemon).map((r) => card(P.realms[r.id]))) },
+      { id: 'list', label: '👑 Людські королівства', render: () => h('div', null, w.realms.filter((r) => !r.isEmpire && r.liege < 0 && !r.isDemon && r.raceKey === 'human').map((r) => card(P.realms[r.id]))) },
+      { id: 'races', label: '🧝 Інші раси', render: () => h('div', null, h('div', { class: 'muted', style: { marginBottom: '8px' } }, 'Ельфи, гноми, орки, гобліни, звіролюди, напіврослики, драконіди й темні ельфи мають власні королівства на своїх континентах. Свої ж раси ставляться до тебе тепліше.'), w.realms.filter((r) => !r.isDemon && r.raceKey !== 'human').map((r) => card(P.realms[r.id]))) },
+      { id: 'heroes', label: '🌟 Герої', render: () => h('div', null, h('div', { class: 'muted', style: { marginBottom: '8px' } }, 'НПС-герої мандрують світом: зачищають підземелля, б\'ються з ордами, допомагають своїм королівствам. Зустрінеш — можна поговорити, позмагатися або покликати в загін.'),
+        (P.heroes || []).filter((x) => x.alive || x.joined).sort((a, b) => b.lvl - a.lvl).map((x) => h('div', { class: 'item' }, h('div', { class: 'ic' }, x.icon), h('div', { style: { flex: 1 } }, h('div', { class: 'nm' }, `${x.name} · рів. ${x.lvl}${x.joined ? ' · у твоєму загоні' : ''}${x.rival ? ' · ісекайник' : ''}`), h('div', { class: 'ds' }, `${D().CLASSES[x.cls].name} · ${D().RACES[x.race] ? D().RACES[x.race].name : x.race} · ${x.realm >= 0 ? w.realms[x.realm].name : 'вільний'} · зачищено ${x.cleared} · ворогів ${x.kills} · зараз: ${x.joined ? 'з тобою' : w.baronies[x.node].name}`))))) },
       { id: 'dark', label: '😈 Темрява', render: () => h('div', null, w.demonId >= 0 ? card(P.realms[w.demonId]) : null, h('h4', null, 'Армії Темряви та орди'), P.armies.filter((a) => POL().isDemon(P, a.realm)).map((a) => h('div', { class: 'chron' }, `${a.icon || '😈'} ${a.name}: ${a.size.toLocaleString('uk')} біля ${w.baronies[a.node].name}`)), P.armies.some((a) => POL().isDemon(P, a.realm)) ? null : h('div', { class: 'muted' }, 'Зараз тихо. Підозріло тихо.')) },
       { id: 'wars', label: '⚔️ Війни', render: () => {
         const wrap = h('div'); if (!P.wars.length) wrap.appendChild(h('div', { class: 'muted' }, '🕊️ Між королівствами — мир. Ну, офіційно.'));
@@ -202,7 +216,7 @@
     const p = G().player;
     UI().modal({ title: 'Загін, пітомці, транспорт', icon: '👥', size: 'mid', body: () => {
       const w = h('div', { class: 'col' });
-      w.appendChild(h('h4', null, `Товариші (${p.party.length}/2)`));
+      w.appendChild(h('h4', null, `Товариші (${p.party.length}/3)`));
       if (!p.party.length) w.appendChild(h('div', { class: 'muted' }, 'Найми товаришів у таверні. Удвох веселіше, утрьох — ще й безпечніше.'));
       for (const c of p.party) { const st = PL().companionStats(c); w.appendChild(h('div', { class: 'item' }, SP().img(SP().forCompanion(c), 40), h('div', { style: { flex: 1 } }, h('div', { class: 'nm' }, `${c.name} — ${c.roleName}, рів. ${c.lvl}`), h('div', { class: 'ds' }, `${c.traitName} · ❤️ ${c.hp ?? st.maxHp}/${st.maxHp} · ⚔️ ${st.atk} · платня ${c.wage}🪙/день · «${c.line}»`)), h('div', { class: 'acts' }, h('button', { class: 'btn small ghost', onclick: async () => { if (await UI().confirm(`Відпустити ${c.name}?`)) { p.party = p.party.filter((x) => x !== c); reopen(party); } } }, 'Відпустити')))); }
       w.appendChild(h('h4', null, 'Пітомці'));
@@ -239,9 +253,13 @@
     const s = A().settings; const V = ISK.voice.settings;
     const slider = (val, label, fn) => h('div', { class: 'field' }, h('label', null, label), h('input', { type: 'range', min: 0, max: 1, step: 0.05, value: val, oninput: (e) => fn(+e.target.value) }));
     UI().modal({ title: 'Налаштування', icon: '🔊', size: 'narrow', body: () => h('div', { class: 'col' }, slider(s.sfx, 'Звукові ефекти', (v) => { A().setVolume('sfx', v); A().play('click'); }), slider(s.music, 'Музика', (v) => A().setVolume('music', v)), slider(V.volume, 'Голоси персонажів', (v) => { ISK.voice.setVolume(v); ISK.voice.blip('Богиня Люмі', 'а'); }),
-      h('div', { class: 'field' }, h('label', null, 'Озвучка діалогів'), h('select', { onchange: (e) => ISK.voice.setMode(e.target.value) }, [['blip', 'Аніме-голоси (бурмотіння)'], ['tts', `Системний голос (укр.)${ISK.voice.hasTTS() ? '' : ' — не встановлено'}`], ['off', 'Вимкнено']].map(([v, l]) => h('option', { value: v, selected: V.mode === v ? true : null }, l)))),
+      h('div', { class: 'field' }, h('label', null, 'Озвучка діалогів'), h('select', { onchange: (e) => ISK.voice.setMode(e.target.value) }, [['neural', `Нейроголоси — українська озвучка${V.installed ? '' : ' (потрібно завантажити)'}`], ['blip', 'Аніме-голоси (бурмотіння)'], ['tts', `Системний голос (укр.)${ISK.voice.hasTTS() ? '' : ' — не встановлено'}`], ['off', 'Вимкнено']].map(([v, l]) => h('option', { value: v, selected: V.mode === v ? true : null }, l)))),
+      ISK.voice.hasNeural() && !V.installed ? h('div', { class: 'card' }, h('div', { style: { fontSize: '13px', marginBottom: '6px' } }, '🎙️ Нейроозвучка: справжні українські голоси (Микита, Тетяна, Лада), працює офлайн. Одноразове завантаження ~80 МБ.'),
+        h('button', { class: 'btn primary', onclick: async (e) => { const b = e.target; b.disabled = true; b.textContent = 'Завантаження… 0%'; const r = await ISK.voice.install((v) => { b.textContent = `Завантаження… ${v}%`; }); if (r && r.ok) { b.textContent = '✅ Встановлено!'; ISK.voice.say('Богиня Люмі', 'Тепер ти мене чуєш? Ура! Я так довго цього чекала!'); } else { b.disabled = false; b.textContent = '⚠️ Помилка: ' + ((r && r.error) || '?') + ' — спробувати ще'; } } }, '⬇️ Завантажити нейроозвучку')) : null,
+      ISK.voice.hasNeural() && V.installed ? h('button', { class: 'btn ghost', onclick: () => ISK.voice.say('Богиня Люмі', 'Привіт, герою! Це я, Люмі. Звук працює чудово!') }, '🔊 Перевірити голос') : null,
       h('label', { class: 'row' }, h('input', { type: 'checkbox', checked: !!UI().fastTravel, onchange: (e) => { UI().fastTravel = e.target.checked; } }), 'Швидка анімація подорожей'),
-      h('div', { class: 'muted', style: { fontSize: '12px' } }, 'F11 — повноекранний режим. Оновлення гри перевіряються автоматично з GitHub.')) });
+      h('div', { class: 'muted', style: { fontSize: '12px' } }, 'F11 — повноекранний режим. Оновлення гри встановлюються автоматично при запуску.'),
+      h('button', { class: 'btn ghost', onclick: () => { UI().closeAll(); cheats(); } }, '🧪 Чіт-меню (для тестування) · клавіша ` або F10')) });
   }
 
   // ---------------- Save / load ----------------
@@ -316,8 +334,8 @@
   }
   function chooseClass(B) {
     const p = G().player;
-    UI().modal({ title: 'Обери бойову професію', icon: '⚔️', sub: 'Мірра: «Обирайте уважно! З 10 рівня класу — підвищення, з 20 — вознесіння.»', body: () => h('div', { class: 'choice-grid' }, Object.entries(D().CLASSES).map(([k, C]) => h('div', { class: 'choice', onclick: async () => {
-      if (!(await UI().confirm(`${C.icon} ${C.name}: ${C.desc}\n\nПідвищення: ${C.adv.map((a) => a.name).join(' або ')}.\nВознесіння: ${C.ascend.name}.\n\nОбрати?`))) return;
+    UI().modal({ title: 'Обери бойову професію', icon: '⚔️', sub: 'Мірра: «Обирайте уважно! З 10 рівня класу — клас ІІ, з 20 — клас ІІІ, з 30 — вознесіння.»', body: () => h('div', { class: 'choice-grid' }, Object.entries(D().CLASSES).map(([k, C]) => h('div', { class: 'choice', onclick: async () => {
+      if (!(await UI().confirm(`${C.icon} ${C.name}: ${C.desc}\n\nКлас ІІ: ${C.adv.map((a) => a.name).join(' або ')}.\nКлас ІІІ: ${C.adv.map((a) => a.master ? a.master.name : '?').join(' або ')}.\nВознесіння: ${C.ascend.name}.\n\nОбрати?`))) return;
       p.classes.primary = k; p.classXp[k] = { lvl: 1, xp: 0, sp: 0 };
       const wid = `w_${C.weapon}_0_0`; PL().addItem(p, wid); PL().equip(p, wid);
       const mat = C.main === 'int' ? 'cloth' : C.main === 'agi' ? 'leather' : 'plate';
@@ -360,7 +378,7 @@
           h('button', { class: 'btn pink', onclick: () => ISK.minigames.dice() }, '🎲 Кості'),
           h('button', { class: 'btn', onclick: () => cooking() }, '🍳 Кухня'))) },
       { id: 'hire', label: '👥 Найманці', render: () => {
-        const w = h('div', { class: 'col' }, h('div', { class: 'muted' }, `Товариші б\'ються поруч і ростуть у рівнях. Щоденна платня. Загін: ${p.party.length}/2.`));
+        const w = h('div', { class: 'col' }, h('div', { class: 'muted' }, `Товариші б\'ються поруч і ростуть у рівнях. Щоденна платня. Загін: ${p.party.length}/3.`));
         for (const c of GM().hireOptions(g, B.id)) w.appendChild(h('div', { class: 'item' }, SP().img(SP().forCompanion(c), 44), h('div', { style: { flex: 1 } }, h('div', { class: 'nm' }, `${c.name} — ${c.roleName}, рів. ${c.lvl}`), h('div', { class: 'ds' }, `${c.traitName}: «${c.line}» · платня ${Math.round(c.wage * (p.cheat === 'harem' ? 0.5 : 1))}🪙/день`)),
           h('div', { class: 'acts' }, h('button', { class: 'btn small primary', onclick: () => { const e = GM().hire(g, c); if (e) UI().toast(e, 'bad'); else { A().play('coin'); UI().toast(`🤝 ${c.name} приєднується до загону!`, 'epic'); reopen(() => tavern(B)); } } }, `Найняти ${Math.round(c.fee * (p.cheat === 'harem' ? 0.5 : 1))}🪙`))));
         return w;
@@ -375,12 +393,48 @@
       { id: 'buy', label: '🛍️ Купити', render: () => { const list = h('div', { class: 'items' }); for (const id of GM().shopStock(g, B, kind)) { const price = PL().buyPrice(p, id, mod); list.appendChild(itemEl(id, 1, [h('button', { class: 'btn small primary', disabled: p.gold < price, onclick: () => { p.gold -= price; PL().addItem(p, id); A().play('coin'); UI().toast(`Куплено: ${PL().item(id).name}`, 'good'); UI().refresh(); reopen(() => store(B, kind)); } }, `${price} 🪙`)])); } return list; } },
       { id: 'sell', label: '💰 Продати', render: () => { const list = h('div', { class: 'items' }); const ents = Object.entries(p.inventory).filter(([id]) => { const it = PL().item(id); return it && it.price > 0; }); for (const [id, n] of ents) { const price = PL().sellPrice(p, id); list.appendChild(itemEl(id, n, [h('button', { class: 'btn small', onclick: () => { PL().removeItem(p, id); p.gold += price; A().play('coin'); reopen(() => store(B, kind)); setTimeout(() => document.querySelector('.tabs button[data-id="sell"]')?.click(), 10); } }, `+${price}`), n > 1 ? h('button', { class: 'btn small ghost', onclick: () => { PL().removeItem(p, id, n); p.gold += price * n; A().play('coin'); reopen(() => store(B, kind)); setTimeout(() => document.querySelector('.tabs button[data-id="sell"]')?.click(), 10); } }, `усі +${price * n}`) : null])); } if (!ents.length) list.appendChild(h('div', { class: 'muted' }, 'Нічого продати.')); return list; } },
     ];
-    if (kind === 'smith') tabs.push({ id: 'forge', label: '🔥 Кувати', render: forgeTab });
+    if (kind === 'smith') tabs.push({ id: 'forge', label: '🔥 Кувати', render: () => gearTab('smithing') });
+    if (kind === 'market' || kind === 'shop') tabs.push({ id: 'tailor', label: '🧵 Кравецтво', render: () => gearTab('tailoring') }, { id: 'process', label: '🪡 Обробка', render: () => craftTab('tailoring') });
     if (kind === 'alchemist') tabs.push({ id: 'brew', label: '🧪 Варити', render: () => craftTab('alchemy') });
     if (kind === 'magic') tabs.push({ id: 'scribe', label: '📜 Писати сувої', render: () => craftTab('scribing') });
     UI().modal({ title: titles[kind][0], icon: titles[kind][1], sub: `${B.name} · 🪙 ${Math.floor(p.gold)}${mod > 1.05 ? ' · воєнні ціни!' : mod < 1 ? ' · знижка за репутацію/титул' : ''}`, tabs });
   }
-  function forgeTab() {
+  const gearState = { cat: 'weapon', tier: -1 };
+  function gearTab(prof) {
+    const p = G().player; const w = h('div'); const lvl = (p.professions[prof] || { lvl: 1 }).lvl;
+    if (gearState.tier < 0) gearState.tier = Math.max(0, [1, 4, 8, 13, 18, 24, 30, 36].filter((l) => l <= lvl).length - 1);
+    const cats = prof === 'smithing' ? [['weapon', '🗡️ Зброя'], ['armor', '🛡️ Броня (кольчуга, лати)'], ['offhand', '🔰 Щити й інше']] : [['armor', '🧥 Тканина і шкіра'], ['offhand', '📕 Гримуари, сагайдаки']];
+    if (!cats.some((c) => c[0] === gearState.cat)) gearState.cat = cats[0][0];
+    w.appendChild(h('div', { class: 'muted', style: { marginBottom: '6px' } }, `${D().PROFESSIONS[prof].icon} ${D().PROFESSIONS[prof].name}: ${PL().profRank(p, prof)} (рів. ${lvl}). Якість мінігри = шанс на рідкісну, епічну, легендарну чи навіть міфічну річ.${p.cheat === 'crafter' ? ' 🛠️ Руки майстра: −40% вартості.' : ''}`));
+    const bar = h('div', { class: 'row', style: { flexWrap: 'wrap', gap: '6px', marginBottom: '8px' } });
+    for (const [k, l] of cats) bar.appendChild(h('button', { class: 'btn small' + (gearState.cat === k ? ' primary' : ''), onclick: () => { gearState.cat = k; rerender(); } }, l));
+    bar.appendChild(h('div', { class: 'spacer' }));
+    D().TIERS.forEach((T, i) => bar.appendChild(h('button', { class: 'btn small' + (gearState.tier === i ? ' pink' : ' ghost'), title: `рів. ${[1, 4, 8, 13, 18, 24, 30, 36][i]}`, onclick: () => { gearState.tier = i; rerender(); } }, `${T.name}ий`)));
+    w.appendChild(bar);
+    const grid = h('div', { class: 'items' }); w.appendChild(grid);
+    const t = gearState.tier; let ids = [];
+    if (gearState.cat === 'weapon') ids = Object.keys(D().WEAPON_TYPES).map((x) => `w_${x}_${t}_0`);
+    else if (gearState.cat === 'offhand') ids = Object.keys(D().OFFHAND).map((x) => `o_${x}_${t}_0`);
+    else ids = Object.keys(D().ARMOR_SLOTS).flatMap((sl) => (prof === 'smithing' ? ['chain', 'plate'] : ['cloth', 'leather']).map((m) => `a_${sl}_${m}_${t}_0`));
+    ids = ids.filter((id) => { const r = D().gearRecipe(id); return r && r.prof === prof; });
+    const cm = p.cheat === 'crafter' ? 0.6 : 1;
+    for (const id of ids) {
+      const r = D().gearRecipe(id); const can = GM().canCraftGear(p, id);
+      const needs = Object.entries(r.needs).map(([k, n]) => { const it = PL().item(k); const have = p.inventory[k] || 0; const nn = Math.ceil(n * cm); return `${it.icon}${have}/${nn}`; }).join(' ');
+      grid.appendChild(itemEl(id, 1, [h('button', { class: 'btn small primary', disabled: !can, onclick: async () => {
+        UI().closeAll(); const q = prof === 'smithing' ? await ISK.minigames.forge(Math.min(5, t)) : await ISK.minigames.cooking(r.lvl);
+        const res = GM().craftGear(G(), id, q);
+        if (res.fail) UI().toast(prof === 'smithing' ? '💥 Метал тріснув! Матеріали втрачено.' : '✂️ Нитка порвалась... усе пішло на ганчірки.', 'bad');
+        else { A().play(prof === 'smithing' ? 'clang' : 'magic'); UI().toast(`${prof === 'smithing' ? '⚒️ Викувано' : '🧵 Пошито'}: ${PL().item(res.id).name}!`, res.rarity >= 2 ? 'epic' : 'good', 4000); if (res.rarity >= 3) UI().cutin(res.rarity >= 4 ? 'МІФІЧНИЙ КРАФТ!' : 'ЛЕГЕНДАРНИЙ КРАФТ!', PL().item(res.id).name, res.rarity >= 4 ? '#ff4d6d' : '#ffb52e'); }
+        if (res.ups && res.ups.length) UI().toast(`${D().PROFESSIONS[prof].icon} ${D().PROFESSIONS[prof].name}: рівень ${res.ups[res.ups.length - 1]}!`, 'good'); UI().refresh();
+      } }, prof === 'smithing' ? 'Кувати' : 'Шити')], `${needs} · ${Math.round(r.gold * cm)}🪙 · рів. ${r.lvl}`));
+    }
+    if (!ids.length) grid.appendChild(h('div', { class: 'muted' }, 'Тут нічого. Обери іншу категорію.'));
+    function rerender() { const parent = w.parentNode; if (parent) { parent.innerHTML = ''; parent.appendChild(gearTab(prof)); } }
+    return w;
+  }
+  function forgeTab() { return gearTab('smithing'); }
+  function forgeTabOld() {
     const p = G().player; const w = h('div'); const lvl = p.professions.smithing.lvl;
     w.appendChild(h('div', { class: 'muted', style: { marginBottom: '8px' } }, `Ковальство: ${PL().profRank(p, 'smithing')} (рів. ${lvl}). Якість мінігри — шанс на рідкісну річ.`));
     const grid = h('div', { class: 'items' });
@@ -421,8 +475,8 @@
         h('button', { class: 'btn', disabled: p.gold < 300, onclick: async () => { if (!(await UI().confirm('Скинути всі очки характеристик за 300 🪙?'))) return; p.gold -= 300; const R = D().RACES[p.race]; const base = { str: 5, agi: 5, int: 5, vit: 5, luk: 5 }; for (const [k, v] of Object.entries(R.stats)) base[k] = Math.max(1, base[k] + v); if (p.cheat === 'luck') base.luk += 8; const spent = Object.keys(base).reduce((s, k) => s + p.stats[k] - base[k], 0); p.stats = base; p.statPoints += spent; UI().toast('Очки скинуто. Розподіли у вікні персонажа.', 'good'); UI().refresh(); } }, '🔄 Перерозподіл (300 🪙)')));
       for (const c of [p.classes.primary, p.classes.secondary].filter(Boolean)) {
         const C = D().CLASSES[c], cx = p.classXp[c];
-        if (cx.lvl >= 20 && !cx.ascended) w.appendChild(h('div', { class: 'quest main' }, h('div', { class: 't' }, `🌟 Вознесіння: ${C.ascend.name}`), h('div', { class: 'd' }, `Ритуал вознесіння: 3000🪙 і 800⭐ слави. Дає +4 до всіх характеристик і навичку «${C.ascend.skill.name}».`),
-          h('button', { class: 'btn primary', disabled: p.gold < 3000 || p.fame < 800, onclick: () => { p.gold -= 3000; cx.ascended = true; A().play('win'); UI().closeAll(); UI().cutin(C.ascend.name.toUpperCase(), 'ВОЗНЕСІННЯ!', '#fff6a0'); UI().sparkle(innerWidth / 2, innerHeight / 2, 40); } }, '🌟 Вознестися')));
+        if (cx.lvl >= 30 && !cx.ascended) w.appendChild(h('div', { class: 'quest main' }, h('div', { class: 't' }, `🌟 Вознесіння: ${C.ascend.name}`), h('div', { class: 'd' }, `Ритуал вознесіння: 5000🪙 і 1200⭐ слави. Дає +6 до всіх характеристик і навичку «${C.ascend.skill.name}».`),
+          h('button', { class: 'btn primary', disabled: p.gold < 5000 || p.fame < 1200, onclick: () => { p.gold -= 5000; cx.ascended = true; A().play('win'); UI().closeAll(); UI().cutin(C.ascend.name.toUpperCase(), 'ВОЗНЕСІННЯ!', '#fff6a0'); UI().sparkle(innerWidth / 2, innerHeight / 2, 40); } }, '🌟 Вознестися')));
       }
       return w;
     } });
@@ -584,5 +638,68 @@
       h('div', { class: 'row' }, [1, 3, 7, 30].map((d) => h('button', { class: 'btn', onclick: () => { const news = GM().passTime(G(), d); UI().closeAll(); UI().showNews(news); UI().toast(`⏳ Минуло ${d} дн. Подій у світі: ${news.length}`, ''); UI().refresh(); } }, `${d} дн.`)))) });
   }
 
-  ISK.panels = { open, openService, gather, explore, talk, attackArmy, campfire, waitDays, save, load, autosave, slotInfo, itemEl, chooseClass, guild, store, cooking, settings, loadDialog, help, character, inventory, quests, realms, party, achievements, house, land, skills };
+  // ---- resource sites ----
+  async function gatherSite(bid, i) {
+    const g = G(); const B = g.world.baronies[bid]; const st = B.sites[i]; const S2 = D().RESOURCE_SITES[st.key]; const prof = S2.prof; const lvl = (g.player.professions[prof] || { lvl: 1 }).lvl;
+    const q = prof === 'fishing' ? await ISK.minigames.fishing(lvl) : prof === 'mining' ? await ISK.minigames.mining(lvl, { title: `${S2.icon} ${S2.name}`, hint: 'Клікай / ПРОБІЛ, коли кільце співпаде з золотим. Родовище багате!' }) : prof === 'lumber' ? await ISK.minigames.mining(lvl, { title: `${S2.icon} ${S2.name}`, hint: S2.verb ? 'Влуч у момент — здобич не втече!' : 'Рубай у ритм!' }) : await ISK.minigames.herbs(lvl);
+    const res = GM().gatherSite(g, bid, i, q); GM().passTime(g, 0.25);
+    if (!res) { UI().toast('Родовище виснажене.', 'bad'); return; }
+    const txt = Object.entries(res.items).map(([id, n]) => `${PL().item(id).icon}${PL().item(id).name} ×${n}`).join(', ');
+    UI().toast(`${S2.icon} ${S2.name}: ${txt || 'нічого'}`, 'good', 4600);
+    if (res.ups.length) UI().toast(`${D().PROFESSIONS[prof].icon} ${D().PROFESSIONS[prof].name}: рівень ${res.ups[res.ups.length - 1]}!`, 'epic');
+    UI().refresh();
+  }
+  // ---- NPC heroes ----
+  const heroBy = (id) => (G().P.heroes || []).find((x) => x.id === id);
+  function heroTalk(id) {
+    const hh = heroBy(id); if (!hh) return;
+    ISK.voice.say(hh.name, ISK.heroes.line(hh), hh.female ? 'f' : 'm');
+    UI().alert(`${hh.icon} ${hh.name}`, `«${ISK.heroes.line(hh)}»\n\nРівень ${hh.lvl} · ${D().CLASSES[hh.cls].name} · зачищено підземель: ${hh.cleared} · переможено ворогів: ${hh.kills}${hh.rel ? `\nСтавлення до тебе: ${'❤️'.repeat(Math.min(5, hh.rel))}` : ''}`, hh.icon);
+  }
+  async function heroSpar(id) {
+    const hh = heroBy(id); if (!hh) return;
+    if (!(await UI().confirm(`Дружній спаринг з ${hh.name} (рів. ${hh.lvl})? Смерті не буде — тільки сором.`, 'В бій!', 'Ні'))) return;
+    const e = ISK.combat.makeEnemy('soldier', hh.lvl, { elite: true, name: hh.name, icon: hh.icon }); e.drops = []; e.gold = 0;
+    const r = await ISK.combatUI.run([e], { biome: UI().biomeAt(G().player.location), noFlee: true, noDeath: true, xpMul: 0.5 });
+    if (r === 'win') { hh.rel = (hh.rel || 0) + 1; PL().addFame(G().player, 5 + hh.lvl); UI().toast(`🏅 ${hh.name}: «Непогано! Ти справжній герой.» +${5 + hh.lvl}⭐ · повага ↑`, 'epic', 5000); }
+    else UI().toast(`${hh.name}: «Тренуйся ще. Я почекаю... в таверні.»`, 'bad');
+    UI().refresh();
+  }
+  function heroRecruit(id) {
+    const e = GM().recruitHero(G(), id);
+    if (e) UI().toast(e, 'bad'); else { A().play('win'); UI().cutin('ГЕРОЙ У ЗАГОНІ!', heroBy(id).name, '#ffd36e'); UI().refresh(); }
+  }
+  // ---- cheat menu (testing) ----
+  function cheats() {
+    const g = G(); if (!g) return; const p = g.player;
+    const btn = (label, fn) => h('button', { class: 'btn small', onclick: () => { fn(); A().play('magic'); UI().toast('🧪 ' + label, 'epic', 2000); UI().refresh(); } }, label);
+    const giveAll = (filter, n) => { for (const [k, m] of Object.entries(D().MATERIALS)) if (filter(m)) PL().addItem(p, k, n); };
+    UI().modal({ title: 'Чіт-меню розробника', icon: '🧪', size: 'mid', sub: 'Тільки для тестування! Богиня нічого не бачила.', body: () => h('div', { class: 'col' },
+      h('h4', null, 'Персонаж'),
+      h('div', { class: 'row', style: { flexWrap: 'wrap', gap: '6px' } },
+        btn('+10 000 🪙', () => { p.gold += 10000; }), btn('+1 рівень', () => PL().addXp(p, PL().xpNeed(p.level))), btn('+10 рівнів', () => { for (let i = 0; i < 10; i++) PL().addXp(p, PL().xpNeed(p.level)); }),
+        btn('+5 рівнів класу', () => { if (!p.classes.primary) { p.classes.primary = 'swordsman'; p.classXp.swordsman = { lvl: 1, xp: 0, sp: 0 }; } for (let i = 0; i < 5; i++) PL().addClassXp(p, PL().classXpNeed(p.classXp[p.classes.primary].lvl)); }),
+        btn('+1000 ⭐ слави', () => PL().addFame(p, 1000)), btn('Повне зцілення', () => { p.hp = PL().maxHp(p); p.mp = PL().maxMp(p); }),
+        btn(p.flags.godMode ? 'Безсмертя: ВИМК' : 'Безсмертя: УВІМК', () => { p.flags.godMode = !p.flags.godMode; }),
+        btn('Ранг гільдії +1', () => { p.guild.registered = true; p.guild.rank = Math.min(D().GUILD_RANKS.length - 1, p.guild.rank + 1); p.guild.points = D().GUILD_RANKS[p.guild.rank].pts; }),
+        btn('Соц. титул +1', () => { p.social = Math.min(D().SOCIAL.length - 1, p.social + 1); }), btn('Професії +5', () => { for (const k of Object.keys(p.professions)) p.professions[k].lvl = Math.min(30, p.professions[k].lvl + 5); })),
+      h('h4', null, 'Предмети'),
+      h('div', { class: 'row', style: { flexWrap: 'wrap', gap: '6px' } },
+        btn('Усі руди ×20', () => giveAll((m) => m.kind === 'ore', 20)), btn('Трави ×20', () => giveAll((m) => m.kind === 'herb', 20)), btn('Будматеріали ×30', () => giveAll((m) => m.kind === 'build', 30)),
+        btn('Трофеї монстрів ×10', () => giveAll((m) => m.kind === 'drop', 10)), btn('Легендарка', () => PL().addItem(p, D().randomGear(p.level, 3))), btn('Міфічна річ', () => PL().addItem(p, D().randomGear(p.level, 4))),
+        btn('Усі унікальні', () => D().UNIQUES.forEach((u) => PL().addItem(p, u.id))), btn('Зілля ×10', () => { for (const k of ['potion_l', 'ether_l', 'phoenix', 'scroll_haste', 'elixir_str']) PL().addItem(p, k, 10); }),
+        btn('Драконяче яйце', () => PL().addItem(p, 'dragon_egg')), btn('Корабель і грифон', () => { p.ship = true; if (!p.mounts.includes('griffin')) p.mounts.push('griffin'); p.mount = 'griffin'; })),
+      h('h4', null, 'Світ'),
+      h('div', { class: 'row', style: { flexWrap: 'wrap', gap: '6px' } },
+        btn('Відкрити всю мапу', () => { for (const B of g.world.baronies) g.discovered['b:' + B.id] = 1; for (const Dg of g.world.dungeons) g.discovered['d:' + Dg.id] = 1; p.flags.relicsRevealed = true; }),
+        btn('+30 днів', () => UI().showNews(GM().passTime(g, 30))), btn('+1 рік', () => UI().showNews(GM().passTime(g, 360))),
+        btn('Орда поруч', () => { const B = GM().here(g).B || g.world.baronies[0]; ISK.politics.spawnDemonArmy(g.world, g.P, Math.floor(g.time), null, { size: 3000, node: B.id, name: 'Тестова орда', horde: true, icon: '🧟' }); }),
+        btn('Війна (випадкова)', () => { const al = g.P.realms.filter((r) => !r.dead && !ISK.politics.isDemon(g.P, r.id)); const a = al[Math.floor(Math.random() * al.length)], b = al[Math.floor(Math.random() * al.length)]; if (a !== b) ISK.politics.declareWar(g.world, g.P, a.id, b.id, Math.floor(g.time), new ISK.RNG(Date.now() >>> 0), 'Чіт-меню сказало'); }),
+        btn('3 Осколки Печаті', () => { p.relics = 3; p.flags.relicsRevealed = true; }),
+        btn('Телепорт у столицю', () => { const cap = g.world.realms[g.world.empireId].capital; p.location = 'b:' + cap; GM().discoverAround(g); ISK.render.centerOn(p.location); }),
+        btn('Новий герой', () => { const hh = ISK.heroes.makeHero(g.world, g.P, new ISK.RNG(Date.now() >>> 0)); hh.node = +p.location.slice(2); g.P.heroes.push(hh); })),
+      h('div', { class: 'muted', style: { fontSize: '12px' } }, 'Порада: пробіл — пауза/хід часу, +/− — швидкість часу, F — до героя.')) });
+  }
+
+  ISK.panels = { gatherSite, heroTalk, heroSpar, heroRecruit, cheats, gearTab, open, openService, gather, explore, talk, attackArmy, campfire, waitDays, save, load, autosave, slotInfo, itemEl, chooseClass, guild, store, cooking, settings, loadDialog, help, character, inventory, quests, realms, party, achievements, house, land, skills };
 })();

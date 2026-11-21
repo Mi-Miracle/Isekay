@@ -3,6 +3,8 @@ const { app, BrowserWindow, ipcMain, Menu, net, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { spawn } = require('child_process');
+let tts = null;
+try { tts = require('./tts.js'); } catch (e) { tts = null; }
 
 const REPO = 'Mi-Miracle/Isekay';
 const selftest = process.argv.includes('--selftest');
@@ -48,7 +50,7 @@ ipcMain.handle('dyvo:install-update', async (_e, info) => {
   if (!portableDir && autoUpdater) {
     autoUpdater.autoDownload = false;
     autoUpdater.on('download-progress', (p) => send('dyvo:update-progress', Math.round(p.percent)));
-    autoUpdater.on('update-downloaded', () => { send('dyvo:update-progress', 100); setTimeout(() => autoUpdater.quitAndInstall(false, true), 800); });
+    autoUpdater.on('update-downloaded', () => { send('dyvo:update-progress', 100); setTimeout(() => autoUpdater.quitAndInstall(true, true), 800); });
     autoUpdater.on('error', (err) => send('dyvo:update-error', String(err)));
     await autoUpdater.checkForUpdates(); await autoUpdater.downloadUpdate(); return true;
   }
@@ -63,8 +65,30 @@ ipcMain.handle('dyvo:install-update', async (_e, info) => {
   await new Promise((r) => out.end(r));
   fs.renameSync(target + '.part', target);
   send('dyvo:update-progress', 100);
-  setTimeout(() => { spawn(target, [], { detached: true, stdio: 'ignore' }).unref(); app.quit(); }, 900);
+  // replace the old portable exe after we quit, then start the new one
+  const oldExe = process.env.PORTABLE_EXECUTABLE_FILE;
+  const script = path.join(app.getPath('temp'), 'dyvo-update.cmd');
+  const lines = ['@echo off', 'set n=0', ':loop'];
+  if (oldExe && path.resolve(oldExe) !== path.resolve(target)) lines.push(`del /f /q "${oldExe}" >nul 2>&1`, `if not exist "${oldExe}" goto run`, 'set /a n=n+1', 'if %n% geq 40 goto run', 'ping -n 2 127.0.0.1 >nul', 'goto loop');
+  lines.push(':run', `start "" "${target}"`, '(goto) 2>nul & del "%~f0"');
+  try { fs.writeFileSync(script, lines.join('\r\n')); } catch (e) { /* ignore */ }
+  setTimeout(() => {
+    try { spawn('cmd.exe', ['/c', script], { detached: true, stdio: 'ignore', windowsHide: true }).unref(); } catch (e) { spawn(target, [], { detached: true, stdio: 'ignore' }).unref(); }
+    app.quit();
+  }, 900);
   return true;
+});
+// offline neural voice-over (Piper, downloaded on request)
+let voiceEngine = null;
+const voice = () => voiceEngine || (voiceEngine = tts ? tts.create(app.getPath('userData'), (u, o) => net.fetch(u, o)) : null);
+ipcMain.handle('dyvo:voice-status', () => ({ available: !!tts && process.platform === 'win32', installed: !!(voice() && voice().installed()) }));
+ipcMain.handle('dyvo:voice-install', async () => {
+  if (!voice()) return { error: 'no engine' };
+  try { await voice().install((pct) => send('dyvo:voice-progress', Math.round(pct))); return { ok: true }; } catch (e) { return { error: String(e.message || e) }; }
+});
+ipcMain.handle('dyvo:tts', async (_e, req) => {
+  if (!voice() || !voice().installed()) return { error: 'not installed' };
+  try { return { audio: await voice().speak(req || {}) }; } catch (e) { return { error: String(e.message || e) }; }
 });
 ipcMain.handle('dyvo:open', (_e, url) => shell.openExternal(url));
 ipcMain.handle('isekay:quit', () => app.quit());

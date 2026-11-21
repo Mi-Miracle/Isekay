@@ -42,6 +42,22 @@
     return `${rulerTitle(world, realm)} ${r.name}${roman} ${r.epithet}`;
   }
 
+  // race profiles for the kingdom AI: army strength, manpower, economy, army names & unit mix (inf/arc/cav/mag)
+  const RACE_AI = {
+    human: { atk: 1, man: 1, eco: 1.05, army: 'армія', mix: [50, 20, 20, 10] },
+    elf: { atk: 1.08, man: 0.75, eco: 1, army: 'Варта Листя', mix: [20, 55, 10, 15] },
+    darkelf: { atk: 1.12, man: 0.8, eco: 0.95, army: 'Тіньовий легіон', mix: [35, 30, 10, 25] },
+    dwarf: { atk: 1.15, man: 0.85, eco: 1.1, army: 'Хірд', mix: [70, 25, 0, 5] },
+    orc: { atk: 1.25, man: 1.1, eco: 0.75, army: 'Орда', mix: [60, 10, 25, 5] },
+    goblin: { atk: 0.75, man: 1.7, eco: 0.85, army: 'Зграя', mix: [60, 30, 5, 5] },
+    beast: { atk: 1.1, man: 1, eco: 0.9, army: 'Прайд', mix: [40, 20, 35, 5] },
+    halfling: { atk: 0.8, man: 0.9, eco: 1.35, army: 'Ополчення', mix: [40, 50, 5, 5] },
+    dragonkin: { atk: 1.35, man: 0.65, eco: 0.95, army: 'Луска', mix: [45, 10, 20, 25] },
+    demon: { atk: 1.3, man: 1, eco: 1, army: 'Легіон', mix: [55, 10, 15, 20] },
+  };
+  const raceAI = (world, rid) => RACE_AI[(world.realms[rid] && world.realms[rid].raceKey) || 'human'] || RACE_AI.human;
+  const ordinal = (i) => `${i}-${i === 3 ? 'тя' : 'ша'}`;
+
   function initPolitics(world) {
     const rng = new RNG(world.seed * 7 + 13);
     const P = { realms: [], wars: [], armies: [], chronicle: [], nextId: 1, day: 0, demonId: world.demonId, empireId: world.empireId, nextInvasion: 70 + rng.int(0, 30), nextHorde: 35 + rng.int(0, 25), demonKingDead: false };
@@ -55,8 +71,11 @@
         stability: 60, exhaustion: 0, relations: {}, alliances: [], truces: {}, dead: false, playerRep: 0, wins: 0, losses: 0, liege: R.liege,
       };
       if (R.isDemon) { st.ruler = { name: 'Малдраґор', female: false, epithet: 'Жахливий (і трохи сонний)', age: 666, traits: ['aggressive', 'ambitious'], since: 0, number: 1 }; st.manpower = 6000; st.gold = 99999; }
+      st.manpower = Math.round(st.manpower * raceAI(world, R.id).man); st.maxManpower = Math.round(st.maxManpower * raceAI(world, R.id).man);
+      st.focus = 'build'; st.trade = []; st.built = 0;
       P.realms.push(st);
     }
+    P.battles = [];
     // initial relations: cultural & geographic
     const borders = computeBorders(world);
     for (const a of P.realms) {
@@ -67,6 +86,9 @@
         if (world.realms[a.id].isEmpire || world.realms[b.id].isEmpire) v -= 10;
         if (world.realms[a.id].liege === b.id || world.realms[b.id].liege === a.id) v = 35 + rng.int(0, 25);
         if (world.realms[a.id].liege >= 0 && world.realms[a.id].liege === world.realms[b.id].liege) v = Math.max(v, 10);
+        if (world.realms[a.id].raceKey === world.realms[b.id].raceKey && world.realms[a.id].raceKey !== 'human') v += 15;
+        if ((world.realms[a.id].raceKey === 'elf' && world.realms[b.id].raceKey === 'darkelf') || (world.realms[a.id].raceKey === 'darkelf' && world.realms[b.id].raceKey === 'elf')) v -= 30;
+        if ((world.realms[a.id].raceKey === 'dwarf' && world.realms[b.id].raceKey === 'goblin') || (world.realms[a.id].raceKey === 'goblin' && world.realms[b.id].raceKey === 'dwarf')) v -= 25;
         if (world.realms[a.id].isDemon || world.realms[b.id].isDemon) v = -100;
         a.relations[b.id] = v;
       }
@@ -81,6 +103,7 @@
     for (const a of P.realms) for (const b of P.realms) if (a.id < b.id && a.relations[b.id] > 15 && !bloc(world, a.id).has(b.id) && !world.realms[a.id].isDemon && !world.realms[b.id].isDemon) pairs.push([a.id, b.id]);
     rng.shuffle(pairs);
     for (const [a, b] of pairs.slice(0, 2)) makeAlliance(world, P, a, b, 0, true);
+    if (ISK.heroes) ISK.heroes.init(world, P, rng);
     log(P, 0, `Почалася Ера Сміливців. У Дивосвіті ${world.realms.length - 1} держав, Імперія з ${world.realms.filter((r) => r.liege >= 0).length} васальними королівствами — і Темне царство за морем.`, 'info');
     return P;
   }
@@ -233,7 +256,7 @@
   function mobilize(world, P, rid, day, rng) {
     const st = P.realms[rid];
     if (isDemon(P, rid)) return;
-    if (P.armies.some((a) => a.realm === rid)) return;
+    if (P.armies.some((a) => a.realm === rid && !a.patrol)) return;
     const total = Math.floor(st.manpower * 0.85);
     if (total < 300) return;
     st.manpower -= total;
@@ -245,18 +268,19 @@
     for (let i = 0; i < n; i++) {
       const at = (front.length ? rng.pick(front) : world.baronies[world.realms[rid].capital]) || own[0];
       if (!at) continue;
-      P.armies.push({ id: P.nextId++, realm: rid, size: Math.floor(total / n), node: at.id, path: [], prog: 0, target: -1, siege: 0, morale: 1, name: `${i + 1}-ша армія ${world.realms[rid].name}` });
+      P.armies.push({ id: P.nextId++, realm: rid, size: Math.floor(total / n), node: at.id, path: [], prog: 0, target: -1, siege: 0, morale: 1, mix: raceAI(world, rid).mix, name: `${ordinal(i + 1)} ${raceAI(world, rid).army} ${world.realms[rid].name}` });
     }
   }
 
-  function demobilize(world, P, rid) {
+  function demobilize(world, P, rid, keepPatrol) {
     const st = P.realms[rid];
-    for (const a of P.armies.filter((x) => x.realm === rid)) st.manpower += a.size;
-    P.armies = P.armies.filter((x) => x.realm !== rid);
+    for (const a of P.armies.filter((x) => x.realm === rid && !(keepPatrol && x.patrol))) st.manpower += a.size;
+    P.armies = P.armies.filter((x) => x.realm !== rid || (keepPatrol && x.patrol));
     st.manpower = Math.min(st.manpower, st.maxManpower);
   }
 
   function chooseTarget(world, P, army, rng) {
+    if (army.patrol && !warsOf(P, army.realm).length) return patrolTarget(world, P, army, rng);
     const enemies = enemiesOf(P, army.realm);
     const friends = new Set([army.realm]);
     for (const w of warsOf(P, army.realm)) for (const r of (w.attackers.includes(army.realm) ? w.attackers : w.defenders)) friends.add(r);
@@ -284,6 +308,24 @@
     return best;
   }
 
+  // peacetime patrol: hunt hostile armies inside own lands, otherwise march between own towns
+  function patrolTarget(world, P, army, rng) {
+    const here = world.baronies[army.node]; const enemies = enemiesOf(P, army.realm);
+    let best = -1, bd = Infinity;
+    for (const e of P.armies) {
+      if (!enemies.has(e.realm)) continue;
+      const B = world.baronies[e.node]; const ctrl = B.occ >= 0 ? B.occ : B.owner;
+      const d = Math.hypot(B.x - here.x, B.y - here.y);
+      if ((B.owner === army.realm || ctrl === army.realm || d < 30) && army.size > e.size * 0.9 && d < bd) { bd = d; best = B.id; }
+    }
+    if (best >= 0) return best;
+    if (rng.chance(0.35)) {
+      const own = world.baronies.filter((b) => b.owner === army.realm && b.occ < 0 && b.id !== army.node && Math.hypot(b.x - here.x, b.y - here.y) < 45);
+      if (own.length) return rng.pick(own).id;
+    }
+    return -1;
+  }
+
   function resolveBattle(world, P, day, rng, armiesHere, node) {
     // group by side using war membership of first army
     const a0 = armiesHere[0];
@@ -296,7 +338,7 @@
       const ruler = P.realms[x.realm].ruler;
       const genius = 1 + traitSum(ruler, 'war');
       const home = (B.occ >= 0 ? B.occ : B.owner) === x.realm ? 1 + B.fort * 0.06 : 1;
-      return s + x.size * x.morale * genius * home * (x.bonus || 1);
+      return s + x.size * x.morale * genius * home * (x.bonus || 1) * raceAI(world, x.realm).atk * (x.heroBonus || 1);
     }, 0);
     const sA = str(sideA) * rng.float(0.75, 1.25), sB = str(sideB) * rng.float(0.75, 1.25);
     const winA = sA >= sB;
@@ -316,6 +358,8 @@
     }
     P.realms[wRealm].wins++; P.realms[lRealm].losses++;
     const big = lossL + lossW > 6000;
+    (P.battles = P.battles || []).push({ node, day, x: B.x, y: B.y, w: wRealm, l: lRealm, loss: lossW + lossL });
+    if (P.battles.length > 40) P.battles.shift();
     log(P, day, `${big ? '🩸 Велика битва' : '⚔️ Битва'} біля ${B.name}. Перемога: ${rname(world, wRealm)} (втрати ${lossW.toLocaleString('uk')}). Поразка: ${rname(world, lRealm)} (втрати ${lossL.toLocaleString('uk')}).`, 'battle', [wRealm, lRealm]);
     P.armies = P.armies.filter((x) => x.size >= 150 || (P.realms[x.realm].manpower += x.size, false));
   }
@@ -377,7 +421,7 @@
     const all = [...war.attackers, ...war.defenders];
     for (const a of war.attackers) for (const d of war.defenders) { P.realms[a].truces[d] = day + 300; P.realms[d].truces[a] = day + 300; }
     for (const r of all) {
-      if (!warsOf(P, r).length && !demonThreat(world, P, r)) demobilize(world, P, r);
+      if (!warsOf(P, r).length && !demonThreat(world, P, r)) demobilize(world, P, r, true);
       P.realms[r].exhaustion = Math.max(0, P.realms[r].exhaustion - 20);
     }
     if (outcome === 'white') {
@@ -392,7 +436,7 @@
       if (st.dead) continue;
       if (!ownedBaronies(world, st.id).length) {
         st.dead = true;
-        demobilize(world, P, st.id); P.armies = P.armies.filter((a) => a.realm !== st.id);
+        demobilize(world, P, st.id); P.armies = P.armies.filter((a) => a.realm !== st.id); P.heroes && P.heroes.forEach((h) => { if (h.realm === st.id) h.realm = -1; });
         for (const o of P.realms) o.alliances = o.alliances.filter((x) => x !== st.id);
         log(P, day, `☠️ ${rname(world, st.id)} припиняє своє існування. Історики плачуть, картографи радіють.`, 'war', [st.id]);
       }
@@ -519,6 +563,7 @@
       const next = army.path[0];
       const edge = adj[army.node].find((e) => e.to === next);
       const days = Math.max(1, Math.round((edge ? edge.cost : 8) / 5));
+      army.legDays = days;
       army.prog += 1 / days;
       if (army.prog >= 1) {
         army.node = next; army.path.shift(); army.prog = 0;
@@ -538,44 +583,69 @@
     }
   }
 
+  // Kingdom AI v3: economy focus (будівництво / торгівля / армія / війна), trade pacts, development, forts, standing patrols
   function economyTick(world, P, day, rng) {
-    const income = new Array(P.realms.length).fill(0);
+    const income = new Array(P.realms.length).fill(0), devSum = new Array(P.realms.length).fill(0), own = P.realms.map(() => []);
     for (const B of world.baronies) {
       if (B.owner < 0) continue;
       const ctrl = B.occ >= 0 ? B.occ : B.owner;
-      const v = B.dev * 0.55 + (B.type === 'capital' ? 4 : 0) + (B.type === 'port' ? 1 : 0);
+      const v = B.dev * 0.55 + (B.type === 'capital' ? 4 : 0) + (B.type === 'port' ? 1.2 : 0) + (B.type === 'mine' ? 0.8 : 0) + (B.sites ? B.sites.length * 0.3 : 0);
       income[ctrl] += v * (B.occ >= 0 ? 0.5 : 1);
+      devSum[B.owner] += B.dev; if (B.occ < 0) own[B.owner].push(B);
     }
     for (const st of P.realms) {
       if (st.dead || isDemon(P, st.id)) continue;
-      const eco = 1 + traitSum(st.ruler, 'eco') + (st.stability - 50) / 250;
+      const R = world.realms[st.id], RA = raceAI(world, st.id);
+      st.trade = st.trade || []; st.focus = st.focus || 'build';
+      const tradeMul = 1 + st.trade.filter((t) => !P.realms[t].dead && !atWar(P, st.id, t)).length * 0.04;
+      const eco = (1 + traitSum(st.ruler, 'eco') + (st.stability - 50) / 250) * RA.eco * tradeMul;
       const armies = P.armies.filter((a) => a.realm === st.id);
-      const upkeep = armies.reduce((s, a) => s + a.size * 0.004, 0) + (st.ruler.traits.includes('glutton') ? 2 : 0);
+      const warArmies = armies.filter((a) => !a.patrol);
+      const upkeep = armies.reduce((s, a) => s + a.size * (a.patrol ? 0.003 : 0.004), 0) + (st.ruler.traits.includes('glutton') ? 2 : 0);
+      st.income = Math.round((income[st.id] * eco - upkeep) * 10) / 10;
       st.gold += income[st.id] * eco - upkeep;
-      const devSum = world.baronies.reduce((s, b) => s + (b.owner === st.id ? b.dev : 0), 0);
-      st.maxManpower = Math.round(devSum * 240 * (world.realms[st.id].isEmpire ? 1.25 : 1));
-      if (!armies.length) st.manpower = Math.min(st.maxManpower, st.manpower + st.maxManpower * 0.004);
+      st.maxManpower = Math.round(devSum[st.id] * 240 * (R.isEmpire ? 1.25 : 1) * RA.man * (1 + (st.levy || 0) * 0.08));
+      if (!warArmies.length) st.manpower = Math.min(st.maxManpower, st.manpower + st.maxManpower * 0.004);
       else {
         st.exhaustion = Math.min(100, st.exhaustion + 0.25 + (st.gold < 0 ? 0.5 : 0));
-        // reinforce armies
-        if (st.manpower > 200 && st.gold > 50) {
-          const a = rng.pick(armies); const add = Math.min(st.manpower, 150); a.size += add; st.manpower -= add; st.gold -= add * 0.1;
-        }
+        if (st.manpower > 200 && st.gold > 50) { const a = rng.pick(warArmies); const add = Math.min(st.manpower, 150); a.size += add; st.manpower -= add; st.gold -= add * 0.1; }
       }
-      // peacetime spending: development, forts, feasts
-      if (!armies.length && st.gold > 1500 && rng.chance(0.05)) {
-        const own = world.baronies.filter((b) => b.owner === st.id && b.occ < 0);
-        const B = rng.pick(own);
-        if (B) {
-          const cost = 300 + B.dev * 160;
-          if (B.dev < 10 && st.gold > cost) { st.gold -= cost; B.dev++; }
-          else if (B.fort < 6 && st.gold > cost) { st.gold -= cost; B.fort++; }
+      // monthly strategic decision
+      if ((day + st.id * 3) % 30 === 0) {
+        const wars = warsOf(P, st.id).length; const threat = demonThreat(world, P, st.id);
+        const hostileNb = P.realms.filter((o) => !o.dead && o.id !== st.id && relation(P, st.id, o.id) < -40).length;
+        const prev = st.focus;
+        st.focus = wars || threat ? 'war' : st.gold < 300 ? 'trade' : hostileNb >= 2 || st.ruler.traits.includes('aggressive') ? 'army' : rng.chance(0.5) ? 'build' : 'trade';
+        if (st.focus !== prev && rng.chance(0.25) && st.focus !== 'war') log(P, day, `🏛️ ${rulerFull(world, st)} змінює курс: ${{ build: 'будівництво та розвиток міст', trade: 'торгівля та караванні шляхи', army: 'зміцнення війська' }[st.focus]}.`, 'economy', [st.id]);
+        // trade pacts with friendly neighbours
+        if (st.focus === 'trade' && st.trade.length < 4) {
+          const cand = P.realms.filter((o) => !o.dead && o.id !== st.id && !isDemon(P, o.id) && !st.trade.includes(o.id) && relation(P, st.id, o.id) > 20 && !atWar(P, st.id, o.id));
+          const o = cand.length ? rng.pick(cand) : null;
+          if (o) { st.trade.push(o.id); (o.trade = o.trade || []).push(st.id); addRel(P, st.id, o.id, 8); log(P, day, `🐪 Торговельна угода: ${rname(world, st.id)} та ${rname(world, o.id)}. Каравани рушають, митники потирають руки.`, 'economy', [st.id, o.id]); }
         }
+        if (st.focus === 'army' && st.gold > 800 && (st.levy || 0) < 5) { st.gold -= 500; st.levy = (st.levy || 0) + 1; if (rng.chance(0.4)) log(P, day, `⚒️ ${rname(world, st.id)} будує казарми й кує зброю. Сусіди нервово рахують мечі.`, 'war', [st.id]); }
       }
-      if (st.gold > 3000) st.gold -= (st.gold - 3000) * 0.01; // court, feasts, embezzlement
+      // development / fortification spending
+      const mine = own[st.id];
+      const spendChance = st.focus === 'build' ? 0.16 : st.focus === 'trade' ? 0.08 : st.focus === 'army' ? 0.05 : 0.02;
+      if (mine.length && st.gold > 600 && rng.chance(spendChance)) {
+        const border = mine.filter((B) => B.adj.some((n) => world.baronies[n].owner !== st.id));
+        const B = st.focus === 'army' && border.length ? rng.pick(border) : mine.slice().sort((x, y) => (x.dev - (x.type === 'capital' ? 3 : x.type === 'city' ? 2 : 0)) - (y.dev - (y.type === 'capital' ? 3 : y.type === 'city' ? 2 : 0)))[rng.int(0, Math.min(3, mine.length - 1))];
+        const cost = 300 + B.dev * 160;
+        if (st.focus !== 'army' && B.dev < 10 && st.gold > cost) { st.gold -= cost; B.dev++; st.built = (st.built || 0) + 1; if (B.dev >= 9 && B.type === 'town' && rng.chance(0.5)) { B.type = 'city'; log(P, day, `🏙️ ${B.name} (${R.name}) розрослося до справжнього міста! Ціни на житло — теж.`, 'economy', [st.id]); } }
+        else if (B.fort < 6 && st.gold > cost) { st.gold -= cost; B.fort++; }
+      }
+      // standing patrol army in peacetime (walks the roads, hunts hordes)
+      if (!armies.length && mine.length >= 5 && st.manpower > 900 && (day + st.id) % 5 === 0) {
+        const size = Math.round(Math.min(st.manpower * (st.focus === 'army' ? 0.4 : 0.25), 6000));
+        st.manpower -= size;
+        const cap = world.baronies[R.capital]; const at = cap && cap.owner === st.id && cap.occ < 0 ? cap : rng.pick(mine);
+        P.armies.push({ id: P.nextId++, realm: st.id, size, node: at.id, path: [], prog: 0, target: -1, siege: 0, morale: 1, patrol: true, mix: RA.mix, name: `Вартова ${RA.army === 'армія' ? 'армія' : RA.army} ${R.name}` });
+      }
+      if (st.gold > 3000) st.gold -= (st.gold - 3000) * 0.01;
       if (st.gold < -300) { st.stability = Math.max(0, st.stability - 0.3); }
       else st.stability += (60 - st.stability) * 0.004;
-      if (!armies.length) st.exhaustion = Math.max(0, st.exhaustion - 0.3);
+      if (!warArmies.length) st.exhaustion = Math.max(0, st.exhaustion - 0.3);
     }
   }
 
@@ -698,6 +768,7 @@
     randomEvents(world, P, day, rng);
     separatism(world, P, day, rng);
     demonAI(world, P, day, rng);
+    if (ISK.heroes) ISK.heroes.tick(world, P, day, rng);
   }
 
   // ---------------- Darkness: demon invasions & monster hordes ----------------
@@ -755,9 +826,9 @@
     // kingdoms respond to threats
     if (day % 3 === 0) for (const st of P.realms) {
       if (st.dead || isDemon(P, st.id)) continue;
-      const armies = P.armies.some((a) => a.realm === st.id);
-      if (!armies && demonThreat(world, P, st.id)) { mobilize(world, P, st.id, day, rng); if (P.armies.some((a) => a.realm === st.id)) log(P, day, `🛡️ ${rname(world, st.id)} збирає військо проти Темряви!`, 'war', [st.id]); }
-      else if (armies && !warsOf(P, st.id).length && !demonThreat(world, P, st.id) && rng.chance(0.1)) demobilize(world, P, st.id);
+      const armies = P.armies.some((a) => a.realm === st.id && !a.patrol);
+      if (!armies && demonThreat(world, P, st.id)) { mobilize(world, P, st.id, day, rng); if (P.armies.some((a) => a.realm === st.id && !a.patrol)) log(P, day, `🛡️ ${rname(world, st.id)} збирає військо проти Темряви!`, 'war', [st.id]); }
+      else if (armies && !warsOf(P, st.id).length && !demonThreat(world, P, st.id) && rng.chance(0.1)) demobilize(world, P, st.id, true);
     }
   }
 
@@ -792,6 +863,6 @@
 
   ISK.politics = {
     initPolitics, tick, declareWar, makeAlliance, breakAlliance, atWar, warsOf, enemiesOf, relation, addRel,
-    rulerFull, rulerTitle, realmPower, ownedBaronies, computeBorders, bfsPath, log, TRAITS, serialize, restore, bloc, isDemon, demonThreat, spawnDemonArmy,
+    rulerFull, rulerTitle, realmPower, ownedBaronies, computeBorders, bfsPath, log, TRAITS, serialize, restore, bloc, isDemon, demonThreat, spawnDemonArmy, RACE_AI, raceAI, roadAdj,
   };
 })();

@@ -27,6 +27,8 @@
     if (p.cheat === 'luck') p.stats.luk += 8;
     if (p.cheat === 'rich') p.gold = 1500;
     if (p.cheat === 'slime') { p.pets.push({ key: 'slime', name: 'Слизько', lvl: 1, xp: 0 }); p.activePet = 0; }
+    if (p.cheat === 'summoner') { p.pets.push({ key: 'talksword', name: 'Бззз', lvl: 1, xp: 0 }); p.activePet = 0; }
+    if (p.cheat === 'dragonblood') p.inventory.dragon_egg = 1;
     p.hp = maxHp(p); p.mp = maxMp(p);
     return p;
   }
@@ -46,7 +48,8 @@
       const C = D().CLASSES[cls]; const cx = p.classXp[cls] || { lvl: 1 };
       for (const k in C.bonus) s[k] += Math.floor(C.bonus[k] * (1 + cx.lvl / 6));
       if (cx.adv) { const A = C.adv.find((a) => a.id === cx.adv); if (A) for (const k in A.bonus) s[k] += A.bonus[k]; }
-      if (cx.ascended) for (const k in s) s[k] += 4;
+      if (cx.adv && cx.master) { const A = C.adv.find((a) => a.id === cx.adv); if (A && A.master) for (const k in A.master.bonus) s[k] += A.master.bonus[k]; }
+      if (cx.ascended) for (const k in s) s[k] += 6;
     }
     if (p.food && p.food.buff === 'all') for (const k in s) s[k] = Math.round(s[k] * (1 + p.food.amt));
     return s;
@@ -67,7 +70,7 @@
     const mainStat = wt ? s[wt.stat] : s.str;
     let atk = w ? w.atk + mainStat * 2.2 : 2 + s.str * 1.5;
     let matk = (w && w.matk ? w.atk * 1.2 + s.int * 2.6 : s.int * 2.0) + (off && off.matkB ? off.matkB : 0);
-    const prefers = [p.classes.primary, p.classes.secondary].filter(Boolean).some((c) => D().CLASSES[c].weapon === (w && w.wtype));
+    const prefers = [p.classes.primary, p.classes.secondary].filter(Boolean).some((c) => w && (D().CLASSES[c].weapon === w.wtype || (D().CLASSES[c].alt || []).includes(w.wtype)));
     if (prefers) { atk *= 1.15; matk *= 1.15; }
     if (p.race === 'orc') atk *= 1.1;
     if (p.race === 'elf') matk *= 1.15;
@@ -76,8 +79,9 @@
     for (const it of eqItems(p)) { def += it.def || 0; dodge += it.dodge || 0; crit += it.crit || 0; }
     if (p.food && p.food.buff === 'crit') crit += p.food.amt;
     if (p.food && p.food.buff === 'def') def *= 1 + p.food.amt;
+    if (p.cheat === 'tank') def *= 1.3;
     if (p.race === 'beast') dodge += 10; if (p.race === 'darkelf') crit += 8; if (p.cheat === 'ninja') dodge += 15;
-    const blunt = w && ['mace', 'knuckles'].includes(w.wtype);
+    const blunt = w && ['mace', 'knuckles', 'warhammer'].includes(w.wtype);
     return { s, atk: Math.round(atk), matk: Math.round(matk), def: Math.round(def), crit: Math.min(75, crit), dodge: Math.min(55, dodge), blunt, maxHp: maxHp(p), maxMp: maxMp(p), weapon: w, speed: 10 + s.agi * 0.6 };
   }
 
@@ -92,7 +96,7 @@
   }
   function availableSkills(p, cls) {
     const cx = p.classXp[cls]; if (!cx) return [];
-    return D().allSkillsOf(cls).filter((s) => (s.adv ? s.adv === cx.adv : s.ascend ? cx.ascended : true) && s.lvl <= cx.lvl);
+    return D().allSkillsOf(cls).filter((s) => (s.adv ? s.adv === cx.adv && (!s.master || cx.master) : s.ascend ? cx.ascended : true) && s.lvl <= cx.lvl);
   }
   function knownSkills(p) {
     const out = [];
@@ -111,12 +115,13 @@
     for (const cls of [p.classes.primary, p.classes.secondary]) {
       if (!cls) continue;
       const c = (p.classXp[cls] = p.classXp[cls] || { lvl: 1, xp: 0, sp: 0 });
-      if (c.lvl >= 30) continue;
-      c.xp += Math.round(amount * (cls === p.classes.secondary ? 0.7 : 1));
-      while (c.lvl < 30 && c.xp >= classXpNeed(c.lvl)) {
+      const CAP = D().CLASS_CAP || 30;
+      if (c.lvl >= CAP) continue;
+      c.xp += Math.round(amount * (cls === p.classes.secondary ? 0.7 : 1) * (p.cheat === 'nerd' ? 1.3 : 1));
+      while (c.lvl < CAP && c.xp >= classXpNeed(c.lvl)) {
         c.xp -= classXpNeed(c.lvl); c.lvl++; c.sp = (c.sp || 0) + 1;
         const newSk = availableSkills(p, cls).filter((s) => s.lvl === c.lvl);
-        res.push({ cls, lvl: c.lvl, skills: newSk, advReady: c.lvl === 10 && !c.adv, ascendReady: c.lvl === 20 });
+        res.push({ cls, lvl: c.lvl, skills: newSk, advReady: c.lvl === 10 && !c.adv, masterReady: c.lvl === 20 && !c.master, ascendReady: c.lvl === 30 });
       }
     }
     return res;
@@ -163,8 +168,8 @@
     p.hp = Math.min(p.hp, maxHp(p)); p.mp = Math.min(p.mp, maxMp(p));
   }
 
-  function priceMul(p) { let m = 1; if (p.cheat === 'charisma') m *= 0.85; if (p.race === 'goblin') m *= 0.9; return m; }
-  function sellPrice(p, id) { const it = item(id); if (!it || !it.price) return 0; let v = it.price * 0.45; if (p.cheat === 'appraisal') v *= 1.15; return Math.max(1, Math.round(v)); }
+  function priceMul(p) { let m = 1; if (p.cheat === 'merchant') m *= 0.9; if (p.cheat === 'charisma') m *= 0.85; if (p.race === 'goblin') m *= 0.9; return m; }
+  function sellPrice(p, id) { const it = item(id); if (!it || !it.price) return 0; let v = it.price * 0.45; if (p.cheat === 'appraisal') v *= 1.15; if (p.cheat === 'merchant') v *= 1.3; return Math.max(1, Math.round(v)); }
   function buyPrice(p, id, mod = 1) { const it = item(id); if (!it) return 0; return Math.max(1, Math.round(it.price * mod * priceMul(p))); }
 
   function guildRank(p) { return D().GUILD_RANKS[p.guild.rank].r; }

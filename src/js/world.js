@@ -4,7 +4,7 @@
   const ISK = (globalThis.ISK = globalThis.ISK || {});
   const { RNG, noise, names } = ISK;
 
-  const W = 320, H = 220;
+  const W = 440, H = 300;
   const T = { DEEP: 0, SEA: 1, BEACH: 2, PLAINS: 3, FOREST: 4, HILLS: 5, MOUNTAIN: 6, PEAK: 7, DESERT: 8, TUNDRA: 9, SWAMP: 10, ASH: 11, JUNGLE: 12 };
   const TERRAIN_INFO = {
     0: { name: 'Глибоке море', cost: Infinity }, 1: { name: 'Море', cost: Infinity }, 2: { name: 'Узбережжя', cost: 1.2 },
@@ -20,6 +20,10 @@
     steppe: { pre: ['Ак', 'Кара', 'Тен', 'Ял', 'Сар', 'Кий', 'Бат', 'Ордж'], mid: ['ан', 'и', 'ур'], suf: ['стан', 'ган', 'ли', 'тау', 'кент', 'сай'] },
     sea: { pre: ['Корал', 'Хвил', 'Солон', 'Перл', 'Бриз', 'Якор', 'Мар', 'Остр'], mid: ['е', 'и', 'ов'], suf: ['порт', 'гавань', 'мор', 'бухта', 'мис', 'рив'] },
     demon: { pre: ['Мал', 'Гор', 'Баал', 'Азг', 'Ніх', 'Морг', 'Зал', 'Інф'], mid: ['ер', 'о', 'аз', 'ул'], suf: ['гул', 'рот', 'дум', 'фер', 'гор', 'намор', 'тракс'] },
+    darkelf: { pre: ['Мен', 'Зу\'', 'Ллот', 'Ветр', 'Ніз', 'Ур', 'Шад', 'Квел'], mid: ['за', 'ре', 'ін', 'ар'], suf: ['зарін', 'ндрил', 'тар', 'ет', 'віс', 'кріт'] },
+    halfling: { pre: ['Медов', 'Пиріж', 'Зелен', 'Кругл', 'Тепл', 'Ситн', 'Затишн', 'Ласк'], mid: ['о', 'е'], suf: ['ий Пагорб', 'а Нора', 'ий Луг', 'а Долинка', 'і Грядки', 'е Містечко'] },
+    goblin: { pre: ['Гниль', 'Хрум', 'Шмарк', 'Зуб', 'Кишк', 'Брудн', 'Смерд', 'Хап'], mid: ['о', 'и', 'ук'], suf: ['нора', 'бург', 'дзюр', 'гнізд', 'смітт', 'ямка'] },
+    dragonkin: { pre: ['Драк', 'Ігн', 'Вірм', 'Пломен', 'Луск', 'Жар', 'Тлін', 'Ваа'], mid: ['ар', 'ір', 'о'], suf: ['хейл', 'ґарт', 'вейр', 'тос', 'рот', 'кай'] },
   });
 
   class MinHeap {
@@ -37,11 +41,14 @@
   const DIRS4 = [[1, 0], [-1, 0], [0, 1], [0, -1]];
   const isLand = (t) => t >= T.BEACH;
 
+  // continent → which peoples live there (first entries get bigger lands)
   const CONTINENTS = [
-    { key: 'mid', name: 'Серединні Землі', cx: 0.37, cy: 0.54, rx: 0.27, ry: 0.36 },
-    { key: 'east', name: 'Сходосвіт', cx: 0.79, cy: 0.64, rx: 0.13, ry: 0.23 },
-    { key: 'north', name: 'Крижані Землі', cx: 0.58, cy: 0.12, rx: 0.13, ry: 0.08 },
-    { key: 'demon', name: 'Демонія', cx: 0.9, cy: 0.17, rx: 0.075, ry: 0.12 },
+    { key: 'mid', name: 'Серединні Землі', cx: 0.44, cy: 0.49, rx: 0.2, ry: 0.3 },
+    { key: 'east', name: 'Сходосвіт', cx: 0.8, cy: 0.6, rx: 0.12, ry: 0.23, peoples: ['beast', 'halfling', 'eastern'] },
+    { key: 'north', name: 'Крижані Землі', cx: 0.52, cy: 0.085, rx: 0.17, ry: 0.06, peoples: ['dwarven', 'north'] },
+    { key: 'demon', name: 'Демонія', cx: 0.93, cy: 0.15, rx: 0.05, ry: 0.1 },
+    { key: 'west', name: 'Сильванор', cx: 0.095, cy: 0.47, rx: 0.07, ry: 0.25, peoples: ['elven', 'darkelf'] },
+    { key: 'south', name: 'Пекучий Південь', cx: 0.43, cy: 0.925, rx: 0.23, ry: 0.06, peoples: ['orc', 'goblin', 'dragonkin', 'desert'] },
   ];
 
   function genTerrain(seed) {
@@ -52,19 +59,19 @@
       let best = 0, bc = -1;
       CONTINENTS.forEach((c, ci) => {
         const dx = (nx - c.cx) / c.rx, dy = (ny - c.cy) / c.ry;
-        const warp = (noise.fbm(x / 30 + ci * 13, y / 30, seed + 71 + ci, 3) - 0.5) * 0.9;
+        const warp = (noise.fbm(x / 40 + ci * 13, y / 40, seed + 71 + ci, 3) - 0.5) * 0.9;
         const d = Math.sqrt(dx * dx + dy * dy) + warp;
         const v = Math.max(0, 1 - d * d);
         if (v > best) { best = v; bc = ci; }
       });
-      let h = noise.fbm(x / 34, y / 34, seed, 6) * 0.55;
-      const ridge = 1 - Math.abs(noise.fbm(x / 20 + 50, y / 20, seed + 7, 4) * 2 - 1);
+      let h = noise.fbm(x / 44, y / 44, seed, 6) * 0.55;
+      const ridge = 1 - Math.abs(noise.fbm(x / 26 + 50, y / 26, seed + 7, 4) * 2 - 1);
       h += ridge * 0.22 + best * 0.62;
-      const isl = noise.fbm(x / 9 + 400, y / 9, seed + 99, 3);
+      const isl = noise.fbm(x / 11 + 400, y / 11, seed + 99, 3);
       if (best < 0.15 && isl > 0.73) h += (isl - 0.73) * 4.2;
       const ex = Math.min(x, W - 1 - x, y, H - 1 - y);
       if (ex < 6) h -= (6 - ex) * 0.05;
-      height[i] = h; moist[i] = noise.fbm(x / 28 + 300, y / 28, seed + 33, 4); cont[i] = best > 0.04 ? bc : -1;
+      height[i] = h; moist[i] = noise.fbm(x / 36 + 300, y / 36, seed + 33, 4); cont[i] = best > 0.04 ? bc : -1;
     }
     const sorted = Array.from(height).sort((a, b) => a - b);
     const SEA = sorted[Math.floor(sorted.length * 0.64)];
@@ -76,9 +83,9 @@
       let t;
       if (h < SEA - 0.07) t = T.DEEP; else if (h < SEA) t = T.SEA; else if (h < SEA + 0.012) t = T.BEACH;
       else if (h > PEAK) t = T.PEAK; else if (h > MOUNT) t = T.MOUNTAIN; else if (h > HILL) t = T.HILLS;
-      else if (lat < 0.2 && m < 0.66) t = T.TUNDRA;
-      else if (lat > 0.72 && m < 0.47) t = T.DESERT;
-      else if (lat > 0.66 && m > 0.6) t = T.JUNGLE;
+      else if (lat < 0.16 && m < 0.66) t = T.TUNDRA;
+      else if (lat > 0.8 && m < 0.5) t = T.DESERT;
+      else if (lat > 0.72 && m > 0.6) t = T.JUNGLE;
       else if (m > 0.64 && h < SEA + 0.07) t = T.SWAMP;
       else if (m > 0.52) t = T.FOREST; else t = T.PLAINS;
       if (cont[i] === 3 && t >= T.BEACH && t !== T.PEAK) t = h > MOUNT ? T.MOUNTAIN : T.ASH;
@@ -103,9 +110,9 @@
     for (let i = 0; i < W * H; i++) if (terrain[i] === T.MOUNTAIN || terrain[i] === T.HILLS) src.push(i);
     rng.shuffle(src); let made = 0;
     for (const s of src) {
-      if (made >= 26) break;
+      if (made >= 42) break;
       let k = s, steps = 0; const path = []; const vis = new Set();
-      while (steps++ < 500) {
+      while (steps++ < 800) {
         path.push(k); vis.add(k); if (!isLand(terrain[k])) break;
         const x = k % W, y = (k / W) | 0; let bj = -1, bh = height[k] + 0.004;
         for (const [dx, dy] of DIRS4) { const xx = x + dx, yy = y + dy; if (xx < 0 || yy < 0 || xx >= W || yy >= H) continue; const j = idx(xx, yy); if (vis.has(j)) continue; const hj = height[j] + rng.float(0, 0.003); if (hj < bh) { bh = hj; bj = j; } }
@@ -119,22 +126,29 @@
   }
   const cellCost = (terrain, river, i) => TERRAIN_INFO[terrain[i]].cost + (river[i] ? 3 : 0);
 
-  const AS = { g: new Float32Array(W * H), came: new Int32Array(W * H), stamp: new Uint32Array(W * H), gen: 1 };
+  // fast A* with typed-array heap (no per-push allocations)
+  const AS = { g: new Float32Array(W * H), came: new Int32Array(W * H), stamp: new Uint32Array(W * H), closed: new Uint32Array(W * H), gen: 1, hp: new Float64Array(W * H * 4), hi: new Int32Array(W * H * 4) };
   function astar(terrain, river, roadMask, from, to, opts = {}) {
-    const gen = ++AS.gen; const g = AS.g, came = AS.came, stamp = AS.stamp;
-    const heap = new MinHeap(); const tx = to % W, ty = (to / W) | 0;
-    g[from] = 0; came[from] = -1; stamp[from] = gen; heap.push(from, 0);
+    const gen = ++AS.gen; const g = AS.g, came = AS.came, stamp = AS.stamp, closed = AS.closed, hp = AS.hp, hi = AS.hi;
+    let n = 0;
+    const push = (item, pri) => { let i = n++; while (i > 0) { const p = (i - 1) >> 1; if (hp[p] <= pri) break; hp[i] = hp[p]; hi[i] = hi[p]; i = p; } hp[i] = pri; hi[i] = item; };
+    const pop = () => { const top = hi[0]; n--; if (n > 0) { const lp = hp[n], li = hi[n]; let i = 0; for (;;) { const l = 2 * i + 1, r = l + 1; let m = i, mp = lp; if (l < n && hp[l] < mp) { m = l; mp = hp[l]; } if (r < n && hp[r] < mp) { m = r; } if (m === i) break; hp[i] = hp[m]; hi[i] = hi[m]; i = m; } hp[i] = lp; hi[i] = li; } return top; };
+    const tx = to % W, ty = (to / W) | 0;
+    g[from] = 0; came[from] = -1; stamp[from] = gen; push(from, 0);
     const water = !!opts.water; let found = from === to, guard = 0;
-    while (heap.size && guard++ < 80000) {
-      const k = heap.pop(); if (k === to) { found = true; break; }
+    const hw = water ? 1 : 0.6;
+    while (n && guard++ < 260000) {
+      const k = pop(); if (closed[k] === gen) continue; closed[k] = gen;
+      if (k === to) { found = true; break; }
       const x = k % W, y = (k / W) | 0;
-      for (const [dx, dy] of DIRS8) {
+      for (let d = 0; d < 8; d++) {
+        const dx = DIRS8[d][0], dy = DIRS8[d][1];
         const xx = x + dx, yy = y + dy; if (xx < 0 || yy < 0 || xx >= W || yy >= H) continue;
-        const j = idx(xx, yy); const tj = terrain[j]; let c;
-        if (water) { if (isLand(tj) && j !== to) continue; c = tj === T.DEEP ? 1 : 1.3; }
-        else { if (!isLand(tj)) continue; if (opts.noAsh && tj === T.ASH && j !== to) continue; c = roadMask[j] ? 0.35 : cellCost(terrain, river, j); }
+        const j = yy * W + xx; if (closed[j] === gen) continue; const tj = terrain[j]; let c;
+        if (water) { if (tj >= 2 && j !== to) continue; c = tj === 0 ? 1 : 1.3; }
+        else { if (tj < 2) continue; if (opts.noAsh && tj === T.ASH && j !== to) continue; c = roadMask[j] ? 0.35 : cellCost(terrain, river, j); }
         const ng = g[k] + c * (dx && dy ? 1.414 : 1);
-        if (stamp[j] !== gen || ng < g[j]) { stamp[j] = gen; g[j] = ng; came[j] = k; heap.push(j, ng + Math.hypot(xx - tx, yy - ty) * (water ? 1 : 0.6)); }
+        if (stamp[j] !== gen || ng < g[j]) { stamp[j] = gen; g[j] = ng; came[j] = k; if (n < hp.length) push(j, ng + Math.hypot(xx - tx, yy - ty) * hw); }
       }
     }
     if (!found) return null;
@@ -174,19 +188,24 @@
   const REALM_COLORS = ['#e8b931', '#c0392b', '#2e86de', '#27ae60', '#8e44ad', '#e67e22', '#16a085', '#d35400', '#2980b9', '#c2185b', '#7cb342', '#6d4c41', '#00acc1', '#5e35b1', '#f06292', '#9e9d24', '#546e7a', '#ff8a65', '#26a69a', '#ab47bc'];
 
   const CULT_REALM = {
-    imperial: { title: 'Імперія', ruler: 'Імператор', rulerF: 'Імператриця', race: 'люди', motto: 'Порядок понад усе. Особливо понад обід.' },
-    north: { title: 'Королівство', ruler: 'Ярл-король', rulerF: 'Ярл-королева', race: 'нордлінги', motto: 'Холодно, але ми не скаржимось. Ну, трохи.' },
-    elven: { title: 'Ельфійське королівство', ruler: 'Король', rulerF: 'Королева', race: 'ельфи', motto: 'Ми старші за ваші проблеми.' },
-    desert: { title: 'Султанат', ruler: 'Султан', rulerF: 'Султана', race: 'люди пісків', motto: 'Пісок усюди. Навіть там, де не треба.' },
-    eastern: { title: 'Сьоґунат', ruler: 'Сьоґун', rulerF: 'Сьоґун', race: 'люди сходу', motto: 'Честь, чай і раптові драматичні паузи.' },
-    slavic: { title: 'Королівство', ruler: 'Король', rulerF: 'Королева', race: 'люди', motto: 'Борщ — це стратегічний ресурс.' },
-    dwarven: { title: 'Підгірне королівство', ruler: 'Тан-король', rulerF: 'Тан-королева', race: 'гноми', motto: 'Копай глибше. Завжди глибше.' },
-    fey: { title: 'Королівство фей', ruler: 'Король фей', rulerF: 'Королева фей', race: 'феї та ельфи', motto: 'Усе блищить. Навіть податки.' },
-    beast: { title: 'Королівство звіролюдів', ruler: 'Вождь-король', rulerF: 'Вождиня-королева', race: 'звіролюди', motto: 'Мур. Тобто — слава!' },
-    orc: { title: 'Орча держава', ruler: 'Верховний вождь', rulerF: 'Верховна вождиня', race: 'орки', motto: 'Бити — це теж дипломатія.' },
-    steppe: { title: 'Ханат', ruler: 'Хан', rulerF: 'Ханша', race: 'степовики', motto: 'Кінь — найкращий друг. Другий — теж кінь.' },
-    sea: { title: 'Морська республіка', ruler: 'Дож', rulerF: 'Догаресса', race: 'мореплавці', motto: 'Хто володіє морем — той мокрий.' },
-    demon: { title: 'Темне царство', ruler: 'Володар Демонів', rulerF: 'Володарка Демонів', race: 'демони', motto: 'Темрява. Вогонь. Знижки на душі.' },
+    imperial: { title: 'Імперія', ruler: 'Імператор', rulerF: 'Імператриця', race: 'люди', raceKey: 'human', motto: 'Порядок понад усе. Особливо понад обід.' },
+    north: { title: 'Королівство', ruler: 'Ярл-король', rulerF: 'Ярл-королева', race: 'люди півночі', raceKey: 'human', motto: 'Холодно, але ми не скаржимось. Ну, трохи.' },
+    slavic: { title: 'Королівство', ruler: 'Король', rulerF: 'Королева', race: 'люди', raceKey: 'human', motto: 'Борщ — це стратегічний ресурс.' },
+    free: { title: 'Вільне королівство', ruler: 'Король', rulerF: 'Королева', race: 'люди', raceKey: 'human', motto: 'Імперія? Ні, дякую. Ми самі собі імперія.' },
+    desert: { title: 'Султанат', ruler: 'Султан', rulerF: 'Султана', race: 'люди пісків', raceKey: 'human', motto: 'Пісок усюди. Навіть там, де не треба.' },
+    eastern: { title: 'Сьоґунат', ruler: 'Сьоґун', rulerF: 'Сьоґун', race: 'люди сходу', raceKey: 'human', motto: 'Честь, чай і раптові драматичні паузи.' },
+    steppe: { title: 'Ханат', ruler: 'Хан', rulerF: 'Ханша', race: 'степовики', raceKey: 'human', motto: 'Кінь — найкращий друг. Другий — теж кінь.' },
+    sea: { title: 'Морська республіка', ruler: 'Дож', rulerF: 'Догаресса', race: 'мореплавці', raceKey: 'human', motto: 'Хто володіє морем — той мокрий.' },
+    elven: { title: 'Ельфійське королівство', ruler: 'Король', rulerF: 'Королева', race: 'ельфи', raceKey: 'elf', motto: 'Ми старші за ваші проблеми.' },
+    darkelf: { title: 'Підземне царство', ruler: 'Матрона', rulerF: 'Матрона', race: 'темні ельфи', raceKey: 'darkelf', motto: 'Темрява — це стиль, а не настрій.' },
+    dwarven: { title: 'Підгірне королівство', ruler: 'Тан-король', rulerF: 'Тан-королева', race: 'гноми', raceKey: 'dwarf', motto: 'Копай глибше. Завжди глибше.' },
+    fey: { title: 'Королівство фей', ruler: 'Король фей', rulerF: 'Королева фей', race: 'феї', raceKey: 'elf', motto: 'Усе блищить. Навіть податки.' },
+    beast: { title: 'Королівство звіролюдів', ruler: 'Вождь-король', rulerF: 'Вождиня-королева', race: 'звіролюди', raceKey: 'beast', motto: 'Мур. Тобто — слава!' },
+    halfling: { title: 'Ширське графство', ruler: 'Старший Тан', rulerF: 'Старша Тана', race: 'напіврослики', raceKey: 'halfling', motto: 'Другий сніданок — не розкіш, а право.' },
+    orc: { title: 'Орча Орда', ruler: 'Верховний вождь', rulerF: 'Верховна вождиня', race: 'орки', raceKey: 'orc', motto: 'Бити — це теж дипломатія.' },
+    goblin: { title: 'Гоблінське царство', ruler: 'Гоблін-король', rulerF: 'Гоблін-королева', race: 'гобліни', raceKey: 'goblin', motto: 'Все, що лежить погано — наше. Все, що лежить добре — теж.' },
+    dragonkin: { title: 'Драконяча держава', ruler: 'Драконлорд', rulerF: 'Драконледі', race: 'драконіди', raceKey: 'dragonkin', motto: 'Луска міцна, гордість — ще міцніша.' },
+    demon: { title: 'Темне царство', ruler: 'Володар Демонів', rulerF: 'Володарка Демонів', race: 'демони', raceKey: 'demon', motto: 'Темрява. Вогонь. Знижки на душі.' },
   };
 
   const LANDMARKS = [
@@ -223,7 +242,7 @@
     hellgate: { name: 'Пекельна брама', icon: '🔥', terr: [T.ASH] },
   };
 
-  function generateWorld(seed) {
+  function generateWorld(seed, opts = {}) {
     const t0 = Date.now();
     const rng = new RNG(seed);
     const TG = genTerrain(seed);
@@ -234,9 +253,9 @@
     const cand = [];
     for (let i = 0; i < W * H; i++) { const t = terrain[i]; if (!isLand(t) || t === T.PEAK || t === T.MOUNTAIN || sizes[comp[i]] < 40) continue; cand.push(i); }
     rng.shuffle(cand);
-    const minD = 8; const baronyCells = []; const grid = new Map();
+    const minD = 10.5; const baronyCells = []; const grid = new Map();
     for (const c of cand) {
-      const x = c % W, y = (c / W) | 0, gx = (x / 9) | 0, gy = (y / 9) | 0; let ok = true;
+      const x = c % W, y = (c / W) | 0, gx = (x / 11) | 0, gy = (y / 11) | 0; let ok = true;
       for (let ox = -1; ox <= 1 && ok; ox++) for (let oy = -1; oy <= 1 && ok; oy++) { const L = grid.get((gx + ox) + ',' + (gy + oy)); if (!L) continue; for (const o of L) if (Math.hypot(o % W - x, ((o / W) | 0) - y) < minD) { ok = false; break; } }
       if (!ok) continue;
       baronyCells.push(c); const k = gx + ',' + gy; if (!grid.has(k)) grid.set(k, []); grid.get(k).push(c);
@@ -245,7 +264,7 @@
     baronyCells.forEach((c, bi) => { dist[c] = 0; cellBarony[c] = bi; heap.push(c, 0); });
     while (heap.size) {
       const k = heap.pop(); const x = k % W, y = (k / W) | 0;
-      for (const [dx, dy] of DIRS4) { const xx = x + dx, yy = y + dy; if (xx < 0 || yy < 0 || xx >= W || yy >= H) continue; const j = idx(xx, yy); if (!isLand(terrain[j]) || comp[j] !== comp[k]) continue; const nd = dist[k] + Math.min(cellCost(terrain, river, j), 9); if (nd < dist[j] && nd < 28) { dist[j] = nd; cellBarony[j] = cellBarony[k]; heap.push(j, nd); } }
+      for (const [dx, dy] of DIRS4) { const xx = x + dx, yy = y + dy; if (xx < 0 || yy < 0 || xx >= W || yy >= H) continue; const j = idx(xx, yy); if (!isLand(terrain[j]) || comp[j] !== comp[k]) continue; const nd = dist[k] + Math.min(cellCost(terrain, river, j), 9); if (nd < dist[j] && nd < 38) { dist[j] = nd; cellBarony[j] = cellBarony[k]; heap.push(j, nd); } }
     }
     const nB = baronyCells.length; const pos = baronyCells.map((c) => ({ x: c % W, y: (c / W) | 0 }));
     const adjS = Array.from({ length: nB }, () => new Set()); const area = new Array(nB).fill(0);
@@ -268,17 +287,17 @@
     }).sort((a, b) => b.bs.length - a.bs.length);
     const realmGroups = []; const used = new Set();
     const contLand = (ck) => lands.filter((L) => L.cont === ck && !used.has(L.lid)).sort((a, b) => b.bs.length - a.bs.length)[0];
-    const demonL = contLand(3); if (demonL) { used.add(demonL.lid); realmGroups.push({ bs: demonL.bs, kind: 'demon', culture: 'demon' }); }
+    let demonL = contLand(3); if (demonL) { used.add(demonL.lid); realmGroups.push({ bs: demonL.bs, kind: 'demon', culture: 'demon' }); }
     const mainL = contLand(0) || lands.find((L) => !used.has(L.lid)); used.add(mainL.lid);
-    const mainCount = Math.min(13, Math.max(4, Math.floor(mainL.bs.length / 9)));
+    // Середина: людська Імперія (~10 васальних королівств) + 2 вільні людські королівства на окраїнах
+    const mainCount = Math.min(13, Math.max(5, Math.floor(mainL.bs.length / 8)));
     let mp = null;
     for (let a = 0; a < 30; a++) { const p = partition(rng, mainL.bs, mainCount, adj, pos); const ok = Math.min(...p.groups.map((g) => g.length)) >= mainL.bs.length / mainCount * 0.45; if (!mp || ok) mp = p; if (ok) break; }
     let mcx = 0, mcy = 0; for (const b of mainL.bs) { mcx += pos[b].x; mcy += pos[b].y; } mcx /= mainL.bs.length; mcy /= mainL.bs.length;
     const order = mp.groups.map((g, gi) => { let sx = 0, sy = 0; for (const b of g) { sx += pos[b].x; sy += pos[b].y; } return { gi, d: Math.hypot(sx / g.length - mcx, sy / g.length - mcy) }; }).sort((a, b) => a.d - b.d);
-    const indepSet = new Set(order.slice(-(mainCount >= 8 ? 2 : 1)).map((o) => o.gi));
-    const vassalCultures = rng.shuffle(['slavic', 'elven', 'dwarven', 'north', 'beast', 'fey', 'steppe', 'orc', 'sea', 'eastern', 'slavic', 'elven']);
-    if (!vassalCultures.slice(0, 3).includes('slavic')) vassalCultures.unshift('slavic');
-    const indepCultures = rng.shuffle(['orc', 'steppe', 'desert', 'north']);
+    const indepSet = new Set(order.slice(-(mainCount >= 9 ? 2 : 1)).map((o) => o.gi));
+    const vassalCultures = rng.shuffle(['slavic', 'slavic', 'slavic', 'steppe', 'sea', 'north', 'imperial', 'slavic', 'steppe', 'desert', 'sea', 'slavic']);
+    const indepCultures = rng.shuffle(['free', 'steppe']);
     let vc = 0, ic = 0;
     order.forEach((o, rank) => {
       const g = mp.groups[o.gi];
@@ -286,15 +305,36 @@
       else if (indepSet.has(o.gi)) realmGroups.push({ bs: g, kind: 'kingdom', culture: indepCultures[ic++ % indepCultures.length] });
       else realmGroups.push({ bs: g, kind: 'vassal', culture: vassalCultures[vc++ % vassalCultures.length] });
     });
-    const eastL = contLand(1);
-    if (eastL) { used.add(eastL.lid); const k = Math.max(1, Math.min(3, Math.floor(eastL.bs.length / 10))); const ep = partition(rng, eastL.bs, k, adj, pos); const cs = rng.shuffle(['eastern', 'desert', 'sea']); ep.groups.forEach((g, i) => realmGroups.push({ bs: g, kind: 'kingdom', culture: cs[i % 3] })); }
-    const northL = contLand(2);
-    if (northL) { used.add(northL.lid); realmGroups.push({ bs: northL.bs, kind: 'kingdom', culture: 'north' }); }
+    // Інші раси — власні королівства на своїх континентах
+    const contMain = {}; let carry = [];
+    [4, 1, 2, 5].forEach((ci) => {
+      const C = CONTINENTS[ci];
+      const L = contLand(ci); const peoples = [...C.peoples, ...carry];
+      if (!L) { carry = peoples; return; } carry = []; used.add(L.lid); contMain[ci] = L.lid;
+      const k = Math.max(1, Math.min(peoples.length, Math.floor(L.bs.length / 7)));
+      if (k < peoples.length) carry = peoples.slice(k);
+      const pp = partition(rng, L.bs, k, adj, pos);
+      const sizes2 = pp.groups.map((g, i) => [i, g.length]).sort((x, y) => y[1] - x[1]);
+      sizes2.forEach(([gi], j) => { if (pp.groups[gi].length) realmGroups.push({ bs: pp.groups[gi], kind: 'kingdom', culture: peoples[j % peoples.length] }); });
+    });
+    // peoples that found no continent of their own split the biggest non-human kingdom
+    for (const cul of carry) {
+      const host = realmGroups.filter((g) => g.kind === 'kingdom' && g.culture !== 'free' && g.bs.length >= 8).sort((a, b) => b.bs.length - a.bs.length)[0]
+        || realmGroups.filter((g) => g.kind === 'kingdom' && g.bs.length >= 6).sort((a, b) => b.bs.length - a.bs.length)[0];
+      if (!host) continue;
+      const pp = partition(rng, host.bs, 2, adj, pos); if (pp.groups.some((g) => !g.length)) continue;
+      host.bs = pp.groups[0]; realmGroups.push({ bs: pp.groups[1], kind: 'kingdom', culture: cul });
+    }
     const realmOfB = new Array(nB).fill(-1);
     realmGroups.forEach((rg, ri) => rg.bs.forEach((b) => { realmOfB[b] = ri; }));
     for (const L of lands) {
       if (used.has(L.lid)) continue; used.add(L.lid);
-      if (L.bs.length >= 12) { const ri = realmGroups.length; realmGroups.push({ bs: L.bs, kind: 'kingdom', culture: 'sea' }); L.bs.forEach((b) => { realmOfB[b] = ri; }); continue; }
+      if (!realmGroups.some((g) => g.kind === 'demon') && L.bs.length >= 6) {
+        demonL = L; const ri = realmGroups.length; realmGroups.push({ bs: L.bs, kind: 'demon', culture: 'demon' }); L.bs.forEach((b) => { realmOfB[b] = ri; });
+        for (let i = 0; i < W * H; i++) if (comp[i] === L.lid && isLand(terrain[i]) && terrain[i] !== T.PEAK && terrain[i] !== T.MOUNTAIN) terrain[i] = T.ASH;
+        continue;
+      }
+      if (L.bs.length >= 10) { const ri = realmGroups.length; const cul = realmGroups.some((g) => g.culture === 'dragonkin') ? 'sea' : 'dragonkin'; realmGroups.push({ bs: L.bs, kind: 'kingdom', culture: L.bs.length >= 16 ? cul : 'sea' }); L.bs.forEach((b) => { realmOfB[b] = ri; }); continue; }
       const c0 = L.bs[0]; let best = -1, bd = Infinity;
       for (let b = 0; b < nB; b++) if (realmOfB[b] >= 0 && realmGroups[realmOfB[b]].kind !== 'demon') { const d = Math.hypot(pos[b].x - pos[c0].x, pos[b].y - pos[c0].y); if (d < bd) { bd = d; best = b; } }
       const ri = realmOfB[best]; for (const b of L.bs) { realmGroups[ri].bs.push(b); realmOfB[b] = ri; }
@@ -313,7 +353,7 @@
       const rname = uname(rg.culture);
       const title = cr.title;
       realms.push({
-        id: ri, name: rname, culture: rg.culture, title, fullName: `${title} ${rname}`, rulerTitle: cr.ruler, rulerTitleF: cr.rulerF, race: cr.race, motto: cr.motto,
+        id: ri, name: rname, culture: rg.culture, title, fullName: `${title} ${rname}`, rulerTitle: cr.ruler, rulerTitleF: cr.rulerF, race: cr.race, raceKey: cr.raceKey, motto: cr.motto,
         color: rg.kind === 'demon' ? '#5a0f14' : REALM_COLORS[ri % REALM_COLORS.length], capital, isEmpire: rg.kind === 'empire', isDemon: rg.kind === 'demon',
         liege: rg.kind === 'vassal' ? empireId : -1, kind: rg.kind, duchies: [], continent: contOf[capital],
       });
@@ -362,13 +402,13 @@
 
     // ---- landmarks ----
     const cellLandmark = new Int8Array(W * H).fill(-1); const landmarks = [];
-    const mainLids = new Set([mainL.lid, eastL && eastL.lid, northL && northL.lid].filter((x) => x !== undefined && x !== null));
+    const mainLids = new Set([mainL.lid, ...Object.values(contMain)]);
     for (const LM of rng.shuffle(LANDMARKS.slice())) {
       const cs = []; for (let i = 0; i < W * H; i += 3) if (LM.terr.includes(terrain[i]) && mainLids.has(comp[i]) && cellLandmark[i] < 0) cs.push(i);
       rng.shuffle(cs);
-      const c = cs.find((i) => landmarks.every((l) => Math.hypot(l.x - i % W, l.y - ((i / W) | 0)) > 26));
+      const c = cs.find((i) => landmarks.every((l) => Math.hypot(l.x - i % W, l.y - ((i / W) | 0)) > 34));
       if (c === undefined) continue;
-      const x = c % W, y = (c / W) | 0, r = rng.int(7, 11);
+      const x = c % W, y = (c / W) | 0, r = rng.int(9, 14);
       const L = { ...LM, terr: undefined, id: landmarks.length, x, y, r }; landmarks.push(L);
       for (let yy = Math.max(0, y - r - 3); yy < Math.min(H, y + r + 3); yy++) for (let xx = Math.max(0, x - r - 3); xx < Math.min(W, x + r + 3); xx++) {
         const i = idx(xx, yy); if (!isLand(terrain[i])) continue;
@@ -387,7 +427,7 @@
       pushE(bs[0]);
       while (eh.size) { const [a, b] = eh.pop(); if (inT.has(b)) continue; inT.add(b); edges.push([a, b]); pushE(b); }
     }
-    for (let a = 0; a < nB; a++) for (const b of adj[a]) if (a < b && Math.hypot(pos[a].x - pos[b].x, pos[a].y - pos[b].y) < 12 && rng.chance(0.4)) edges.push([a, b]);
+    for (let a = 0; a < nB; a++) for (const b of adj[a]) if (a < b && Math.hypot(pos[a].x - pos[b].x, pos[a].y - pos[b].y) < 15 && rng.chance(0.4)) edges.push([a, b]);
     edges.sort((e1, e2) => (tierOf(e2[0]) + tierOf(e2[1])) - (tierOf(e1[0]) + tierOf(e1[1])));
     for (const [a, b] of edges) {
       const k = ek(a, b); if (edgeSet.has(k)) continue;
@@ -413,7 +453,7 @@
 
     // ---- sea routes ----
     const ports = baronies.filter((B) => B.isPort);
-    const waterNear = (cell) => { const x = cell % W, y = (cell / W) | 0; let best = -1, bd = Infinity; for (let dy = -5; dy <= 5; dy++) for (let dx = -5; dx <= 5; dx++) { const xx = x + dx, yy = y + dy; if (xx < 0 || yy < 0 || xx >= W || yy >= H) continue; const j = idx(xx, yy); if (!isLand(terrain[j])) { const d = Math.hypot(dx, dy); if (d < bd) { bd = d; best = j; } } } return best; };
+    const waterNear = (cell) => { const x = cell % W, y = (cell / W) | 0; let best = -1, bd = Infinity; for (let dy = -6; dy <= 6; dy++) for (let dx = -6; dx <= 6; dx++) { const xx = x + dx, yy = y + dy; if (xx < 0 || yy < 0 || xx >= W || yy >= H) continue; const j = idx(xx, yy); if (!isLand(terrain[j])) { const d = Math.hypot(dx, dy); if (d < bd) { bd = d; best = j; } } } return best; };
     const seaRoutes = []; const seaSet = new Set();
     const addSea = (A, B) => {
       const k = ek(A.id, B.id); if (seaSet.has(k)) return true;
@@ -423,17 +463,36 @@
       return true;
     };
     const landIds = [...byLand.keys()]; const connected = new Set([mainL.lid]);
-    for (let guard = 0; connected.size < landIds.length && guard < 200; guard++) {
+    const failed = new Set();
+    for (let guard = 0; connected.size < landIds.length && guard < 400; guard++) {
       let best = null, bd = Infinity;
-      for (const A of ports) { if (!connected.has(A.land)) continue; for (const B of ports) { if (connected.has(B.land)) continue; const d = Math.hypot(A.x - B.x, A.y - B.y); if (d < bd) { bd = d; best = [A, B]; } } }
+      for (const A of ports) { if (!connected.has(A.land)) continue; for (const B of ports) { if (connected.has(B.land) || failed.has(A.id + '-' + B.id)) continue; const d = Math.hypot(A.x - B.x, A.y - B.y); if (d < bd) { bd = d; best = [A, B]; } } }
       if (!best) break;
-      addSea(best[0], best[1]); connected.add(best[1].land);
+      if (addSea(best[0], best[1])) connected.add(best[1].land); else failed.add(best[0].id + '-' + best[1].id);
+    }
+    // fallback: lands whose port sits on a lagoon — try every coastal barony of that land
+    for (const lid of landIds) {
+      if (connected.has(lid)) continue;
+      const coast = baronies.filter((B) => B.land === lid && B.coastal);
+      outer: for (const B of coast) {
+        const near = ports.filter((A) => connected.has(A.land)).sort((p, q) => Math.hypot(p.x - B.x, p.y - B.y) - Math.hypot(q.x - B.x, q.y - B.y)).slice(0, 4);
+        for (const A of near) if (addSea(A, B)) { if (!B.isPort) { B.isPort = true; if (B.type === 'village') B.type = 'port'; ports.push(B); } connected.add(lid); break outer; }
+      }
+      if (!connected.has(lid) && coast.length) {
+        const B = coast[0]; const A = ports.filter((x) => connected.has(x.land)).sort((p, q) => Math.hypot(p.x - B.x, p.y - B.y) - Math.hypot(q.x - B.x, q.y - B.y))[0];
+        if (A) {
+          const path = []; const n = Math.max(2, Math.ceil(Math.hypot(A.x - B.x, A.y - B.y)));
+          for (let k = 0; k <= n; k++) { const c = idx(Math.round(A.x + (B.x - A.x) * k / n), Math.round(A.y + (B.y - A.y) * k / n)); if (path[path.length - 1] !== c) path.push(c); }
+          seaSet.add(ek(A.id, B.id)); seaRoutes.push({ a: A.id, b: B.id, path, cost: path.length * 0.35, sea: true });
+          if (!B.isPort) { B.isPort = true; if (B.type === 'village') B.type = 'port'; ports.push(B); } connected.add(lid);
+        }
+      }
     }
     for (const A of ports) {
       const others = ports.filter((B) => B.land !== A.land).sort((p, q) => Math.hypot(p.x - A.x, p.y - A.y) - Math.hypot(q.x - A.x, q.y - A.y));
-      if (others[0] && Math.hypot(others[0].x - A.x, others[0].y - A.y) < 70 && rng.chance(0.6)) addSea(A, others[0]);
+      if (others[0] && Math.hypot(others[0].x - A.x, others[0].y - A.y) < 95 && rng.chance(0.6)) addSea(A, others[0]);
     }
-    for (const A of ports) for (const B of ports) if (A.id < B.id && A.land === B.land && Math.hypot(A.x - B.x, A.y - B.y) > 45 && Math.hypot(A.x - B.x, A.y - B.y) < 80 && rng.chance(0.08)) addSea(A, B);
+    for (const A of ports) for (const B of ports) if (A.id < B.id && A.land === B.land && Math.hypot(A.x - B.x, A.y - B.y) > 60 && Math.hypot(A.x - B.x, A.y - B.y) < 105 && rng.chance(0.08)) addSea(A, B);
 
     // ---- dungeons ----
     const dungeons = [];
@@ -450,13 +509,13 @@
       cs.sort((a, b) => Math.hypot(a % W - dcap % W, ((a / W) | 0) - ((dcap / W) | 0)) - Math.hypot(b % W - dcap % W, ((b / W) | 0) - ((dcap / W) | 0)));
       const fc = cs.find((i) => freeCell(i, 2) && Math.hypot(i % W - dcap % W, ((i / W) | 0) - ((dcap / W) | 0)) > 3);
       if (fc !== undefined) placeDungeon('hellgate', fc, { final: true, baseName: 'Цитадель Володаря Демонів', icon: '🌋' });
-      rng.shuffle(cs); let n = 0; for (const c of cs) { if (n >= 3) break; if (freeCell(c, 10)) { placeDungeon('hellgate', c); n++; } }
+      rng.shuffle(cs); let n = 0; for (const c of cs) { if (n >= 4) break; if (freeCell(c, 10)) { placeDungeon('hellgate', c); n++; } }
     }
     const gcand = []; for (let i = 0; i < W * H; i++) if (isLand(terrain[i]) && terrain[i] !== T.PEAK && terrain[i] !== T.ASH && sizes[comp[i]] >= 6) gcand.push(i);
     rng.shuffle(gcand);
     for (const c of gcand) {
-      if (dungeons.length >= 58) break;
-      if (!freeCell(c, 12)) continue;
+      if (dungeons.length >= 84) break;
+      if (!freeCell(c, 14)) continue;
       const t = terrain[c]; const small = sizes[comp[c]] < 40;
       const opts = Object.entries(DTYPES).filter(([k, d]) => k !== 'hellgate' && d.terr.includes(t) && (small ? ['pirate', 'sunken', 'tower', 'ruins'].includes(k) : k !== 'pirate' || rng.chance(0.3)));
       if (!opts.length) continue;
@@ -465,7 +524,8 @@
 
     // ---- start & danger ----
     const vassals = realms.filter((r) => r.kind === 'vassal');
-    const startRealm = (vassals.find((r) => r.culture === 'slavic') || vassals[0] || realms.find((r) => !r.isDemon)).id;
+    const raceRealm = opts.race && opts.race !== 'human' ? realms.find((r) => r.raceKey === opts.race && !r.isDemon) : null;
+    const startRealm = (raceRealm || vassals.find((r) => r.culture === 'slavic') || vassals[0] || realms.find((r) => !r.isDemon)).id;
     const sc = baronies.filter((B) => B.owner === startRealm && B.type === 'village');
     const startB = (sc.length ? rng.pick(sc) : baronies.find((B) => B.owner === startRealm)).id;
     const S0 = baronies[startB];
@@ -476,6 +536,20 @@
       const lm = cellLandmark[B.cell] >= 0 ? landmarks[cellLandmark[B.cell]] : null; if (lm) lvl = Math.max(lvl, lm.lvl);
       if (realms[B.realm].isDemon) lvl = 30 + rng.int(0, 5);
       B.danger = lvl;
+    }
+    // ---- resource sites (deposits, groves, lakes...) ----
+    const SITES = (ISK.data && ISK.data.RESOURCE_SITES) || {};
+    for (const B of baronies) {
+      B.sites = [];
+      if (realms[B.realm].isDemon && !rng.chance(0.4)) continue;
+      const cands = Object.entries(SITES).filter(([, st]) => B.danger >= st.minD && st.terr.some((t) => (B.terrain[t] || 0) > B.area * 0.12) && (!st.river || B.river) && (!st.coast || B.coastal));
+      if (!cands.length) continue;
+      const n = rng.chance(0.55) ? 1 : rng.chance(0.25) ? 2 : 0;
+      for (let k = 0; k < n && cands.length; k++) {
+        cands.sort((x, y) => y[1].minD - x[1].minD); const pool = cands.slice(0, Math.max(3, Math.ceil(cands.length / 2)));
+        const [key] = rng.pick(pool); cands.splice(cands.findIndex((c) => c[0] === key), 1);
+        B.sites.push({ key, rich: rng.int(2, 5) });
+      }
     }
     for (const Dg of dungeons) {
       const dd = Math.hypot(Dg.x - S0.x, Dg.y - S0.y) * (comp[Dg.cell] === comp[S0.cell] ? 1 : 1.35);
@@ -525,7 +599,7 @@
       SEA: TG.SEA, HILL: TG.HILL, MOUNT: TG.MOUNT, PEAK: TG.PEAK,
       baronies, counties, duchies, realms, roads, seaRoutes, trails: trails2, dungeons: kept, landmarks,
       continents: CONTINENTS.map((c, i) => ({ ...c, id: i, x: c.cx * W, y: c.cy * H })), graph,
-      startBarony: startB, startRealm, empireId, demonId: realms.findIndex((r) => r.isDemon), genMs: Date.now() - t0,
+      startBarony: startB, startRealm, empireId, opts, demonId: realms.findIndex((r) => r.isDemon), genMs: Date.now() - t0,
     };
   }
 

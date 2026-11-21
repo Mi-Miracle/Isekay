@@ -6,7 +6,7 @@
   function run(enemies, opts = {}) {
     return new Promise((resolve) => {
       const G = UI().G; const p = G.player;
-      UI().inCombat = true; A().setMood('battle'); p.stat.battles++;
+      UI().inCombat = true; A().setMood(enemies.some((e) => e.boss) ? 'boss' : 'battle'); p.stat.battles++;
       const b = ISK.combat.startBattle(p, enemies, opts);
       let target = 0, busy = false, menu = 'main';
       const root = h('div', { class: 'combat biome-' + (opts.biome || 'plains') });
@@ -156,7 +156,7 @@
           const res = ISK.game.applyRewards(G2, b); const r = b.rewards;
           const itemsTxt = Object.entries(r.items).map(([id, n]) => { const it = PL().item(id); return it ? `${it.icon} ${it.name}${n > 1 ? ' ×' + n : ''}` : ''; }).join('\n');
           let msg = `+${r.xp} ✨ досвіду${p.cheat === 'exp' ? ' (×1.6)' : ''}\n+${r.gold} 🪙${res.fame ? `\n+${res.fame} ⭐ слави` : ''}${itemsTxt ? '\n\nЗдобич:\n' + itemsTxt : ''}`;
-          for (const c of res.cr) msg += `\n${D().CLASSES[c.cls].icon} Рівень класу ${c.lvl}! +1 очко навичок${c.skills.length ? ' · нова навичка: ' + c.skills.map((s) => s.icon + ' ' + s.name).join(', ') : ''}${c.advReady ? '\n⬆️ ДОСТУПНЕ ПІДВИЩЕННЯ КЛАСУ (вікно K)!' : ''}${c.ascendReady ? '\n🌟 Доступне вознесіння у тренера!' : ''}`;
+          for (const c of res.cr) msg += `\n${D().CLASSES[c.cls].icon} Рівень класу ${c.lvl}! +1 очко навичок${c.skills.length ? ' · нова навичка: ' + c.skills.map((s) => s.icon + ' ' + s.name).join(', ') : ''}${c.advReady ? '\n⬆️ ДОСТУПНЕ ПІДВИЩЕННЯ КЛАСУ ІІ (вікно K)!' : ''}${c.masterReady ? '\n⏫ ДОСТУПНИЙ КЛАС ІІІ (вікно K)!' : ''}${c.ascendReady ? '\n🌟 Доступне вознесіння у тренера!' : ''}`;
           if (res.petUp) msg += `\n🐾 ${res.petUp.name}: рівень ${res.petUp.lvl}!`;
           for (const c of res.compUps) msg += `\n🤝 ${c.name}: рівень ${c.lvl}!`;
           if (res.xr.ups.length) UI().levelUp(p.level);

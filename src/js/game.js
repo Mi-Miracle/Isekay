@@ -14,19 +14,21 @@
   const rr = (a) => Math.round(a[0] + Math.random() * (a[1] - a[0]));
 
   function newGame(seed, popts) {
-    const world = WM().generateWorld(seed);
+    const world = WM().generateWorld(seed, { race: popts && popts.race === 'god' ? 'goblin' : popts && popts.race });
     const P = POL().initPolitics(world);
     const player = PL().newPlayer(popts);
     player.location = 'b:' + world.startBarony;
-    const G = { version: 2, seed, world, P, player, time: 0, boards: {}, cleared: {}, dungeon: null, discovered: {}, notices: [], hires: {}, startDay: 0 };
-    discoverAround(G, 26);
+    const G = { version: 3, seed, world, P, player, time: 0, boards: {}, cleared: {}, dungeon: null, discovered: {}, notices: [], hires: {}, startDay: 0, sites: {}, worldOpts: world.opts };
+    discoverAround(G, 30);
+    if (player.cheat === 'mapmaster') { for (const B of world.baronies) G.discovered['b:' + B.id] = 1; for (const Dg of world.dungeons) G.discovered['d:' + Dg.id] = 1; }
+    for (const st of P.realms) { const R = world.realms[st.id]; if (R.isDemon) continue; if (R.raceKey === player.race) st.playerRep += 15; if (player.cheat === 'polyglot') st.playerRep += 20; }
     for (let d = 1; d <= 20; d++) POL().tick(world, P, d);
     G.time = 20; G.startDay = 20;
     player.stat.continents[world.baronies[world.startBarony].cont] = 1;
     return G;
   }
 
-  function discoverAround(G, r = 16) {
+  function discoverAround(G, r = 20) {
     const h = WM().nodeXY(G.world, G.player.location);
     for (const B of G.world.baronies) if (Math.hypot(B.x - h.x, B.y - h.y) < r) G.discovered['b:' + B.id] = 1;
     for (const Dg of G.world.dungeons) if (Math.hypot(Dg.x - h.x, Dg.y - h.y) < r * 0.75) G.discovered['d:' + Dg.id] = 1;
@@ -71,6 +73,7 @@
       else { p.party = p.party.filter((x) => x !== c); G.notices.push(`💸 ${c.name} пішов(ла): «Без грошей — без героїзму. Бувай!»`); }
     }
     if (p.house && p.house.upgrades.trophy && d % 10 === 0) PL().addFame(p, 2);
+    if (p.cheat === 'gacha' && d % 1 === 0 && (p.flags.gachaDay || 0) < d) { p.flags.gachaDay = d; const r = Math.random(); const prize = r < 0.003 ? D().randomGear(p.level, 4) : r < 0.03 ? D().randomGear(p.level, 3) : r < 0.12 ? D().randomGear(p.level, 2) : r < 0.3 ? 'potion_m' : r < 0.55 ? 'food_bread' : r < 0.75 ? 'potion_s' : 'boot'; PL().addItem(p, prize); G.notices.push(`🎰 Щоденна гача: ${PL().item(prize).name}!${r < 0.03 ? ' ЛЕГЕНДАРНО!!!' : r > 0.75 ? ' (Чобіт. Гача така гача.)' : ''}`); }
     for (const q of p.quests) if (q.deadline && d > q.deadline && !q.failed) { q.failed = true; G.notices.push(`⌛ Квест «${q.title}» провалено: час вийшов.`); }
     p.quests = p.quests.filter((q) => !q.failed);
     checkAchievements(G);
@@ -297,6 +300,7 @@
     if (kind === 'fish' && Math.random() < 0.12) items.boot = (items.boot || 0) + 1;
     if (kind === 'ore' && Math.random() < 0.04 * quality + lvl * 0.002) items.gem = (items.gem || 0) + 1;
     if (kind === 'ore' && Math.random() < 0.5) items.stone = (items.stone || 0) + 1 + Math.floor(Math.random() * 3);
+    if (p.cheat === 'harvest') for (const k in items) items[k] *= 2;
     for (const [id, c] of Object.entries(items)) PL().addItem(p, id, c);
     const ups = PL().addProfXp(p, prof, Math.round(8 + quality * 10 + n * 3)); p.stat.gathered += n;
     return { items, ups };
@@ -310,10 +314,52 @@
   function canCraft(p, recipe) { for (const [id, n] of Object.entries(recipe.needs)) if (!PL().hasItem(p, id, n)) return false; return true; }
   function craft(G, prof, recipe, quality) {
     const p = G.player; for (const [id, n] of Object.entries(recipe.needs)) PL().removeItem(p, id, n);
-    const count = quality >= 0.95 ? 2 : quality >= 0.35 ? 1 : 0;
+    const count = (quality >= 0.95 ? 2 : quality >= 0.35 ? 1 : 0) * (recipe.n || 1);
     if (count) PL().addItem(p, recipe.out, count);
     const ups = PL().addProfXp(p, prof, Math.round(recipe.xp * (0.5 + quality))); p.stat.crafted += count;
     return { count, ups };
+  }
+  // ---- resource sites ----
+  function siteLeft(G, bid, i) {
+    const B = G.world.baronies[bid], st = B.sites && B.sites[i]; if (!st) return 0;
+    G.sites = G.sites || {}; const k = bid + ':' + i; const rec = G.sites[k];
+    if (!rec) return st.rich;
+    const regen = Math.floor((day(G) - rec.day) / 3);
+    return Math.min(st.rich, rec.left + regen);
+  }
+  function gatherSite(G, bid, i, quality) {
+    const p = G.player, B = G.world.baronies[bid], st = B.sites[i], S = D().RESOURCE_SITES[st.key];
+    const left = siteLeft(G, bid, i); if (left <= 0) return null;
+    G.sites[bid + ':' + i] = { left: left - 1, day: day(G) };
+    const lvl = (p.professions[S.prof] || { lvl: 1 }).lvl; const items = {};
+    const rolls = Math.max(1, Math.round((2 + lvl / 6) * (0.5 + quality)));
+    const tot = S.mats.reduce((a, m) => a + m[1], 0);
+    for (let k = 0; k < rolls; k++) { let r = Math.random() * tot; for (const [id, w] of S.mats) { r -= w; if (r <= 0) { items[id] = (items[id] || 0) + 1; break; } } }
+    if (p.cheat === 'harvest') for (const k in items) items[k] *= 2;
+    for (const [id, n] of Object.entries(items)) PL().addItem(p, id, n);
+    const ups = PL().addProfXp(p, S.prof, Math.round(12 + quality * 14 + rolls * 4)); p.stat.gathered += rolls;
+    return { items, ups };
+  }
+  // ---- gear crafting (smithing / tailoring) ----
+  function canCraftGear(p, id) {
+    const r = D().gearRecipe(id); if (!r) return false;
+    const gold = Math.round(r.gold * (p.cheat === 'crafter' ? 0.6 : 1));
+    if (p.gold < gold || (p.professions[r.prof] || { lvl: 1 }).lvl < r.lvl) return false;
+    for (const [k, n] of Object.entries(r.needs)) if (!PL().hasItem(p, k, Math.ceil(n * (p.cheat === 'crafter' ? 0.6 : 1)))) return false;
+    return true;
+  }
+  function craftGear(G, id, quality) {
+    const p = G.player; const r = D().gearRecipe(id); const cm = p.cheat === 'crafter' ? 0.6 : 1;
+    for (const [k, n] of Object.entries(r.needs)) PL().removeItem(p, k, Math.ceil(n * cm));
+    p.gold -= Math.round(r.gold * cm);
+    if (quality < 0.25 && p.cheat !== 'smithgod') { PL().addProfXp(p, r.prof, Math.round(r.xp * 0.3)); return { fail: true }; }
+    const lvl = p.professions[r.prof].lvl; const roll = Math.random() * (quality + lvl / 40) * (p.cheat === 'crafter' ? 1.15 : 1);
+    let rarity = roll > 1.25 ? 4 : roll > 1.05 ? 3 : roll > 0.8 ? 2 : roll > 0.5 ? 1 : 0;
+    if (rarity === 4 && Math.random() > 0.25) rarity = 3;
+    if (p.cheat === 'smithgod') rarity = Math.max(1, rarity);
+    const out = id.replace(/_(\d)_\d$/, `_$1_${rarity}`);
+    PL().addItem(p, out); const ups = PL().addProfXp(p, r.prof, Math.round(r.xp * (0.6 + quality))); p.stat.crafted++;
+    return { id: out, rarity, ups, prof: r.prof };
   }
   function smith(G, itemId, tier, quality) {
     const p = G.player; const r = D().smithRecipe(tier);
@@ -429,10 +475,19 @@
   }
   function hire(G, c) {
     const p = G.player; const fee = Math.round(c.fee * (p.cheat === 'harem' ? 0.5 : 1));
-    if (p.party.length >= 2) return 'У загоні максимум 2 товариші';
+    if (p.party.length >= 3) return 'У загоні максимум 3 товариші';
     if (p.gold < fee) return 'Недостатньо золота';
     p.gold -= fee; p.party.push({ ...c, hp: undefined }); unlock(G, 'party');
     G.hires = Object.fromEntries(Object.entries(G.hires).map(([k, v]) => [k, v.filter((x) => x.id !== c.id)]));
+    return null;
+  }
+  function recruitHero(G, heroId) {
+    const p = G.player, h = (G.P.heroes || []).find((x) => x.id === heroId); if (!h || !h.alive) return 'Героя тут немає';
+    if (p.party.length >= 3) return 'Загін повний (макс. 3)';
+    if (p.fame < h.lvl * 10) return `Герой не вірить у тебе. Потрібно ⭐${h.lvl * 10} слави.`;
+    if ((h.rel || 0) < 1) return 'Спершу заслужи повагу: переможи в дружньому спарингу.';
+    h.joined = true; p.party.push(ISK.heroes.asCompanion(h)); unlock(G, 'party');
+    POL().log(G.P, day(G), `🤝 Герой ${h.name} приєднується до загону ${p.name}! Барди вже римують ваші імена.`, 'hero', []);
     return null;
   }
   function buyPet(G, key) {
@@ -545,11 +600,11 @@
     const gold = Math.round((20 + lvl * 12) * (0.6 + quality) * (1 + PL().derived(p).s.luk * 0.02) * (p.cheat === 'loot' ? 1.4 : 1));
     p.gold += gold; const items = {}; const tier = Math.max(0, Math.min(5, Math.floor(lvl / 6)));
     if (Math.random() < 0.35 + quality * 0.3) {
-      const rar = quality >= 1 && Math.random() < 0.35 ? 2 : Math.random() < 0.4 ? 1 : 0; const r = Math.random();
-      const slots = Object.keys(D().ARMOR_SLOTS), mats = ['cloth', 'leather', 'plate'];
-      const id = r < 0.45 ? `w_${Object.keys(D().WEAPON_TYPES)[Math.floor(Math.random() * 9)]}_${tier}_${rar}` : r < 0.55 ? `o_${Object.keys(D().OFFHAND)[Math.floor(Math.random() * 4)]}_${tier}_${rar}` : `a_${slots[Math.floor(Math.random() * 6)]}_${mats[Math.floor(Math.random() * 3)]}_${tier}_${rar}`;
-      items[id] = 1;
+      const lm = (1 + PL().derived(p).s.luk * 0.015) * (p.cheat === 'loot' ? 1.4 : 1) * (0.8 + quality * 0.4);
+      const rar = Math.max(quality >= 1 ? 1 : 0, D().rollRarity(lm, false));
+      items[D().randomGear(lvl, rar, p.classes.primary ? D().CLASSES[p.classes.primary].weapon : null)] = 1;
     }
+    if (Math.random() < 0.25) { const mats = ['mana_crystal', 'coin_old', 'leather', 'chain_ring', 'silk']; items[mats[Math.floor(Math.random() * mats.length)]] = 1 + Math.floor(Math.random() * 3); }
     const cons = ['potion_s', 'potion_m', 'ether', 'bomb', 'scroll_fire', 'elixir_str'];
     items[cons[Math.floor(Math.random() * (2 + Math.min(4, tier)))]] = 1 + Math.floor(Math.random() * 2);
     if (Math.random() < 0.15 + quality * 0.1) items.gem = 1;
@@ -585,7 +640,7 @@
   }
   function onDefeat(G) {
     const p = G.player; p.stat.deaths++;
-    const lost = Math.floor(p.gold * 0.3); p.gold -= lost;
+    const lost = p.cheat === 'reincarn' ? 0 : Math.floor(p.gold * 0.3); p.gold -= lost;
     const cur = WM().nodeXY(G.world, p.location);
     let best = null, bd = Infinity;
     for (const B of G.world.baronies) { if (!WM().SETTLEMENT[B.type].services.includes('temple')) continue; const d = Math.hypot(B.x - cur.x, B.y - cur.y); if (d < bd) { bd = d; best = B; } }
@@ -611,21 +666,22 @@
 
   // ---------------- Save / load ----------------
   function serialize(G) {
-    return JSON.stringify({ v: 2, seed: G.seed, time: G.time, player: G.player, boards: G.boards, cleared: G.cleared, dungeon: G.dungeon, discovered: G.discovered, politics: POL().serialize(G.world, G.P), startDay: G.startDay, savedAt: Date.now() });
+    return JSON.stringify({ v: 3, worldOpts: G.worldOpts || G.world.opts || {}, sites: G.sites || {}, seed: G.seed, time: G.time, player: G.player, boards: G.boards, cleared: G.cleared, dungeon: G.dungeon, discovered: G.discovered, politics: POL().serialize(G.world, G.P), startDay: G.startDay, savedAt: Date.now() });
   }
   function deserialize(str) {
     const s = JSON.parse(str);
-    if (s.v !== 2) throw new Error('Збереження зі старої версії гри несумісне зі світом Дивосвіту v2.');
-    const world = WM().generateWorld(s.seed);
+    if (s.v !== 3) throw new Error('Збереження зі старої версії гри несумісне з новим, більшим Дивосвітом v3.');
+    const world = WM().generateWorld(s.seed, s.worldOpts || {});
     const P = POL().restore(world, s.politics);
     for (const bid of s.player.holdings || []) world.baronies[bid].holder = 'player';
-    return { version: 2, seed: s.seed, world, P, player: s.player, time: s.time, boards: s.boards || {}, cleared: s.cleared || {}, dungeon: s.dungeon, discovered: s.discovered || {}, notices: [], hires: {}, startDay: s.startDay || 0 };
+    for (const k of Object.keys(D().PROFESSIONS)) s.player.professions[k] = s.player.professions[k] || { lvl: 1, xp: 0 };
+    return { version: 3, sites: s.sites || {}, worldOpts: s.worldOpts || {}, seed: s.seed, world, P, player: s.player, time: s.time, boards: s.boards || {}, cleared: s.cleared || {}, dungeon: s.dungeon, discovered: s.discovered || {}, notices: [], hires: {}, startDay: s.startDay || 0 };
   }
 
   ISK.game = {
     newGame, day, dateStr, passTime, routeTo, legDays, seaTicket, routeCost, rollEncounter, arrive, here, realmOfNode, board, acceptQuest, questDone, turnInQuest, questMarkers,
-    shopStock, priceMod, gatherYield, canGather, canCraft, craft, smith, houseCost, buyHouse, upgradeHouse, upgradeCost, plant, harvest,
-    socialCheck, promote, baronyPrice, grantBarony, buildOnLand, landIncome, loseHolding, hireOptions, hire, buyPet, buyMount, npcsAt, unlock, checkAchievements,
+    shopStock, priceMod, gatherYield, canGather, canCraft, craft, smith, siteLeft, gatherSite, canCraftGear, craftGear, houseCost, buyHouse, upgradeHouse, upgradeCost, plant, harvest,
+    socialCheck, promote, baronyPrice, grantBarony, buildOnLand, landIncome, loseHolding, hireOptions, hire, recruitHero, buyPet, buyMount, npcsAt, unlock, checkAchievements,
     genDungeon, dungeonMove, treasureLoot, completeDungeon, applyRewards, onDefeat, nearestTown, hitArmy, serialize, deserialize, discoverAround, MONTHS,
   };
 })();

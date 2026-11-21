@@ -195,7 +195,7 @@
       const sp = 14 / R.cam.z;
       if (R.keys.has('KeyW') || R.keys.has('ArrowUp')) R.cam.y -= sp; if (R.keys.has('KeyS') || R.keys.has('ArrowDown')) R.cam.y += sp;
       if (R.keys.has('KeyA') || R.keys.has('ArrowLeft')) R.cam.x -= sp; if (R.keys.has('KeyD') || R.keys.has('ArrowRight')) R.cam.x += sp;
-      if (R.keys.has('KeyQ')) R.cam.z = Math.max(0.35, R.cam.z * 0.98); if (R.keys.has('KeyE')) R.cam.z = Math.min(4, R.cam.z * 1.02);
+      if (R.keys.has('KeyQ')) R.cam.z = Math.max(0.22, R.cam.z * 0.98); if (R.keys.has('KeyE')) R.cam.z = Math.min(4, R.cam.z * 1.02);
       clampCam();
     }
     if (w._ownerDirty) { invalidatePolitical(); w._ownerDirty = false; realmLabels = null; }
@@ -219,9 +219,12 @@
     g.imageSmoothingEnabled = false;
     // settlements
     const z1 = R.cam.z;
+    const VX0 = R.cam.x - 80, VY0 = R.cam.y - 80, VX1 = R.cam.x + R.canvas.clientWidth / R.cam.z + 80, VY1 = R.cam.y + R.canvas.clientHeight / R.cam.z + 80;
+    const vis = (x, y) => x > VX0 && x < VX1 && y > VY0 && y < VY1;
     for (const B of w.baronies) {
       const known = G.discovered['b:' + B.id];
       const x = B.x * S + S / 2, y = B.y * S + S / 2;
+      if (!vis(x, y)) continue;
       const big = B.type === 'capital' ? 1.5 : B.type === 'city' ? 1.25 : ['town', 'fortress', 'hellfort'].includes(B.type) ? 1.05 : 0.85;
       const sc = Math.max(1.1, Math.min(2.4, inv * 1.6)) * big;
       const ctrl = B.occ >= 0 ? B.occ : B.owner; const col = ctrl >= 0 ? w.realms[ctrl].color : '#888';
@@ -248,26 +251,76 @@
       g.font = `${s * 0.72}px ${EMOJI}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = '#fff'; g.fillText(G.cleared[Dg.id] ? '✔️' : Dg.icon, x, y + 1);
       if (z1 > 1.3) text(g, `${Dg.name} (${Dg.level})`, x, y + s * 0.95, 10 * inv + 2, '#e8d6ff', 600, 3 * inv);
     }
-    // armies
+    // smooth world-clock fraction (time passes gradually while travelling / time-flow)
+    const frac = G.time - Math.floor(G.time);
+    // resource sites
+    if (z1 > 1.05) for (const B of w.baronies) {
+      if (!vis(B.x * S, B.y * S)) continue;
+      if (!B.sites || !B.sites.length || !G.discovered['b:' + B.id]) continue;
+      B.sites.forEach((st, k) => { const S2 = ISK.data.RESOURCE_SITES[st.key]; if (!S2) return; const x = B.x * S + S / 2 + (k ? -14 : 14), y = B.y * S + S / 2 + 10;
+        g.beginPath(); g.arc(x, y, 6.5, 0, 7); g.fillStyle = 'rgba(15,20,30,0.65)'; g.fill(); g.strokeStyle = 'rgba(255,230,160,0.7)'; g.lineWidth = 1; g.stroke();
+        g.font = `9px ${EMOJI}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = '#fff'; g.fillText(S2.icon, x, y + 0.5);
+        if (z1 > 2.2) text(g, S2.name, x, y + 11, 5.5, '#ffe9b8', 600, 2); });
+    }
+    // recent battles: dust clouds & crossed swords
+    for (const bt of G.P.battles || []) {
+      const age = G.time - bt.day; if (age > 3 || age < 0) continue;
+      const x = bt.x * S + S / 2, y = bt.y * S + S / 2; const k = Math.max(1, Math.min(1.8, inv * 1.3));
+      for (let c = 0; c < 5; c++) { const ang = c * 1.26 + R.t / 30; const rr = (10 + Math.sin(R.t / 7 + c) * 3) * k; g.beginPath(); g.arc(x + Math.cos(ang) * rr, y + Math.sin(ang) * rr * 0.6, (6 + c % 3 * 2) * k, 0, 7); g.fillStyle = `rgba(200,190,170,${0.35 * (1 - age / 3)})`; g.fill(); }
+      g.font = `${18 * k}px ${EMOJI}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.globalAlpha = 1 - age / 3.5; g.fillText('⚔️', x, y - 4 * k + Math.sin(R.t / 4) * 2); g.globalAlpha = 1;
+    }
+    // position of a marching unit along its real road path
+    const along = (node, next, prog) => {
+      const A = w.baronies[node], Bn = w.baronies[next];
+      const e = (w.graph['b:' + node] || []).find((x) => x.to === 'b:' + next);
+      if (!e || e.path.length < 2) return { x: (A.x + (Bn.x - A.x) * prog) * S + S / 2, y: (A.y + (Bn.y - A.y) * prog) * S + S / 2, dir: Bn.x >= A.x ? 1 : -1 };
+      const f = Math.max(0, Math.min(0.999, prog)) * (e.path.length - 1); const i = f | 0, t = f - i; const W0 = ISK.world.W;
+      const c1 = e.path[i], c2 = e.path[Math.min(e.path.length - 1, i + 1)];
+      const x1 = c1 % W0, y1 = (c1 / W0) | 0, x2 = c2 % W0, y2 = (c2 / W0) | 0;
+      return { x: (x1 + (x2 - x1) * t) * S + S / 2, y: (y1 + (y2 - y1) * t) * S + S / 2, dir: x2 >= x1 ? 1 : -1 };
+    };
+    const unitPos = (u) => {
+      if (u.path && u.path.length) return along(u.node, u.path[0], Math.min(1, (u.prog || 0) + frac / (u.legDays || 3)));
+      const B = w.baronies[u.node]; return { x: B.x * S + S / 2, y: B.y * S + S / 2, dir: 1, idle: true };
+    };
+    // armies: little marching squads with banners
     for (const a of G.P.armies) {
-      const B = w.baronies[a.node]; let x = B.x * S + S / 2, y = B.y * S + S / 2;
-      if (a.path.length && a.prog > 0) { const N = w.baronies[a.path[0]]; x += (N.x * S + S / 2 - x) * a.prog; y += (N.y * S + S / 2 - y) * a.prog; }
-      const k = Math.max(0.9, Math.min(1.6, inv * 1.2)); const dark = ISK.politics.isDemon(G.P, a.realm);
-      g.save(); g.translate(x + 9 * k, y - 12 * k);
-      if (dark) { g.font = `${16 * k}px ${EMOJI}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(a.icon || '😈', 0, -3 * k + Math.sin(R.t / 8 + a.id) * 1.5 * k); }
-      else { g.fillStyle = 'rgba(10,10,15,0.9)'; g.fillRect(-1 * k, -10 * k, 2 * k, 22 * k); g.fillStyle = w.realms[a.realm].color; g.beginPath(); g.moveTo(1 * k, -10 * k); g.lineTo(16 * k, -6 * k); g.lineTo(1 * k, -2 * k); g.fill(); g.strokeStyle = '#000'; g.lineWidth = 0.8 * k; g.stroke(); }
+      const pos = unitPos(a); if (!vis(pos.x, pos.y)) continue; const k = Math.max(0.9, Math.min(1.7, inv * 1.25)); const dark = ISK.politics.isDemon(G.P, a.realm);
+      const col = dark ? '#3a0a10' : w.realms[a.realm].color; const n = Math.max(2, Math.min(6, Math.round(Math.log10(Math.max(100, a.size)) * 1.6 - 2)));
+      const ox = pos.x + 8 * k, oy = pos.y - 6 * k; const walk = !pos.idle;
+      g.save(); g.translate(ox, oy);
+      for (let i = 0; i < n; i++) {
+        const fx = (i % 3) * 5.2 * k - 5 * k + (i >= 3 ? 2.6 * k : 0), fy = (i >= 3 ? 4.5 : 0) * k;
+        const bob = walk ? Math.abs(Math.sin(R.t / 5 + i * 1.7)) * 1.6 * k : 0;
+        g.fillStyle = 'rgba(0,0,0,0.35)'; g.fillRect(fx - 2 * k, fy + 5 * k, 4 * k, 1.2 * k);
+        g.fillStyle = dark ? '#1a0508' : col; g.fillRect(fx - 1.7 * k, fy - 1 * k - bob, 3.4 * k, 5 * k);
+        g.fillStyle = dark ? '#ff3030' : '#f1c9a5'; g.fillRect(fx - 1.3 * k, fy - 3.8 * k - bob, 2.6 * k, 2.6 * k);
+        g.fillStyle = dark ? '#ff2020' : '#cfd6e4'; g.fillRect(fx + 1.9 * k * pos.dir, fy - 5 * k - bob, 0.7 * k, 7 * k);
+      }
+      // banner / demon icon
+      if (dark) { g.font = `${13 * k}px ${EMOJI}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(a.icon || '😈', -11 * k, -10 * k + Math.sin(R.t / 8 + a.id) * 1.5 * k); }
+      else { g.fillStyle = 'rgba(10,10,15,0.95)'; g.fillRect(-11 * k, -16 * k, 1.4 * k, 18 * k); g.fillStyle = col; g.beginPath(); g.moveTo(-9.6 * k, -16 * k); g.lineTo((-9.6 + 10 + Math.sin(R.t / 6 + a.id) * 1.5) * k, -13 * k); g.lineTo(-9.6 * k, -10 * k); g.fill(); g.strokeStyle = '#000'; g.lineWidth = 0.7 * k; g.stroke(); if (a.patrol) { g.font = `${6 * k}px ${EMOJI}`; g.fillText('🛡️', -7 * k, -13 * k); } }
       const txt = a.size >= 1000 ? (a.size / 1000).toFixed(1) + 'k' : String(a.size);
-      g.font = `800 ${8.5 * k}px "Segoe UI", sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle';
-      const tw = g.measureText(txt).width + 6 * k; g.fillStyle = dark ? 'rgba(90,0,0,0.9)' : 'rgba(10,12,20,0.88)'; g.fillRect(-tw / 2 + 6 * k, 4 * k, tw, 11 * k);
-      g.fillStyle = a.siege > 0 ? '#ffb0b8' : '#fff'; g.fillText(txt, 6 * k, 9.8 * k);
-      if (a.siege > 0) { g.font = `${10 * k}px ${EMOJI}`; g.fillText('🔥', -8 * k, -12 * k); }
+      g.font = `800 ${8 * k}px "Segoe UI", sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle';
+      const tw = g.measureText(txt).width + 6 * k; g.fillStyle = dark ? 'rgba(90,0,0,0.9)' : a.patrol ? 'rgba(20,40,60,0.88)' : 'rgba(10,12,20,0.88)'; g.fillRect(-tw / 2, 9 * k, tw, 10 * k);
+      g.fillStyle = a.siege > 0 ? '#ffb0b8' : '#fff'; g.fillText(txt, 0, 14.3 * k);
+      if (a.siege > 0) { g.font = `${10 * k}px ${EMOJI}`; g.fillText('🔥', 9 * k, -12 * k); }
+      if (z1 > 2 && R.mode !== 'danger') text(g, a.name, 0, 24 * k, 6.5 * k, dark ? '#ffb0a0' : '#fff2d6', 600, 2.5);
       g.restore();
+    }
+    // NPC heroes
+    for (const hh of G.P.heroes || []) {
+      if (!hh.alive || hh.joined) continue;
+      const pos = unitPos(hh); if (!vis(pos.x, pos.y)) continue; const k = Math.max(0.9, Math.min(1.6, inv * 1.2)); const x = pos.x - 10 * k, y = pos.y - 12 * k + Math.sin(R.t / 7 + hh.id) * 1.5;
+      g.beginPath(); g.arc(x, y, 6.5 * k, 0, 7); g.fillStyle = hh.rival ? 'rgba(255,126,182,0.85)' : 'rgba(255,215,110,0.85)'; g.fill(); g.strokeStyle = 'rgba(0,0,0,0.6)'; g.lineWidth = 1; g.stroke();
+      g.font = `${8 * k}px ${EMOJI}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = '#000'; g.fillText(hh.icon, x, y + 0.5);
+      if (z1 > 1.5) text(g, `${hh.name.split(' ')[0]} · ${hh.lvl}`, x, y - 10 * k, 6 * k + 1, hh.rival ? '#ffc2dc' : '#ffe9a8', 700, 2.5);
     }
     // labels by zoom
     if (z1 < 1.25 && R.mode !== 'danger') {
       if (!realmLabels || R.t - rlT > 120) { realmLabels = realmLabelPositions(); rlT = R.t; }
       for (const L of realmLabels) {
-        const fs = Math.min(40, 9 + Math.sqrt(L.n) * 3.8) * inv * 0.9 + 4;
+        const fs = Math.min(22, 10 + Math.sqrt(L.n) * 1.6) * inv;
         text(g, L.realm.name.toUpperCase(), L.x, L.y, fs, L.realm.isDemon ? '#ff9a8a' : 'rgba(255,245,220,0.95)', 700, 5 * inv);
         const sub = L.realm.liege >= 0 ? `${L.realm.title} (васал Імперії)` : L.realm.title;
         text(g, sub, L.x, L.y + fs * 0.72, fs * 0.42, 'rgba(255,230,180,0.9)', 600, 3 * inv);

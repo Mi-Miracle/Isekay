@@ -109,7 +109,7 @@
   function playerAction(b, p, d, action, ev) {
     const target = b.enemies[action.target] && b.enemies[action.target].hp > 0 ? b.enemies[action.target] : alive(b)[0];
     const critRoll = (bonus = 0) => { if (b.firstStrike) { b.firstStrike = false; return true; } return chance((d.crit + bonus + (b.buffs.crit ? b.buffs.crit.amt : 0)) / 100); };
-    const atkMul = (b.buffs.atk ? 1 + b.buffs.atk.amt : 1);
+    const atkMul = (b.buffs.atk ? 1 + b.buffs.atk.amt : 1) * (p.cheat === 'berserk' && p.hp < PL().maxHp(p) * 0.4 ? 1.4 : 1);
     if (action.type === 'attack') {
       if (!target) return;
       const magicW = d.weapon && d.weapon.matk;
@@ -210,7 +210,7 @@
 
   function damageAlly(b, p, d, a, raw, ev, by, opts = {}) {
     const isP = a.kind === 'player';
-    if (isP && chance((d.dodge + (b.buffs.dodge ? b.buffs.dodge.amt : 0)) / 100) && !opts.sure) { ev.push({ kind: 'miss', side: 'ally', ally: 0, by }); return 0; }
+    if (isP && chance((d.dodge + (b.buffs.dodge ? b.buffs.dodge.amt : 0) + (p.cheat === 'plot' ? 15 : 0)) / 100) && !opts.sure) { ev.push({ kind: 'miss', side: 'ally', ally: 0, by }); return 0; }
     const def = isP ? d.def * (b.buffs.def ? 1 + b.buffs.def.amt : 1) : a.def * (b.buffs.def ? 1 + b.buffs.def.amt * 0.5 : 1);
     let dmg = mitig(raw * rnd(0.88, 1.12), def);
     if (isP && b.defending) dmg *= 0.45;
@@ -218,6 +218,7 @@
     if (isP && b.buffs.taunt) dmg *= 0.8;
     dmg = Math.max(1, Math.round(dmg));
     let hp = Math.max(0, allyHp(a, p) - dmg);
+    if (isP && p.flags && p.flags.godMode) hp = Math.max(1, hp);
     if (isP && hp <= 0 && p.cheat === 'undying' && !b.undyingUsed) { b.undyingUsed = true; hp = 1; ev.push({ kind: 'text', text: '💀 «Безсмертний (майже)»: ти виживаєш з 1 HP!' }); }
     setAllyHp(a, p, hp);
     ev.push({ kind: 'dmg', side: 'ally', ally: b.allies.indexOf(a), amount: dmg, by });
@@ -304,24 +305,22 @@
     const lootMul = (1 + d.s.luk * 0.015) * (p.cheat === 'loot' ? 1.4 : 1);
     for (const e of b.enemies) {
       xp += e.xp; gold += Math.round(e.gold * rnd(0.7, 1.3));
-      for (const [id, pr] of e.drops) if (chance(Math.min(0.95, pr * lootMul))) items[id] = (items[id] || 0) + 1;
+      for (const [id, pr] of [...e.drops, ...D().extraDrops(e.key)]) if (chance(Math.min(0.95, pr * lootMul))) items[id] = (items[id] || 0) + 1;
+      // random gear drop from ordinary monsters (rarity rolled)
+      if (!e.boss && !e.elite && chance(0.06 * lootMul)) { const gid = D().randomGear(e.lvl, D().rollRarity(lootMul, false), p.classes.primary ? D().CLASSES[p.classes.primary].weapon : null); items[gid] = (items[gid] || 0) + 1; }
+      if (e.boss) { const us = D().uniqueFor(e.dtype); if (us.length && chance(0.22 * lootMul)) { const u = pick(us); items[u.id] = 1; } }
       if (e.boss || e.elite) {
         fame += e.boss ? 25 + e.lvl : 4;
-        const tier = Math.max(0, Math.min(5, Math.floor(e.lvl / 6)));
-        const rar = e.boss ? (chance(0.35) ? 3 : 2) : (chance(0.3 * lootMul) ? 1 : 0);
-        if (e.boss || chance(0.4)) {
-          const cls = p.classes.primary ? D().CLASSES[p.classes.primary].weapon : 'sword';
-          const slots = Object.keys(D().ARMOR_SLOTS); const mats = ['cloth', 'leather', 'plate'];
-          const roll = Math.random();
-          const wid = roll < 0.45 ? `w_${chance(0.7) ? cls : pick(Object.keys(D().WEAPON_TYPES))}_${tier}_${rar}` : roll < 0.55 ? `o_${pick(Object.keys(D().OFFHAND))}_${tier}_${rar}` : `a_${pick(slots)}_${pick(mats)}_${tier}_${rar}`;
-          items[wid] = (items[wid] || 0) + 1;
-        }
+        const cls = p.classes.primary ? D().CLASSES[p.classes.primary].weapon : 'sword';
+        const nDrops = e.boss ? (chance(0.4) ? 2 : 1) : (chance(0.45) ? 1 : 0);
+        for (let k = 0; k < nDrops; k++) { const wid = D().randomGear(e.lvl, e.boss ? D().rollRarity(lootMul, true) : Math.max(1, D().rollRarity(lootMul, false)), cls); items[wid] = (items[wid] || 0) + 1; }
         if (e.boss && chance(0.5)) { const acc = D().ACCESSORIES.filter((a) => a.lvl <= e.lvl + 3); if (acc.length) { const a = pick(acc); items[a.id] = (items[a.id] || 0) + 1; } }
         if (e.dtype === 'dragon' && chance(0.5)) items.dragon_egg = 1;
       }
       p.kills[e.key] = (p.kills[e.key] || 0) + 1;
     }
     if (b.opts.xpMul) xp = Math.round(xp * b.opts.xpMul);
+    if (p.cheat === 'midas') gold = Math.round(gold * 1.6);
     if (b.opts.horde) fame += 20;
     b.rewards = { xp, gold, items, fame };
   }

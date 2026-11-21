@@ -68,24 +68,14 @@
     battle: [220, 246.9, 261.6, 329.6, 349.2, 440, 493.9, 523.3],
     dark: [196, 207.7, 261.6, 277.2, 311.1, 392, 415.3, 523.3],
   };
-  let mood = 'calm';
+  let mood = 'field';
+  const MAP = { calm: 'field' };
   function music(m) {
-    mood = m || mood;
-    if (!ensure() || musicTimer) return;
-    let step = 0;
-    musicTimer = setInterval(() => {
-      if (settings.music <= 0) return;
-      const sc = SCALES[mood];
-      const fast = mood === 'battle';
-      if (step % (fast ? 8 : 16) === 0) {
-        const root = sc[(step / 16 | 0) % 3];
-        [root / 2, root * 0.75, root].forEach((f) => tone(f, fast ? 1.6 : 3.4, 'sine', 0.05, 0, 0, musicGain));
-      }
-      if (Math.random() < (fast ? 0.8 : 0.55)) tone(sc[Math.floor(Math.random() * sc.length)] * (Math.random() < 0.2 ? 2 : 1), fast ? 0.25 : 0.7, 'triangle', 0.05, 0, 0, musicGain);
-      step++;
-    }, mood === 'battle' ? 190 : 340);
+    if (m) mood = MAP[m] || m;
+    if (!ensure()) return;
+    if (ISK.music) ISK.music.play(mood, ctx, musicGain);
   }
-  function setMood(m) { if (m === mood) return; mood = m; if (musicTimer) { clearInterval(musicTimer); musicTimer = null; music(m); } }
+  function setMood(m) { mood = MAP[m] || m; if (ctx && ISK.music) ISK.music.play(mood, ctx, musicGain); }
   function setVolume(kind, v) {
     settings[kind] = v;
     if (master && kind === 'sfx') master.gain.value = v;

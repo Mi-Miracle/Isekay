@@ -26,6 +26,11 @@
         const hx = ((t / 40) % (bw + 200)) - 100; const hero = SP().hero({ race: 'human', gender: 'm', look: { hair: 3, hairColor: 6, eyes: 0, costume: 'c_school' }, equipment: { weapon: 'w_sword_0_0' }, classes: {} });
         g.imageSmoothingEnabled = false; g.drawImage(hero, hx, bh * 0.82 - 62 - Math.abs(Math.sin(t / 150)) * 4, 64, 64);
         const sl = SP().monster('slime'); g.drawImage(sl, hx - 70, bh * 0.82 - 44 - Math.abs(Math.sin(t / 120)) * 10, 48, 48);
+        // anime gags: a dragon crosses the sky, truck-kun drives by, a goblin "god" dances on the hill
+        const EM = '"Segoe UI Emoji","Noto Color Emoji",sans-serif';
+        const dp = (t % 26000) / 26000; if (dp < 0.45) { const dx = bw * 1.1 - dp / 0.45 * (bw * 1.3); g.save(); g.font = `54px ${EM}`; g.translate(dx, bh * 0.18 + Math.sin(t / 400) * 18); g.scale(-1, 1); g.fillText('🐉', 0, 0); g.restore(); g.font = `16px ${EM}`; g.fillStyle = 'rgba(255,140,60,.8)'; for (let k = 0; k < 4; k++) g.fillText('🔥', dx - 60 - k * 18, bh * 0.18 + 10 + Math.sin(t / 300 + k) * 6); }
+        const tp = ((t + 9000) % 21000) / 21000; if (tp < 0.25) { const tx = -160 + tp / 0.25 * (bw + 320); g.font = `64px ${EM}`; g.fillText('🚚', tx, bh * 0.82 - 4); g.font = '800 16px "Segoe UI",sans-serif'; g.fillStyle = '#ffd36e'; if ((t / 200 | 0) % 2) g.fillText('БІП!', tx + 10, bh * 0.82 - 70); }
+        g.font = `34px ${EM}`; const gy = bh * 0.82 - 26 - Math.abs(Math.sin(t / 180)) * 14; g.fillText('👺', bw * 0.62, gy); g.font = `18px ${EM}`; g.fillText('👑', bw * 0.62 + 7, gy - 30); g.font = 'italic 12px Georgia'; g.fillStyle = 'rgba(255,230,180,.85)'; if ((t / 2600 | 0) % 2) g.fillText('«Я — БОГ!»', bw * 0.62 - 20, gy - 48);
       }
       requestAnimationFrame(frame);
     })(0);
