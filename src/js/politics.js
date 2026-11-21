@@ -44,7 +44,7 @@
 
   function initPolitics(world) {
     const rng = new RNG(world.seed * 7 + 13);
-    const P = { realms: [], wars: [], armies: [], chronicle: [], nextId: 1, day: 0 };
+    const P = { realms: [], wars: [], armies: [], chronicle: [], nextId: 1, day: 0, demonId: world.demonId, empireId: world.empireId, nextInvasion: 70 + rng.int(0, 30), nextHorde: 35 + rng.int(0, 25), demonKingDead: false };
     for (const B of world.baronies) B.occ = -1;
     for (const R of world.realms) {
       const baronies = world.baronies.filter((b) => b.owner === R.id);
@@ -52,8 +52,9 @@
       const st = {
         id: R.id, ruler: makeRuler(rng, R, 0), gold: 400 + devSum * 25 * (R.isEmpire ? 1.4 : 1),
         manpower: Math.round(devSum * 220 * (R.isEmpire ? 1.25 : 1)), maxManpower: Math.round(devSum * 240 * (R.isEmpire ? 1.25 : 1)),
-        stability: 60, exhaustion: 0, relations: {}, alliances: [], truces: {}, dead: false, playerRep: 0, wins: 0, losses: 0,
+        stability: 60, exhaustion: 0, relations: {}, alliances: [], truces: {}, dead: false, playerRep: 0, wins: 0, losses: 0, liege: R.liege,
       };
+      if (R.isDemon) { st.ruler = { name: 'Малдраґор', female: false, epithet: 'Жахливий (і трохи сонний)', age: 666, traits: ['aggressive', 'ambitious'], since: 0, number: 1 }; st.manpower = 6000; st.gold = 99999; }
       P.realms.push(st);
     }
     // initial relations: cultural & geographic
@@ -64,6 +65,9 @@
         let v = rng.int(-25, 30);
         if (borders[a.id].has(b.id)) v -= 12;
         if (world.realms[a.id].isEmpire || world.realms[b.id].isEmpire) v -= 10;
+        if (world.realms[a.id].liege === b.id || world.realms[b.id].liege === a.id) v = 35 + rng.int(0, 25);
+        if (world.realms[a.id].liege >= 0 && world.realms[a.id].liege === world.realms[b.id].liege) v = Math.max(v, 10);
+        if (world.realms[a.id].isDemon || world.realms[b.id].isDemon) v = -100;
         a.relations[b.id] = v;
       }
     }
@@ -74,10 +78,10 @@
     }
     // a couple of starting alliances
     const pairs = [];
-    for (const a of P.realms) for (const b of P.realms) if (a.id < b.id && a.relations[b.id] > 15) pairs.push([a.id, b.id]);
+    for (const a of P.realms) for (const b of P.realms) if (a.id < b.id && a.relations[b.id] > 15 && !bloc(world, a.id).has(b.id) && !world.realms[a.id].isDemon && !world.realms[b.id].isDemon) pairs.push([a.id, b.id]);
     rng.shuffle(pairs);
     for (const [a, b] of pairs.slice(0, 2)) makeAlliance(world, P, a, b, 0, true);
-    log(P, 0, `Почалася Ера Сміливців. На континенті ${world.realms.length} держав, і кожна вважає себе центром світу.`, 'info');
+    log(P, 0, `Почалася Ера Сміливців. У Дивосвіті ${world.realms.length - 1} держав, Імперія з ${world.realms.filter((r) => r.liege >= 0).length} васальними королівствами — і Темне царство за морем.`, 'info');
     return P;
   }
 
@@ -90,12 +94,21 @@
     return borders;
   }
 
+  // Empire bloc: emperor + all vassal kingdoms act together
+  function bloc(world, id) {
+    const R = world.realms[id]; const top = R.liege >= 0 ? R.liege : id;
+    const s = new Set([top]); for (const r of world.realms) if (r.liege === top) s.add(r.id);
+    return s;
+  }
+  function isDemon(P, id) { return id === P.demonId && id >= 0; }
+
   function roadAdj(world) {
     if (world._roadAdj) return world._roadAdj;
     const adj = world.baronies.map(() => []);
     for (const r of world.roads) {
       adj[r.a].push({ to: r.b, cost: r.cost }); adj[r.b].push({ to: r.a, cost: r.cost });
     }
+    for (const r of world.seaRoutes || []) { adj[r.a].push({ to: r.b, cost: r.cost * 1.6, sea: true }); adj[r.b].push({ to: r.a, cost: r.cost * 1.6, sea: true }); }
     world._roadAdj = adj;
     return adj;
   }
@@ -125,11 +138,14 @@
   function rname(world, id) { return world.realms[id].fullName; }
 
   function atWar(P, a, b) {
+    if (a !== b && (isDemon(P, a) || isDemon(P, b))) return true;
     return P.wars.some((w) => (w.attackers.includes(a) && w.defenders.includes(b)) || (w.attackers.includes(b) && w.defenders.includes(a)));
   }
   function warsOf(P, a) { return P.wars.filter((w) => w.attackers.includes(a) || w.defenders.includes(a)); }
   function enemiesOf(P, a) {
     const s = new Set();
+    if (isDemon(P, a)) { for (const r of P.realms) if (r.id !== a && !r.dead) s.add(r.id); return s; }
+    if (P.demonId >= 0) s.add(P.demonId);
     for (const w of warsOf(P, a)) for (const e of (w.attackers.includes(a) ? w.defenders : w.attackers)) s.add(e);
     return s;
   }
@@ -171,13 +187,13 @@
     () => 'Столітня (сподіваємось, ні) війна', () => 'Війна Трьох Корон і Однієї Корови',
   ];
 
-  function declareWar(world, P, att, def, day, rng, reason, target) {
-    if (att === def || atWar(P, att, def)) return null;
+  function declareWar(world, P, att, def, day, rng, reason, target, independence) {
+    if (att === def || isDemon(P, att) || isDemon(P, def) || atWar(P, att, def)) return null;
     const A = P.realms[att];
     if (A.alliances.includes(def)) breakAlliance(world, P, att, def, day, 'зрада!');
     const war = {
       id: P.nextId++, attackers: [att], defenders: [def], leaderA: att, leaderD: def, start: day, score: 0,
-      reason, target, battles: 0, name: rng.pick(WAR_NAMES)(world.realms[att].name, world.baronies[target]?.name || world.realms[def].name),
+      reason, target, battles: 0, independence: !!independence, name: rng.pick(WAR_NAMES)(world.realms[att].name, world.baronies[target]?.name || world.realms[def].name),
     };
     P.wars.push(war);
     addRel(P, att, def, -50);
@@ -202,6 +218,12 @@
         }
       }
     };
+    // Empire bloc solidarity (except wars of independence inside the bloc)
+    const W = world;
+    if (!war.independence) {
+      for (const m of bloc(W, def)) if (m !== att && !war.defenders.includes(m) && !war.attackers.includes(m) && !P.realms[m].dead) { war.defenders.push(m); if (m !== def) log(P, day, `👑 ${rname(W, m)} виступає на захист члена Імперії.`, 'war', [m, def]); }
+      for (const m of bloc(W, att)) if (!war.attackers.includes(m) && !war.defenders.includes(m) && !P.realms[m].dead) war.attackers.push(m);
+    }
     call('def', def, att);
     call('att', att, def);
     for (const r of [...war.attackers, ...war.defenders]) mobilize(world, P, r, day, rng);
@@ -210,6 +232,7 @@
 
   function mobilize(world, P, rid, day, rng) {
     const st = P.realms[rid];
+    if (isDemon(P, rid)) return;
     if (P.armies.some((a) => a.realm === rid)) return;
     const total = Math.floor(st.manpower * 0.85);
     if (total < 300) return;
@@ -345,10 +368,16 @@
       B.occ = -1;
     }
     P.wars = P.wars.filter((w) => w !== war);
+    if (war.independence) {
+      const rebel = war.leaderA;
+      if (outcome === 'att') { world.realms[rebel].liege = -1; P.realms[rebel].liege = -1; log(P, day, `🗽 ${rname(world, rebel)} здобуває незалежність від Імперії! Феєрверки, гімни і трохи погромів.`, 'dynasty', [rebel]); }
+      else { addRel(P, rebel, war.leaderD, 40); log(P, day, `⛓️ Повстання ${rname(world, rebel)} придушено. Королівство залишається васалом Імперії.`, 'peace', [rebel, war.leaderD]); }
+      if (world.realms.find((r) => r.isEmpire)) world.realms.find((r) => r.isEmpire).vassals = world.realms.filter((r) => r.liege === war.leaderD).map((r) => r.id);
+    }
     const all = [...war.attackers, ...war.defenders];
     for (const a of war.attackers) for (const d of war.defenders) { P.realms[a].truces[d] = day + 300; P.realms[d].truces[a] = day + 300; }
     for (const r of all) {
-      if (!warsOf(P, r).length) demobilize(world, P, r);
+      if (!warsOf(P, r).length && !demonThreat(world, P, r)) demobilize(world, P, r);
       P.realms[r].exhaustion = Math.max(0, P.realms[r].exhaustion - 20);
     }
     if (outcome === 'white') {
@@ -385,8 +414,23 @@
   }
 
   function aiDiplomacy(world, P, st, day, rng, borders) {
-    if (st.dead) return;
+    if (st.dead || isDemon(P, st.id)) return;
     const R = world.realms[st.id];
+    // vassals: loyalty or independence
+    if (R.liege >= 0) {
+      const lg = R.liege; addRel(P, st.id, lg, (st.stability - 50) / 200 - 0.2);
+      const rel = relation(P, st.id, lg);
+      if (day > 120 && rel < -25 && !warsOf(P, st.id).length && !warsOf(P, lg).some((w) => w.independence) && rng.chance(0.06)) {
+        const myPow = realmPower(world, P, st.id) + st.alliances.reduce((x, a) => x + realmPower(world, P, a) * 0.5, 0);
+        let lp = 0; for (const m of bloc(world, lg)) if (m !== st.id) lp += realmPower(world, P, m) * (m === lg ? 1 : 0.3);
+        if (myPow > lp * 0.35) {
+          const war = declareWar(world, P, st.id, lg, day, rng, 'війна за незалежність', world.realms[st.id].capital, true);
+          if (war) log(P, day, `🔥 ${rname(world, st.id)} повстає проти Імперії!`, 'war', [st.id, lg]);
+        }
+      }
+      if (rng.chance(0.08)) addRel(P, st.id, lg, rng.int(1, 4));
+      return;
+    }
     const agg = 0.25 + traitSum(st.ruler, 'agg') + (R.isEmpire ? 0.15 : 0) + (st.stability - 50) / 300;
     const dip = 0.3 + traitSum(st.ruler, 'dip');
     const myWars = warsOf(P, st.id);
@@ -394,11 +438,13 @@
     if (day > 40 && !myWars.length && st.exhaustion < 30 && st.manpower > st.maxManpower * 0.6 && rng.chance(Math.max(0, agg) * 0.11)) {
       const myPow = realmPower(world, P, st.id);
       let best = null, bs = -Infinity;
-      for (const other of borders[st.id]) {
+      const myBloc = bloc(world, st.id);
+      const nb = new Set(); for (const m of myBloc) for (const o of borders[m]) nb.add(world.realms[o].liege >= 0 ? world.realms[o].liege : o);
+      for (const other of nb) {
         const O = P.realms[other];
-        if (O.dead || st.alliances.includes(other) || (st.truces[other] || 0) > day) continue;
+        if (myBloc.has(other) || isDemon(P, other) || O.dead || st.alliances.includes(other) || (st.truces[other] || 0) > day) continue;
         const rel = relation(P, st.id, other);
-        let enemyPow = realmPower(world, P, other);
+        let enemyPow = 0; for (const m of bloc(world, other)) enemyPow += realmPower(world, P, m) * (m === other ? 1 : 0.5);
         for (const al of O.alliances) if (!P.realms[al].dead && al !== st.id) enemyPow += realmPower(world, P, al) * 0.6;
         let myTotal = myPow;
         for (const al of st.alliances) if (!P.realms[al].dead && al !== other) myTotal += realmPower(world, P, al) * 0.4;
@@ -421,7 +467,7 @@
     if (st.alliances.length < 2 && rng.chance(0.12 * (1 + dip))) {
       let cand = null, cs = -Infinity;
       for (const O of P.realms) {
-        if (O.id === st.id || O.dead || st.alliances.includes(O.id) || atWar(P, st.id, O.id) || O.alliances.length >= 2) continue;
+        if (O.id === st.id || O.dead || isDemon(P, O.id) || world.realms[O.id].liege >= 0 || st.alliances.includes(O.id) || atWar(P, st.id, O.id) || O.alliances.length >= 2) continue;
         const rel = relation(P, st.id, O.id);
         // common rivals
         let common = 0;
@@ -433,7 +479,7 @@
     }
     // --- Improve relations with someone ---
     if (rng.chance(0.15 * (1 + dip))) {
-      const o = rng.pick(P.realms.filter((x) => x.id !== st.id && !x.dead));
+      const o = rng.pick(P.realms.filter((x) => x.id !== st.id && !x.dead && !isDemon(P, x.id)));
       if (o && !atWar(P, st.id, o.id)) {
         addRel(P, st.id, o.id, rng.int(3, 9));
         if (rng.chance(0.08)) log(P, day, `💌 ${rulerFull(world, st)} ${st.ruler.female ? 'надіслала' : 'надіслав'} подарунок (отримувач: ${rname(world, o.id)}): ${rng.pick(['живого лебедя', 'бочку меду', 'портрет себе (дуже великий)', 'рідкісного кота', 'карету без коліс', 'збірку власних віршів'])}.`, 'diplomacy', [st.id, o.id]);
@@ -501,7 +547,7 @@
       income[ctrl] += v * (B.occ >= 0 ? 0.5 : 1);
     }
     for (const st of P.realms) {
-      if (st.dead) continue;
+      if (st.dead || isDemon(P, st.id)) continue;
       const eco = 1 + traitSum(st.ruler, 'eco') + (st.stability - 50) / 250;
       const armies = P.armies.filter((a) => a.realm === st.id);
       const upkeep = armies.reduce((s, a) => s + a.size * 0.004, 0) + (st.ruler.traits.includes('glutton') ? 2 : 0);
@@ -545,14 +591,16 @@
         if (borders[a.id].has(b.id)) v -= 0.03;
         if (a.alliances.includes(b.id)) v += 0.05;
         if (share[a.id] > 0.3 || share[b.id] > 0.3) v -= 0.05; // fear of the hegemon
+        if (a.id === P.demonId || b.id === P.demonId) v = -100;
         a.relations[b.id] = v; b.relations[a.id] = v;
       }
     }
   }
 
   function randomEvents(world, P, day, rng) {
+    catastrophes(world, P, day, rng);
     for (const st of P.realms) {
-      if (st.dead) continue;
+      if (st.dead || isDemon(P, st.id)) continue;
       const R = world.realms[st.id];
       if (day % 360 === 0 && day > 0) st.ruler.age++;
       // ruler death
@@ -600,7 +648,7 @@
 
   function separatism(world, P, day, rng) {
     for (const B of world.baronies) {
-      if (B.owner === B.realm || B.occ >= 0) continue;
+      if (B.owner === B.realm || B.occ >= 0 || isDemon(P, B.owner) || isDemon(P, B.realm)) continue;
       const home = P.realms[B.realm];
       const holder = P.realms[B.owner];
       if (home.dead) {
@@ -649,19 +697,101 @@
     for (const st of P.realms) if ((day + st.id) % 7 === 0) aiDiplomacy(world, P, st, day, rng, borders);
     randomEvents(world, P, day, rng);
     separatism(world, P, day, rng);
+    demonAI(world, P, day, rng);
+  }
+
+  // ---------------- Darkness: demon invasions & monster hordes ----------------
+  function demonThreat(world, P, rid) {
+    for (const a of P.armies) {
+      if (!isDemon(P, a.realm)) continue;
+      const A = world.baronies[a.node];
+      if (world.baronies.some((b) => b.owner === rid && Math.hypot(b.x - A.x, b.y - A.y) < 28)) return true;
+    }
+    return world.baronies.some((b) => b.owner === rid && isDemon(P, b.occ));
+  }
+
+  function spawnDemonArmy(world, P, day, rng, opts) {
+    P.armies.push({ id: P.nextId++, realm: P.demonId, size: opts.size, node: opts.node, path: [], prog: 0, target: -1, siege: 0, morale: 1.1, name: opts.name, horde: !!opts.horde, icon: opts.icon || '😈', born: day });
+  }
+
+  function demonAI(world, P, day, rng) {
+    if (P.demonId < 0 || P.realms[P.demonId].dead) return;
+    // invasions from Демонія by sea
+    if (day >= P.nextInvasion && !P.demonKingDead) {
+      P.nextInvasion = day + 80 + rng.int(0, 60);
+      const ports = world.baronies.filter((b) => b.owner === P.demonId && b.isPort);
+      const src = ports.length ? rng.pick(ports) : world.baronies.find((b) => b.owner === P.demonId);
+      if (src) {
+        const size = Math.round(2500 + day * 6 + rng.int(0, 2000));
+        spawnDemonArmy(world, P, day, rng, { size, node: src.id, name: `Легіон Пітьми №${P.nextId % 100}` });
+        log(P, day, `😈 Володар Демонів Малдраґор шле легіон (${size.toLocaleString('uk')}) за море! Королівства, тримайтеся!`, 'war', [P.demonId]);
+      }
+    }
+    // monster hordes rise in cursed zones
+    if (day >= P.nextHorde) {
+      P.nextHorde = day + 45 + rng.int(0, 45);
+      const lms = (world.landmarks || []).filter((l) => ['deathforest', 'boneplains', 'despair', 'graveyard', 'frost', 'volcano', 'banditwoods'].includes(l.key));
+      const L = lms.length ? rng.pick(lms) : null;
+      if (L) {
+        const near = world.baronies.filter((b) => !isDemon(P, b.owner)).sort((a, b) => Math.hypot(a.x - L.x, a.y - L.y) - Math.hypot(b.x - L.x, b.y - L.y))[0];
+        if (near) {
+          const kind = { deathforest: ['Орда нежиті', '🧟'], boneplains: ['Скелетна навала', '💀'], despair: ['Болотяна орда', '🐸'], graveyard: ['Повстання мерців', '🪦'], frost: ['Крижана орда', '❄️'], volcano: ['Вогняна навала', '🔥'], banditwoods: ['Банда Розбійних Хащ', '🗡️'] }[L.key];
+          const size = Math.round(1200 + day * 3 + rng.int(0, 1500));
+          spawnDemonArmy(world, P, day, rng, { size, node: near.id, name: `${kind[0]} (${L.name})`, horde: true, icon: kind[1] });
+          log(P, day, `${kind[1]} ${kind[0]} вирвалась з місцини «${L.name}» (${size.toLocaleString('uk')})! Під загрозою — ${near.name}.`, 'disaster', [near.owner]);
+        }
+      }
+    }
+    // hordes slowly dissolve; demon occupations become permanent corruption
+    for (const a of P.armies) if (a.horde) a.size = Math.floor(a.size * 0.993);
+    P.armies = P.armies.filter((a) => !(a.horde && a.size < 150));
+    for (const B of world.baronies) {
+      if (isDemon(P, B.occ)) {
+        B.occDays = (B.occDays || 0) + 1;
+        if (B.occDays === 1 && B.dev > 1 && rng.chance(0.5)) B.dev--;
+        if (B.occDays > 90 && B.type !== 'capital') { const prev = B.owner; B.owner = P.demonId; B.occ = -1; B.occDays = 0; world._ownerDirty = true; log(P, day, `🌑 ${B.name} остаточно поглинула Темрява (раніше: ${rname(world, prev)}).`, 'war', [prev]); }
+      } else B.occDays = 0;
+    }
+    // kingdoms respond to threats
+    if (day % 3 === 0) for (const st of P.realms) {
+      if (st.dead || isDemon(P, st.id)) continue;
+      const armies = P.armies.some((a) => a.realm === st.id);
+      if (!armies && demonThreat(world, P, st.id)) { mobilize(world, P, st.id, day, rng); if (P.armies.some((a) => a.realm === st.id)) log(P, day, `🛡️ ${rname(world, st.id)} збирає військо проти Темряви!`, 'war', [st.id]); }
+      else if (armies && !warsOf(P, st.id).length && !demonThreat(world, P, st.id) && rng.chance(0.1)) demobilize(world, P, st.id);
+    }
+  }
+
+  function catastrophes(world, P, day, rng) {
+    if (!rng.chance(0.012)) return;
+    const alive = P.realms.filter((r) => !r.dead && !isDemon(P, r.id));
+    const st = rng.pick(alive); if (!st) return;
+    const R = world.realms[st.id];
+    const own = world.baronies.filter((b) => b.owner === st.id);
+    const B = rng.pick(own); if (!B) return;
+    const roll = rng.int(0, 8);
+    if (roll === 0) { for (const x of own.filter((b) => Math.hypot(b.x - B.x, b.y - B.y) < 12)) x.dev = Math.max(1, x.dev - 1); log(P, day, `🌋 Землетрус біля ${B.name} (${R.name})! Падали стіни, тарілки й самооцінка.`, 'disaster', [st.id]); }
+    else if (roll === 1) { B.dev = Math.max(1, B.dev - 1); st.gold -= 150; log(P, day, `🌊 Повінь у ${B.name}! Селяни перейшли на човни. Качки щасливі.`, 'disaster', [st.id]); }
+    else if (roll === 2) { st.manpower = Math.floor(st.manpower * 0.75); log(P, day, `🦠 Мор у ${R.fullName}! Цілителі не сплять, алхіміки багатіють.`, 'disaster', [st.id]); }
+    else if (roll === 3) { st.gold -= 200; log(P, day, `🦗 Сарана з'їла врожай у ${R.fullName}. І трохи капелюхів.`, 'disaster', [st.id]); }
+    else if (roll === 4) { B.dev = Math.max(1, B.dev - 2); log(P, day, `☄️ Метеорит упав біля ${B.name}! Учені в захваті, корови — ні.`, 'disaster', [st.id]); }
+    else if (roll === 5) { st.stability -= 8; log(P, day, `😵 Епідемія ікоти в ${R.fullName}! Королівські промови тепер звучать дуже кумедно.`, 'disaster', [st.id]); }
+    else if (roll === 6) { log(P, day, `🚚 Вантажівка-кун на мить з'явилася в небі над ${B.name}, збила дракона і зникла. Ісекайники плачуть від ностальгії.`, 'info', [st.id]); }
+    else if (roll === 7) { st.gold += 400; log(P, day, `💰 У ${B.name} знайшли золоту жилу! ${R.fullName} радіє, гноми заздрять.`, 'economy', [st.id]); }
+    else { B.dev = Math.min(10, B.dev + 1); log(P, day, `🎪 Мандрівний цирк осів у ${B.name}. Розвиток зростає, клоуни лякають гоблінів.`, 'economy', [st.id]); }
   }
 
   function serialize(world, P) {
-    return { P, owners: world.baronies.map((b) => [b.owner, b.occ, b.dev]) };
+    return { P, owners: world.baronies.map((b) => [b.owner, b.occ, b.dev, b.fort]), lieges: world.realms.map((r) => r.liege) };
   }
   function restore(world, data) {
-    data.owners.forEach(([o, occ, dev], i) => { world.baronies[i].owner = o; world.baronies[i].occ = occ; world.baronies[i].dev = dev; });
+    data.owners.forEach(([o, occ, dev, fort], i) => { world.baronies[i].owner = o; world.baronies[i].occ = occ; world.baronies[i].dev = dev; if (fort) world.baronies[i].fort = fort; });
+    if (data.lieges) data.lieges.forEach((l, i) => { world.realms[i].liege = l; });
     world._ownerDirty = true;
     return data.P;
   }
 
   ISK.politics = {
     initPolitics, tick, declareWar, makeAlliance, breakAlliance, atWar, warsOf, enemiesOf, relation, addRel,
-    rulerFull, rulerTitle, realmPower, ownedBaronies, computeBorders, bfsPath, log, TRAITS, serialize, restore,
+    rulerFull, rulerTitle, realmPower, ownedBaronies, computeBorders, bfsPath, log, TRAITS, serialize, restore, bloc, isDemon, demonThreat, spawnDemonArmy,
   };
 })();

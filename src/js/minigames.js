@@ -71,11 +71,11 @@
   }
 
   // ⛏️ Mining: click when the shrinking ring matches the target ring (5 strikes)
-  function mining(lvl) {
+  function mining(lvl, opts = {}) {
     return auto() || new Promise((resolve) => {
       const S = 320; const cv = h('canvas', { width: S, height: S });
       const info = h('div', { style: { marginTop: '8px' } }, 'Удари: 0/5');
-      const s = shell('⛏️ Видобуток руди', 'Клікай / ПРОБІЛ, коли біле кільце співпаде з золотим.', h('div', null, cv, info), resolve);
+      const s = shell(opts.title || '⛏️ Видобуток руди', opts.hint || 'Клікай / ПРОБІЛ, коли біле кільце співпаде з золотим.', h('div', null, cv, info), resolve);
       const g = cv.getContext('2d');
       let strikes = 0, score = 0, r = 140, cracks = [], t0 = performance.now(), last = t0, done = false;
       const target = 46; const speed = 120 - Math.min(40, lvl * 1.5);
@@ -328,7 +328,7 @@
       const luck = ISK.player.derived(p).s.luk;
       let sa = a[0] + a[1], sc = c[0] + c[1];
       if (sa < sc && Math.random() < luck * 0.006) { sa = sc + 1; s.res.textContent = '🍀 Удача! Кубик дивом перевернувся!'; await UI().sleep(600); }
-      if (sa > sc) { p.gold += bet; A().play('coin'); s.res.textContent = `Ти виграв ${bet} 🪙! (${sa} проти ${sc}) Гриня плаче в кухоль.`; }
+      if (sa > sc) { p.gold += bet; p.stat.dice = (p.stat.dice || 0) + 1; A().play('coin'); s.res.textContent = `Ти виграв ${bet} 🪙! (${sa} проти ${sc}) Гриня плаче в кухоль.`; }
       else if (sa < sc) { p.gold -= bet; A().play('error'); s.res.textContent = `Ти програв ${bet} 🪙 (${sa} проти ${sc}). Гриня танцює на столі.`; }
       else s.res.textContent = `Нічия (${sa})! Гриня: «Ще раз! Гик!»`;
       UI().refresh(); render();

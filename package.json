@@ -1,13 +1,13 @@
 {
   "name": "isekay",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "private": true,
   "devDependencies": {
     "electron": "^33.4.11",
     "electron-builder": "^25.1.8"
   },
-  "productName": "Isekay",
-  "description": "Ісекай: Хроніки Ельдорії — аніме-RPG у світі меча і магії з живим політичним світом",
+  "productName": "Khroniky Dyvosvitu",
+  "description": "Хроніки Дивосвіту — аніме-RPG у світі меча і магії з живим політичним світом",
   "main": "main.js",
   "author": "Mi-Miracle",
   "license": "MIT",
@@ -18,8 +18,8 @@
     "dist:win": "electron-builder --win portable nsis --x64"
   },
   "build": {
-    "appId": "com.mimiracle.isekay",
-    "productName": "Isekay",
+    "appId": "com.mimiracle.dyvosvit",
+    "productName": "Khroniky Dyvosvitu",
     "copyright": "Mi-Miracle",
     "directories": {
       "output": "dist",
@@ -47,17 +47,28 @@
         }
       ],
       "icon": "build/icon.png",
-      "artifactName": "${productName}-${version}-${arch}-${target}.${ext}"
+      "artifactName": "Dyvosvit-${version}-${arch}.${ext}"
     },
     "portable": {
-      "artifactName": "Isekay-Portable-${version}.exe"
+      "artifactName": "Dyvosvit-Portable-${version}.exe"
     },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
-      "artifactName": "Isekay-Setup-${version}.exe",
-      "shortcutName": "Ісекай: Хроніки Ельдорії",
+      "artifactName": "Dyvosvit-Setup-${version}.exe",
+      "shortcutName": "Хроніки Дивосвіту",
       "createDesktopShortcut": true
-    }
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "Mi-Miracle",
+        "repo": "Isekay",
+        "releaseType": "release"
+      }
+    ]
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.11"
   }
 }
