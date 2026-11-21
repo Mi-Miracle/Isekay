@@ -1,0 +1,63 @@
+{
+  "name": "isekay",
+  "version": "1.0.0",
+  "private": true,
+  "devDependencies": {
+    "electron": "^33.4.11",
+    "electron-builder": "^25.1.8"
+  },
+  "productName": "Isekay",
+  "description": "Ісекай: Хроніки Ельдорії — аніме-RPG у світі меча і магії з живим політичним світом",
+  "main": "main.js",
+  "author": "Mi-Miracle",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test test/*.test.js",
+    "selftest": "electron . --selftest",
+    "dist:win": "electron-builder --win portable nsis --x64"
+  },
+  "build": {
+    "appId": "com.mimiracle.isekay",
+    "productName": "Isekay",
+    "copyright": "Mi-Miracle",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "src/**/*",
+      "build/icon.png"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.png",
+      "artifactName": "${productName}-${version}-${arch}-${target}.${ext}"
+    },
+    "portable": {
+      "artifactName": "Isekay-Portable-${version}.exe"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "Isekay-Setup-${version}.exe",
+      "shortcutName": "Ісекай: Хроніки Ельдорії",
+      "createDesktopShortcut": true
+    }
+  }
+}
