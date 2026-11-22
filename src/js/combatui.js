@@ -3,7 +3,11 @@
   const ISK = (globalThis.ISK = globalThis.ISK || {});
   const UI = () => ISK.ui; const h = (...a) => ISK.ui.h(...a); const PL = () => ISK.player; const A = () => ISK.audio; const D = () => ISK.data; const SP = () => ISK.sprites;
 
+  // «Екшен» (арена в реальному часі) — за замовчуванням; «Покроковий» лишився як легкий режим.
+  function mode() { try { return localStorage.getItem('dyvo_combat') || 'action'; } catch (e) { return 'action'; } }
+  function setMode(m) { try { localStorage.setItem('dyvo_combat', m); } catch (e) { /* ignore */ } }
   function run(enemies, opts = {}) {
+    if (ISK.actionCombat && !opts.turnBased && !globalThis.ISK_AUTOFIGHT && (opts.action || mode() === 'action')) return ISK.actionCombat.run(enemies, opts);
     return new Promise((resolve) => {
       const G = UI().G; const p = G.player;
       UI().inCombat = true; A().setMood(enemies.some((e) => e.boss) ? 'boss' : 'battle'); p.stat.battles++;
@@ -165,8 +169,15 @@
         }
       }
 
-      async function end() {
-        const G2 = UI().G; root.remove(); UI().inCombat = false; A().setMood('calm');
+      async function end() { root.remove(); await settle(b, opts, resolve); }
+      draw();
+      if (globalThis.ISK_AUTOFIGHT) (async () => { for (let i = 0; i < 60 && !b.over; i++) { await UI().sleep(60); if (!busy) { const sk = PL().knownSkills(p).find((s) => p.mp >= s.mp && !b.cd[s.id] && s.power); doAct(b.limit >= 100 ? { type: 'limit' } : sk ? { type: 'skill', id: sk.id, target } : { type: 'attack', target, quality: 1 }); } } })();
+    });
+  }
+  // Спільний фінал бою (нагороди/поразка) — використовують і покроковий бій, і екшен-арена.
+  async function settle(b, opts, resolve) {
+        const p = UI().G.player;
+        const G2 = UI().G; UI().inCombat = false; A().setMood('calm');
         if (b.over === 'win') {
           A().play('win');
           const res = ISK.game.applyRewards(G2, b); const r = b.rewards;
@@ -187,10 +198,6 @@
           await UI().alert('Ти впав...', `Темрява... Голос богині: «Ой-ой! Не помирай так швидко, я ж на тебе ставила!»\n\nТи прокидаєшся в храмі (${r.where}). Хтось «позичив» ${r.lost} 🪙, поки ти був непритомний.`, '💀');
           ISK.render.centerOn(G2.player.location); UI().showNews([]); UI().refresh(); resolve('lose');
         }
-      }
-      draw();
-      if (globalThis.ISK_AUTOFIGHT) (async () => { for (let i = 0; i < 60 && !b.over; i++) { await UI().sleep(60); if (!busy) { const sk = PL().knownSkills(p).find((s) => p.mp >= s.mp && !b.cd[s.id] && s.power); doAct(b.limit >= 100 ? { type: 'limit' } : sk ? { type: 'skill', id: sk.id, target } : { type: 'attack', target, quality: 1 }); } } })();
-    });
   }
-  ISK.combatUI = { run };
+  ISK.combatUI = { run, settle, mode, setMode };
 })();

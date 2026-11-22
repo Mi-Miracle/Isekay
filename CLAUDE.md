@@ -31,7 +31,7 @@ ISEKAY_SHOTS=/tmp/shots timeout 500 xvfb-run -a -s "-screen 0 1600x900x24" npx e
 
 ## Архітектура
 Чистий JS без збирача. Кожен файл — IIFE, що кладе модуль у `globalThis.ISK`. Порядок підключення важливий — див. `<script>` у `src/index.html`:
-`rng → data → content → content2 → world → politics → heroes → player → combat → game → life → twitch → audio → music → voice → sprites → render → ui → panels → panels2 → estate → combatui → minigames → dungeonui → intro → story → main`.
+`rng → data → content → content2 → world → politics → heroes → player → combat → game → life → twitch → audio → music → voice → sprites → render → ui → panels → panels2 → estate → combatui → actioncombat → minigames → dungeonui → intro → story → main`.
 Логіка (rng, data, content*, world, politics, heroes, player, combat, game, life) працює і в Node — її тестують без Electron.
 
 | Файл | Що там |
@@ -59,7 +59,8 @@ ISEKAY_SHOTS=/tmp/shots timeout 500 xvfb-run -a -s "-screen 0 1600x900x24" npx e
 | `src/js/panels.js` | основні вікна: герой, речі, навички, гільдія, магазини, будинок, землі, налаштування, чіт-меню |
 | `src/js/panels2.js` | вікна v4: лорди/аудієнція, військо, родина, морський бій, верф, голоси, контекстне меню, дзвінок богині |
 | `src/js/estate.js` | садиба й власні землі як окремі піксельні сцени |
-| `src/js/combatui.js` | інтерфейс бою |
+| `src/js/combatui.js` | інтерфейс покрокового бою; `run()` — єдина точка входу в бій (сам обирає режим), `settle()` — спільні нагороди/поразка, `mode()/setMode()` — `localStorage.dyvo_combat` = `action`/`turn` |
+| `src/js/actioncombat.js` | v5: екшен-арена на canvas у реальному часі — рух, комбо, важкий удар, перекат, парирування, навички Q/E/R, ульта F; архетипи ворогів (`archOf`), підсвічені атаки, фази боса. `opts.turnBased` примусово вмикає старий бій; `ISK_ACTIONBOT` — бот для автотесту |
 | `src/js/minigames.js`, `dungeonui.js` | мініігри професій; проходження підземель |
 | `src/js/intro.js` | анімешна заставка на canvas |
 | `src/js/story.js` | створення персонажа, рулетка благословень, сцени з богинею |

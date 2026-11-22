@@ -399,5 +399,5 @@
     b.rewards = { xp, gold, items, fame };
   }
 
-  ISK.combat = { makeEnemy, makeBoss, startBattle, act, alive, aliveAllies, allyHp, DIFF, DTYPES, WEAPON_DTYPE };
+  ISK.combat = { makeEnemy, makeBoss, startBattle, act, alive, aliveAllies, allyHp, hitEnemy, computeRewards, mitig, DIFF, DTYPES, WEAPON_DTYPE };
 })();

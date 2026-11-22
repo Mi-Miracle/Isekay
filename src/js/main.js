@@ -125,7 +125,7 @@
       ISK.panels.realms(); await shot('14_empire'); document.querySelector('.tabs button[data-id="dark"]')?.click(); await shot('15_darkness'); UI.closeAll();
       ISK.panels.open('chronicle'); await shot('16_chronicle'); UI.closeAll();
       await step('combat', async () => {
-        const pr = ISK.combatUI.run([ISK.combat.makeEnemy('goblin', 12), ISK.combat.makeEnemy('slime', 12), ISK.combat.makeEnemy('wolf', 13)], { biome: 'forest' });
+        const pr = ISK.combatUI.run([ISK.combat.makeEnemy('goblin', 12), ISK.combat.makeEnemy('slime', 12), ISK.combat.makeEnemy('wolf', 13)], { biome: 'forest', turnBased: true });
         await UI.sleep(2200); await shot('17_combat');
         document.querySelectorAll('.cb-actions .main-acts .btn')[1].click(); await UI.sleep(200); await shot('18_combat_skills');
         globalThis.ISK_AUTOFIGHT = true; globalThis.ISK_AUTOPLAY = 1;
@@ -133,7 +133,7 @@
         await UI.sleep(400); UI.closeAll(); await pr; globalThis.ISK_AUTOFIGHT = false; globalThis.ISK_AUTOPLAY = 0;
       });
       await step('boss', async () => {
-        const pr = ISK.combatUI.run([ISK.combat.makeBoss('dragon', 14)], { biome: 'mountain' }); await UI.sleep(1800); await shot('19_boss');
+        const pr = ISK.combatUI.run([ISK.combat.makeBoss('dragon', 14)], { biome: 'mountain', turnBased: true }); await UI.sleep(1800); await shot('19_boss');
         const c = document.querySelector('.combat'); if (c) c.remove(); UI.inCombat = false; ISK.audio.setMood('calm');
       });
       for (const [name, fn] of [['fishing', () => ISK.minigames.fishing(1)], ['forge', () => ISK.minigames.forge(1)], ['cooking', () => ISK.minigames.cooking(1)]]) {
@@ -235,10 +235,31 @@
         g.life.call = { ctx: 'random', text: 'Привіт, герою! Я тут подумала… може, вже час помитися?', gift: 'potion_s' }; ISK.panels2.goddessPopup(); await UI.sleep(800); await shot('53_goddess_call');
       });
       await step('v4_combat', async () => {
-        const pr = ISK.combatUI.run([ISK.combat.makeEnemy('orc', 14), ISK.combat.makeEnemy('skeleton', 14)], { biome: 'plains' }); await UI.sleep(2000); await shot('54_combat_v4');
+        const pr = ISK.combatUI.run([ISK.combat.makeEnemy('orc', 14), ISK.combat.makeEnemy('skeleton', 14)], { biome: 'plains', turnBased: true }); await UI.sleep(2000); await shot('54_combat_v4');
         globalThis.ISK_AUTOFIGHT = true; globalThis.ISK_AUTOPLAY = 1;
         for (let i = 0; i < 50 && document.querySelector('.combat'); i++) { document.querySelector('.cb-actions .main-acts .btn')?.click(); await UI.sleep(200); }
         await UI.sleep(300); UI.closeAll(); globalThis.ISK_AUTOFIGHT = false; globalThis.ISK_AUTOPLAY = 0; const c = document.querySelector('.combat'); if (c) { c.remove(); UI.inCombat = false; } void pr;
+      });
+      await step('v5_action', async () => {
+        const PL = () => ISK.player; const p = UI.G.player; p.hp = PL().maxHp(p); p.mp = 999;
+        globalThis.ISK_ACTIONBOT = true;
+        const L0 = p.level + 1; const t0 = Date.now();
+        const pr = ISK.combatUI.run([ISK.combat.makeEnemy('goblin', L0), ISK.combat.makeEnemy('slime', L0), ISK.combat.makeEnemy('harpy', L0), ISK.combat.makeEnemy('orc', L0)], { biome: 'forest', noDeath: true });
+        await UI.sleep(2600); await shot('60_action');
+        let res = null; pr.then((r) => { res = r; });
+        for (let i = 0; i < 240 && !document.querySelector('.modal') && document.querySelector('.acombat'); i++) await UI.sleep(250);
+        if (document.querySelector('.acombat')) errors.push('action: fight did not finish: ' + JSON.stringify(ISK.actionCombat._live.state()));
+        await UI.sleep(300); await shot('61_action_end'); UI.closeAll(); await UI.sleep(200);
+        if (res !== 'win' && res !== 'lose') errors.push('action: result ' + res);
+        console.log('ACTION RESULT', res, 'sec', Math.round((Date.now() - t0) / 1000), 'hp', p.hp, '/', ISK.player.maxHp(p));
+      });
+      await step('v5_action_boss', async () => {
+        const p = UI.G.player; p.hp = ISK.player.maxHp(p);
+        globalThis.ISK_ACTIONBOT = false; const pr = ISK.combatUI.run([ISK.combat.makeBoss('dragon', p.level + 2)], { biome: 'mountain', noDeath: true });
+        await UI.sleep(3200); await shot('62_action_boss');
+        const L = ISK.actionCombat._live; const bs = L.E.find((x) => x.e.boss); if (bs) bs.e.hp = Math.floor(bs.e.maxHp * 0.45);
+        await UI.sleep(2600); await shot('63_action_phase2');
+        globalThis.ISK_ACTIONBOT = false; L.finish('flee'); await pr; UI.closeAll();
       });
       await step('v4_lifesim', async () => { const g = G4(); const t0 = g.time; ISK.game.passTime(g, 200); if (g.time < t0 + 199) errors.push('time'); UI.refresh(); ISK.render.centerOn(g.player.location, 0.5); await UI.sleep(400); await shot('55_world_after'); });
       await step('v4_intro', async () => { const el = document.getElementById('intro'); for (const [i, at] of [[0, 3.4], [1, 6.2], [2, 10.2], [3, 13.9], [4, 16.6]]) { await ISK.intro.play(el, { at }); await UI.sleep(150); await shot('36_intro_' + i); } el.classList.add('hidden'); el.innerHTML = ''; });
