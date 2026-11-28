@@ -85,7 +85,7 @@ func _ready() -> void:
 	credit.position = Vector2(-500, -60)
 	credit.size = Vector2(1000, 34)
 	add_child(credit)
-	var ver := Game.make_label("v%s · Godot-версія (етап 2)" % Game.VERSION, 16, Color(1, 1, 1, 0.65), 4)
+	var ver := Game.make_label("v%s · Godot-версія (етап 3)" % Game.VERSION, 16, Color(1, 1, 1, 0.65), 4)
 	ver.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
 	ver.position = Vector2(-360, -34)
 	ver.size = Vector2(345, 24)

@@ -26,6 +26,9 @@ var armies_layer: ArmiesLayer
 var _realm_tex: ImageTexture
 var _realm_img_tex: ImageTexture
 var _seen_seq := 0
+var dungeon: Dungeon = null
+var last_dungeon: Dictionary = {}
+var _lab_cl: CanvasLayer
 
 var _terrain_mat: ShaderMaterial
 var _realm_mix := 0.0
@@ -144,6 +147,7 @@ func _build_scene() -> void:
 	var lab_cl := CanvasLayer.new()
 	lab_cl.layer = 1
 	add_child(lab_cl)
+	_lab_cl = lab_cl
 	var lab := MarkersLayer.LabelLayer.new()
 	lab.markers = markers
 	lab_cl.add_child(lab)
@@ -324,7 +328,10 @@ func rest_until_morning() -> void:
 	if target <= m:
 		target += 1440.0
 	Game.state.minutes = target
-	hud.toast("Ти добре виспався. Люмі снилася тричі.", Game.C_GOLD)
+	var p := Player.ensure(Game.state)
+	p.hp = Player.max_hp(p)
+	p.mp = Player.max_mp(p)
+	hud.toast("Ти добре виспався (❤ і ✦ відновлено). Люмі снилася тричі.", Game.C_GOLD)
 
 
 func reveal_all() -> void:
@@ -364,6 +371,7 @@ func _process(delta: float) -> void:
 	_tick_days()
 	armies_layer.queue_redraw()
 	hud.set_clock(Game.time_text(Game.state.minutes))
+	hud.set_player(Player.summary(Player.ensure(Game.state)))
 	_update_near()
 	_autosave_t += delta
 	if _autosave_t > 180.0 and Game.settings.auto_save:
@@ -419,6 +427,56 @@ static func _news_color(t: String) -> Color:
 	return Color.WHITE
 
 
+# ---------------------------------------------------------------- підземелля
+
+func dungeon_info(d: Dictionary) -> Dictionary:
+	return {"name": d.name, "kind": "dungeon", "dtype": d.type, "level": int(d.level), "floors": int(d.floors), "id": int(d.id), "seed": wd.world_seed * 131 + int(d.id)}
+
+
+func mine_info(b: Dictionary) -> Dictionary:
+	return {"name": "Шахти %s" % b.name, "kind": "mine", "dtype": "minecave", "level": maxi(1, int(b.danger)), "floors": 3, "id": 100000 + int(b.id), "seed": wd.world_seed * 137 + int(b.id) + int(Game.state.day_ticked)}
+
+
+func enter_dungeon(dinfo: Dictionary) -> void:
+	hud.close_overlay()
+	save()
+	dungeon = Dungeon.new()
+	dungeon.setup(dinfo)
+	dungeon.bot = Game.selftest
+	dungeon.finished.connect(_on_dungeon_done.bind(dinfo))
+	visible = false
+	hud.visible = false
+	_lab_cl.visible = false
+	set_process(false)
+	get_tree().root.add_child(dungeon)
+
+
+func _on_dungeon_done(st: Dictionary, dinfo: Dictionary) -> void:
+	last_dungeon = st
+	dungeon.queue_free()
+	dungeon = null
+	visible = true
+	hud.visible = true
+	_lab_cl.visible = true
+	set_process(true)
+	cam.make_current()
+	var p := Player.ensure(Game.state)
+	Game.state.minutes = float(Game.state.minutes) + 120.0 + 60.0 * st.kills / 4.0
+	if st.died:
+		var lost := int(int(p.gold) * 0.25)
+		p.gold = int(p.gold) - lost
+		p.hp = Player.max_hp(p) * 0.5
+		p.deaths = int(p.deaths) + 1
+		hud.banner("Люмі тебе воскресила", "Ціна дива: %d 💰 і трохи гідності. «Наступного разу бери більше зілля!»" % lost)
+	elif st.cleared:
+		hud.banner("Підземелля зачищено!", "%s: ворогів %d, золота %d, досвіду %d." % [dinfo.name, st.kills, st.gold, st.xp])
+	var ore_txt := ""
+	for k in st.ore:
+		ore_txt += " · %s ×%d" % [Player.ORES[k].name, st.ore[k]]
+	hud.toast("Здобич: ворогів %d · 💰 %d · досвід %d%s" % [st.kills, st.gold, st.xp, ore_txt], Game.C_GOLD, 6.0)
+	save()
+
+
 func wait_day() -> void:
 	Game.state.minutes = float(Game.state.minutes) + 1440.0
 	hud.toast("Минув день. Ти сидів біля дороги й рахував ворон: %d." % randi_range(3, 99), Color("#d9c8ff"))
@@ -467,6 +525,9 @@ func _move_hero(delta: float) -> void:
 	if moved:
 		var dist := step.length() / CELL
 		Game.state.minutes = float(Game.state.minutes) + dist * MINUTES_PER_CELL
+		var pl := Player.ensure(Game.state)
+		pl.hp = minf(Player.max_hp(pl), float(pl.hp) + dist * 0.6)
+		pl.mp = minf(Player.max_mp(pl), float(pl.mp) + dist * 0.3)
 		Game.state.steps = float(Game.state.get("steps", 0.0)) + dist
 	var nc := Vector2i(hero.position / CELL)
 	if nc != _last_cell:
@@ -588,7 +649,7 @@ func _update_daynight() -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if not _ready_done or hud.is_modal():
+	if not _ready_done or hud.is_modal() or dungeon != null:
 		return
 	if event is InputEventMouseButton and event.pressed:
 		if event.button_index == MOUSE_BUTTON_WHEEL_UP:
@@ -742,6 +803,60 @@ func _selftest() -> void:
 	await tree.create_timer(0.8).timeout
 	Selftest.shot(self, "14_chronicle_wars")
 	hud.close_overlay()
+	# підземелля: бот б'ється сам
+	var hcv := hero_cell()
+	var dsel: Dictionary = {}
+	var dd := INF
+	for dg in wd.dungeons:
+		var dist := Vector2(dg.x, dg.y).distance_to(hcv)
+		if dist < dd and not dg.final and dg.type != "hellgate":
+			dd = dist
+			dsel = dg
+	var pl := Player.ensure(Game.state)
+	pl.lvl = maxi(int(pl.lvl), int(dsel.level))
+	pl.hp = Player.max_hp(pl)
+	pl.potions = 6
+	enter_dungeon(dungeon_info(dsel))
+	await tree.create_timer(4.0).timeout
+	Selftest.shot(dungeon, "17_dungeon_fight")
+	await tree.create_timer(8.0).timeout
+	Selftest.shot(dungeon, "18_dungeon_later")
+	if dungeon != null:
+		dungeon.leave(false)
+	while dungeon != null:
+		await tree.process_frame
+	Selftest.step("dungeon_combat", float(last_dungeon.get("dmg_dealt", 0)) > 0, "%s: ворогів %d, шкоди %d, золота %d, помер: %s" % [dsel.name, last_dungeon.kills, int(last_dungeon.dmg_dealt), last_dungeon.gold, str(last_dungeon.died)])
+	await tree.create_timer(0.6).timeout
+	Selftest.shot(self, "19_after_dungeon")
+	# шахта
+	var msel: Dictionary = {}
+	dd = INF
+	for bb in wd.baronies:
+		if bb.type == "mine":
+			var dist := Vector2(bb.x, bb.y).distance_to(hcv)
+			if dist < dd:
+				dd = dist
+				msel = bb
+	if not msel.is_empty():
+		var ore0 := Player.ore_value(pl)
+		enter_dungeon(mine_info(msel))
+		await tree.create_timer(1.0).timeout
+		var vk: Array = dungeon.L.veins.keys()
+		if not vk.is_empty():
+			var vc: Vector2i = vk[0]
+			for nb in [Vector2i(0, 1), Vector2i(0, -1), Vector2i(1, 0), Vector2i(-1, 0)]:
+				if dungeon._floor_at(vc + nb):
+					dungeon.hero.position = (Vector2(vc + nb) + Vector2(0.5, 0.5)) * Dungeon.TILE
+					break
+			dungeon._update_vision()
+			for i in 3:
+				dungeon._mine_vein(vc)
+		await tree.create_timer(1.0).timeout
+		Selftest.shot(dungeon, "20_mine")
+		dungeon.leave(false)
+		while dungeon != null:
+			await tree.process_frame
+		Selftest.step("mining", Player.ore_value(pl) > ore0, "руда на %d 💰" % Player.ore_value(pl))
 	if OS.get_environment("ISEKAY_REVEALALL") == "1":
 		reveal_all()
 		var busiest: Dictionary = {}

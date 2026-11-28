@@ -1,0 +1,258 @@
+## Генератор рівнів підземель (кімнати + коридори) і шахт (печери з рудними жилами).
+class_name DungeonGen
+extends RefCounted
+
+enum Tile { WALL, FLOOR, VEIN }
+
+const W := 56
+const H := 40
+
+## Хто живе в якому підземеллі (ключі — типи з Defs.DTYPES).
+const POOLS := {
+	"goblin": ["goblin", "wolf", "bat"], "crypt": ["skeleton", "ghost", "bat"], "slime": ["slime", "spider", "bat"],
+	"ruins": ["skeleton", "spider", "golem"], "mine": ["bat", "spider", "golem"], "tower": ["ghost", "golem", "bat"],
+	"dragon": ["golem", "wolf", "bat"], "beast": ["wolf", "spider", "bat"], "spider": ["spider", "bat", "slime"],
+	"bandit": ["goblin", "wolf", "goblin"], "fey": ["slime", "bat", "ghost"], "crystal": ["golem", "bat", "ghost"],
+	"ice": ["ghost", "golem", "wolf"], "volcano": ["golem", "bat", "slime"], "pirate": ["skeleton", "goblin", "bat"],
+	"sunken": ["slime", "ghost", "skeleton"], "hellgate": ["skeleton", "ghost", "golem"], "minecave": ["bat", "spider", "golem", "slime"],
+}
+
+## Відтінок стін і підлоги та фарбування монстрів за темою.
+const THEMES := {
+	"default": {"floor": Color("#4a3f5c"), "wall": Color("#241c33"), "tint": Color.WHITE},
+	"crypt": {"floor": Color("#3d4252"), "wall": Color("#1b1d27"), "tint": Color.WHITE},
+	"slime": {"floor": Color("#3d5240"), "wall": Color("#18261b"), "tint": Color.WHITE},
+	"ice": {"floor": Color("#5a7c94"), "wall": Color("#21344a"), "tint": Color("#bfe6ff")},
+	"volcano": {"floor": Color("#5c3a30"), "wall": Color("#2a120d"), "tint": Color("#ffb08a")},
+	"hellgate": {"floor": Color("#5a2a32"), "wall": Color("#240a10"), "tint": Color("#ff8c8c")},
+	"fey": {"floor": Color("#5a4a70"), "wall": Color("#2c1f3d"), "tint": Color("#ffc4f0")},
+	"crystal": {"floor": Color("#4a5476"), "wall": Color("#1f2342"), "tint": Color("#d8d0ff")},
+	"minecave": {"floor": Color("#5a4b3e"), "wall": Color("#2a211a"), "tint": Color.WHITE},
+}
+
+const MONSTERS := {
+	"slime": {"name": "Слиз", "hp": 30, "atk": 7, "speed": 55, "ai": "melee", "size": 0.9, "xp": 8},
+	"skeleton": {"name": "Скелет", "hp": 42, "atk": 10, "speed": 70, "ai": "melee", "size": 1.0, "xp": 12},
+	"goblin": {"name": "Гоблін", "hp": 34, "atk": 9, "speed": 88, "ai": "melee", "size": 0.9, "xp": 10},
+	"bat": {"name": "Кажан", "hp": 18, "atk": 6, "speed": 120, "ai": "swoop", "size": 0.75, "xp": 6},
+	"spider": {"name": "Павук", "hp": 36, "atk": 11, "speed": 75, "ai": "lunge", "size": 0.95, "xp": 12},
+	"wolf": {"name": "Вовк", "hp": 40, "atk": 11, "speed": 105, "ai": "lunge", "size": 1.0, "xp": 13},
+	"ghost": {"name": "Привид", "hp": 30, "atk": 9, "speed": 55, "ai": "ranged", "size": 1.0, "xp": 14},
+	"golem": {"name": "Голем", "hp": 90, "atk": 16, "speed": 45, "ai": "slam", "size": 1.35, "xp": 24},
+}
+
+const BOSS_TITLES := ["Король", "Володар", "Древній", "Жахливий", "Великий", "Безсмертний (майже)", "Дуже злий"]
+
+
+static func theme_of(dtype: String) -> Dictionary:
+	if THEMES.has(dtype):
+		return THEMES[dtype]
+	if dtype in ["sunken", "pirate"]:
+		return THEMES.slime
+	if dtype in ["tower", "ruins"]:
+		return THEMES.crypt
+	return THEMES.default
+
+
+static func generate(seed_v: int, opts: Dictionary) -> Dictionary:
+	var rng := Rng.new(seed_v & Rng.M32)
+	var mine: bool = opts.get("kind", "dungeon") == "mine"
+	var L := {"w": W, "h": H, "tiles": PackedByteArray(), "rooms": [], "chests": [], "veins": {}, "spawns": [], "start": Vector2i.ZERO, "stairs": Vector2i(-1, -1), "boss": false}
+	L.tiles.resize(W * H)
+	if mine:
+		_caves(L, rng)
+	else:
+		_rooms(L, rng)
+	var floor_i: int = opts.get("floor", 1)
+	var floors: int = opts.get("floors", 1)
+	var last := floor_i >= floors
+	var far: Vector2i = L.far
+	if last and not mine:
+		L.boss = true
+	else:
+		L.stairs = far
+	var lvl: int = opts.get("level", 1) + (floor_i - 1)
+	var pool: Array = POOLS.get(opts.get("dtype", "goblin"), POOLS.goblin)
+	if mine:
+		pool = POOLS.minecave
+	# вороги
+	var floor_cells: Array = []
+	for y in H:
+		for x in W:
+			if L.tiles[y * W + x] == Tile.FLOOR and Vector2(x, y).distance_to(Vector2(L.start)) > 9:
+				floor_cells.append(Vector2i(x, y))
+	rng.shuffle(floor_cells)
+	var n_mobs := (10 if mine else 14) + floor_i * 2 + mini(8, lvl / 4)
+	for i in mini(n_mobs, floor_cells.size()):
+		var k: String = pool[rng.rangei(0, pool.size() - 1)]
+		L.spawns.append({"pos": floor_cells[i], "kind": k, "lvl": maxi(1, lvl + rng.rangei(-1, 1)), "boss": false})
+	if L.boss:
+		var bk: String = pool[0] if pool[0] != "bat" else "golem"
+		L.spawns.append({"pos": far, "kind": bk, "lvl": lvl + 3, "boss": true, "name": "%s %s" % [rng.pick(BOSS_TITLES), MONSTERS[bk].name]})
+	# скрині
+	if not mine:
+		for r in L.rooms.slice(1):
+			if rng.chance(0.45):
+				var c := Vector2i(rng.rangei(r.position.x + 1, r.end.x - 2), rng.rangei(r.position.y + 1, r.end.y - 2))
+				if c != L.stairs and c != far:
+					L.chests.append({"pos": c, "open": false, "gold": rng.rangei(8, 20) * maxi(1, lvl), "potion": rng.chance(0.35)})
+	else:
+		# рудні жили у стінах поруч із підлогою
+		var ore_pool := _ore_pool(lvl)
+		var cand: Array = []
+		for y in range(1, H - 1):
+			for x in range(1, W - 1):
+				var i := y * W + x
+				if L.tiles[i] != Tile.WALL:
+					continue
+				if L.tiles[i - 1] == Tile.FLOOR or L.tiles[i + 1] == Tile.FLOOR or L.tiles[i - W] == Tile.FLOOR or L.tiles[i + W] == Tile.FLOOR:
+					cand.append(Vector2i(x, y))
+		rng.shuffle(cand)
+		for c in cand.slice(0, 22 + floor_i * 2):
+			L.tiles[c.y * W + c.x] = Tile.VEIN
+			L.veins[c] = {"ore": rng.pick(ore_pool), "hits": 3}
+	return L
+
+
+static func _ore_pool(lvl: int) -> Array:
+	if lvl < 4:
+		return ["copper", "copper", "iron"]
+	if lvl < 9:
+		return ["copper", "iron", "iron", "silver"]
+	if lvl < 16:
+		return ["iron", "silver", "silver", "gold", "crystal"]
+	return ["silver", "gold", "gold", "mithril", "crystal"]
+
+
+static func _carve(L: Dictionary, r: Rect2i) -> void:
+	for y in range(r.position.y, r.end.y):
+		for x in range(r.position.x, r.end.x):
+			if x > 0 and y > 0 and x < W - 1 and y < H - 1:
+				L.tiles[y * W + x] = Tile.FLOOR
+
+
+static func _rooms(L: Dictionary, rng: Rng) -> void:
+	var rooms: Array = []
+	for attempt in 220:
+		if rooms.size() >= 12:
+			break
+		var w := rng.rangei(6, 12)
+		var h := rng.rangei(5, 9)
+		var r := Rect2i(rng.rangei(2, W - w - 2), rng.rangei(2, H - h - 2), w, h)
+		var ok := true
+		for o in rooms:
+			if r.grow(2).intersects(o):
+				ok = false
+				break
+		if ok:
+			rooms.append(r)
+	rooms.sort_custom(func(a, b): return a.get_center().x < b.get_center().x)
+	for r in rooms:
+		_carve(L, r)
+	# коридори: кожна кімната з'єднується з наступною, плюс кілька петель
+	for i in range(1, rooms.size()):
+		_corridor(L, rng, rooms[i - 1].get_center(), rooms[i].get_center())
+	for k in 3:
+		var a: Rect2i = rng.pick(rooms)
+		var b: Rect2i = rng.pick(rooms)
+		if a != b:
+			_corridor(L, rng, a.get_center(), b.get_center())
+	L.rooms = rooms
+	L.start = rooms[0].get_center()
+	var far: Vector2i = rooms[rooms.size() - 1].get_center()
+	var bd := -1.0
+	for r in rooms:
+		var d := Vector2(r.get_center()).distance_to(Vector2(L.start))
+		if d > bd:
+			bd = d
+			far = r.get_center()
+	L.far = far
+
+
+static func _corridor(L: Dictionary, rng: Rng, a: Vector2i, b: Vector2i) -> void:
+	var p := a
+	var horiz_first := rng.chance(0.5)
+	var wide := rng.chance(0.3)
+	var step := func(q: Vector2i) -> void:
+		_carve(L, Rect2i(q.x, q.y, 2 if wide else 1, 2 if wide else 1))
+	if horiz_first:
+		while p.x != b.x:
+			p.x += signi(b.x - p.x)
+			step.call(p)
+		while p.y != b.y:
+			p.y += signi(b.y - p.y)
+			step.call(p)
+	else:
+		while p.y != b.y:
+			p.y += signi(b.y - p.y)
+			step.call(p)
+		while p.x != b.x:
+			p.x += signi(b.x - p.x)
+			step.call(p)
+
+
+static func _caves(L: Dictionary, rng: Rng) -> void:
+	var t: PackedByteArray = L.tiles
+	for y in H:
+		for x in W:
+			t[y * W + x] = Tile.FLOOR if (x > 1 and y > 1 and x < W - 2 and y < H - 2 and rng.chance(0.56)) else Tile.WALL
+	for it in 5:
+		var n := t.duplicate()
+		for y in range(1, H - 1):
+			for x in range(1, W - 1):
+				var walls := 0
+				for dy in range(-1, 2):
+					for dx in range(-1, 2):
+						if t[(y + dy) * W + x + dx] == Tile.WALL:
+							walls += 1
+				n[y * W + x] = Tile.WALL if walls >= 5 else Tile.FLOOR
+		t = n
+	# найбільша печера
+	var comp := PackedInt32Array()
+	comp.resize(W * H)
+	comp.fill(-1)
+	var best := -1
+	var best_n := 0
+	var c := 0
+	for i in W * H:
+		if t[i] != Tile.FLOOR or comp[i] >= 0:
+			continue
+		var st := [i]
+		comp[i] = c
+		var n := 0
+		while not st.is_empty():
+			var k: int = st.pop_back()
+			n += 1
+			for d in [1, -1, W, -W]:
+				var j: int = k + d
+				if j >= 0 and j < W * H and t[j] == Tile.FLOOR and comp[j] < 0:
+					comp[j] = c
+					st.append(j)
+		if n > best_n:
+			best_n = n
+			best = c
+		c += 1
+	for i in W * H:
+		if t[i] == Tile.FLOOR and comp[i] != best:
+			t[i] = Tile.WALL
+	L.tiles = t
+	# старт — найлівіша клітинка, найдальша — для сходів
+	var start := Vector2i(-1, -1)
+	for x in W:
+		for y in H:
+			if t[y * W + x] == Tile.FLOOR:
+				start = Vector2i(x, y)
+				break
+		if start.x >= 0:
+			break
+	L.start = start
+	var far := start
+	var bd := -1.0
+	for i in W * H:
+		if t[i] == Tile.FLOOR:
+			var d := Vector2(i % W, i / W).distance_to(Vector2(start))
+			if d > bd:
+				bd = d
+				far = Vector2i(i % W, i / W)
+	L.far = far
+	L.rooms = [Rect2i(start - Vector2i(2, 2), Vector2i(5, 5))]

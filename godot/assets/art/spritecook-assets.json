@@ -1,5 +1,16 @@
 {
   "assets": [
-    {"asset_id": "ce971496-4519-45b0-9fed-7e1911834cb3", "sha12": "7a8f17050bfb", "label": "hero_chibi_swordsman", "file": "hero.png (обрізано, 256 px заввишки)"}
+    {
+      "asset_id": "ce971496-4519-45b0-9fed-7e1911834cb3",
+      "sha12": "7a8f17050bfb",
+      "label": "hero_chibi_swordsman",
+      "file": "hero.png (обрізано, 256 px заввишки)"
+    },
+    {
+      "asset_id": "d9a5a01a-0e64-45d7-8f3d-dd83fef83ca8",
+      "sha12": "e1febe717849",
+      "label": "monsters_sheet_8",
+      "file": "monsters/*.png (нарізано 4×2)"
+    }
   ]
 }

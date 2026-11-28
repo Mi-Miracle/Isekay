@@ -23,6 +23,7 @@ var _mini_marks: Control
 var _overlay: Control
 var map_mat: ShaderMaterial
 var _hints: Label
+var _pstat: Label
 var _news: PanelContainer
 var _news_box: VBoxContainer
 
@@ -112,9 +113,15 @@ func _build_hud() -> void:
 	var clock := _panel(Control.PRESET_TOP_RIGHT)
 	clock.custom_minimum_size = Vector2(330, 0)
 	_place(clock, 1.0, 0.0, Vector2(-16 - 330, 16), Vector2(330, 40))
+	var cvb := VBoxContainer.new()
+	cvb.add_theme_constant_override("separation", 0)
+	clock.add_child(cvb)
 	_clock = Game.make_label("", 20, Color.WHITE, 4)
 	_clock.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	clock.add_child(_clock)
+	cvb.add_child(_clock)
+	_pstat = Game.make_label("", 16, Color("#ffe6f2"), 3)
+	_pstat.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	cvb.add_child(_pstat)
 
 	_fps = Game.make_label("", 14, Color(1, 1, 1, 0.7), 3)
 	_root.add_child(_fps)
@@ -219,6 +226,10 @@ func update_news(entries: Array) -> void:
 		l.custom_minimum_size.x = 524
 		l.max_lines_visible = 2
 		_news_box.add_child(l)
+
+
+func set_player(text: String) -> void:
+	_pstat.text = text
 
 
 func set_clock(text: String) -> void:
@@ -386,6 +397,7 @@ func open_settlement(b: Dictionary) -> void:
 			chip.add_theme_font_size_override("font_size", 16)
 			flow.add_child(chip)
 		v.add_child(flow)
+	_trade_row(v, b, services)
 	var soon := Game.make_label("Заклади, торгівля й квести переїдуть сюди в наступних етапах.", 15, Color(1, 1, 1, 0.55))
 	soon.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	soon.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -418,11 +430,24 @@ func open_dungeon(d: Dictionary) -> void:
 	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	v.add_child(l)
-	var soon := Game.make_label("Двері зачинені на магічний замок «Етап 3». Люмі обіцяє відчинити, щойно допише бойову систему.", 16, Color("#ffd6ec"))
-	soon.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	soon.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	v.add_child(soon)
-	var b := _button(v, "Зрозуміло", close_overlay)
+	var p := Player.ensure(Game.state)
+	var warn := ""
+	if int(d.level) > int(p.lvl) + 4:
+		warn = "⚠️ Ти рівня %d. Люмі натякає, що тут тебе з'їдять. Але вибір твій." % int(p.lvl)
+	elif p.cleared.has(int(d.id)):
+		warn = "✅ Ти вже зачищав це місце. Монстри, втім, повернулися — вони завжди повертаються."
+	else:
+		warn = "Твій рівень: %d. Зілля: %d. Удачі!" % [int(p.lvl), int(p.potions)]
+	var wl := Game.make_label(warn, 17, Color("#ffd6ec"))
+	wl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	wl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	v.add_child(wl)
+	var h := HBoxContainer.new()
+	h.alignment = BoxContainer.ALIGNMENT_CENTER
+	h.add_theme_constant_override("separation", 10)
+	v.add_child(h)
+	var b := _button(h, "⚔️ Увійти", func(): world.enter_dungeon(world.dungeon_info(d)))
+	_button(h, "Не сьогодні", close_overlay)
 	_show_overlay(pv[0], 0.35)
 	b.grab_focus.call_deferred()
 
@@ -687,3 +712,61 @@ func _realm_details(det: VBoxContainer, id: int) -> void:
 		add.call("Останні події:", 18, Game.C_GOLD)
 		for e in news:
 			add.call("День %d · %s" % [int(e.day) + 1, e.text], 15, Color(1, 1, 1, 0.8))
+
+
+## Торгівля в поселенні: зілля, ефір, продаж руди, вхід у шахту.
+func _trade_row(v: VBoxContainer, b: Dictionary, services: Array) -> void:
+	var p := Player.ensure(Game.state)
+	var row := HFlowContainer.new()
+	row.add_theme_constant_override("h_separation", 8)
+	row.add_theme_constant_override("v_separation", 8)
+	row.alignment = FlowContainer.ALIGNMENT_CENTER
+	v.add_child(row)
+	var info := Game.make_label("", 16, Color(1, 1, 1, 0.85))
+	info.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var refresh := func(): info.text = Player.summary(p) + (" · руда на %d 💰" % Player.ore_value(p) if Player.ore_value(p) > 0 else "")
+	refresh.call()
+	var shop: bool = services.has("Крамниця") or services.has("Алхімік") or services.has("Таверна")
+	if shop:
+		var bp := Button.new()
+		bp.text = "🧪 Зілля — 25 💰"
+		bp.add_theme_font_size_override("font_size", 17)
+		bp.pressed.connect(func():
+			if int(p.gold) >= 25:
+				p.gold = int(p.gold) - 25
+				p.potions = int(p.potions) + 1
+				refresh.call()
+			else:
+				toast("Не вистачає золота. Продавець співчутливо кашляє.", Color("#ffb3b3")))
+		row.add_child(bp)
+	if services.has("Алхімік") or services.has("Магічна лавка"):
+		var be := Button.new()
+		be.text = "💧 Ефір — 40 💰"
+		be.add_theme_font_size_override("font_size", 17)
+		be.pressed.connect(func():
+			if int(p.gold) >= 40:
+				p.gold = int(p.gold) - 40
+				p.ethers = int(p.ethers) + 1
+				refresh.call()
+			else:
+				toast("Не вистачає золота.", Color("#ffb3b3")))
+		row.add_child(be)
+	if services.has("Ринок") or services.has("Кузня") or services.has("Крамниця"):
+		var bo := Button.new()
+		bo.text = "⛏️ Продати руду"
+		bo.add_theme_font_size_override("font_size", 17)
+		bo.pressed.connect(func():
+			var got := Player.sell_ore(p)
+			if got > 0:
+				toast("Руду продано за %d 💰. Ковалі задоволені." % got, Game.C_GOLD)
+			else:
+				toast("Руди немає. Ковалі розчаровані.", Color(1, 1, 1, 0.7))
+			refresh.call())
+		row.add_child(bo)
+	if b.type == "mine":
+		var bm := Button.new()
+		bm.text = "⛏️ Спуститися в шахту"
+		bm.add_theme_font_size_override("font_size", 17)
+		bm.pressed.connect(func(): world.enter_dungeon(world.mine_info(b)))
+		row.add_child(bm)
+	v.add_child(info)
