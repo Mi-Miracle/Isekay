@@ -74,6 +74,9 @@ func setup(dinfo: Dictionary) -> void:
 	p = Player.ensure(Game.state)
 	theme_d = DungeonGen.theme_of("minecave" if info.kind == "mine" else info.dtype)
 	C = Player.cls(p)
+	skill_cd = []
+	skill_cd.resize(maxi(8, C.skills.size()))
+	skill_cd.fill(0.0)
 	for k in DungeonGen.MONSTERS:
 		_tex[k] = load("res://assets/art/monsters/%s.png" % k)
 
@@ -397,7 +400,7 @@ func cast_skill(i: int) -> void:
 			p.hp = minf(Player.max_hp(p), float(p.hp) + Player.max_hp(p) * float(S.amount))
 		"buff":
 			rage_t = float(S.time)
-			_say("😤 ЛЮТЬ!", 1.0)
+			_say("😤 %s!" % S.name, 1.0)
 		"blink", "charge":
 			var target := mouse
 			var dirv := (target - hero.position)
@@ -660,7 +663,7 @@ func _kill(e: Dictionary) -> void:
 	fx.append({"type": "poof", "pos": e.pos, "t": 0.45, "size": float(e.size)})
 	_float_text(e.pos + Vector2(0, -20), "+%d досв." % xp, Color("#c9a7ff"))
 	if ups > 0:
-		_say("✨ Новий рівень: %d! Люмі аплодує (стримано)." % int(p.lvl), 2.5)
+		_say("✨ Новий рівень: %d! Люмі аплодує (стримано).%s" % [int(p.lvl), " 🌟 Можна підвищити клас — книга навичок (B)!" if Classes.pending(p) != "" else ""], 3.0)
 		fx.append({"type": "levelup", "pos": hero.position, "t": 1.0})
 	if randf() < (1.0 if e.boss else 0.45):
 		drops.append({"pos": e.pos, "kind": "gold", "n": randi_range(3, 9) * int(e.lvl) * ((3 if info.has("ambush") else 10) if e.boss else 1)})

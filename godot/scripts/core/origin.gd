@@ -36,6 +36,7 @@ const BLESSINGS := {
 	"appraisal": {"name": "Оцінка", "icon": "🔍", "desc": "Бачиш ціну всього: +15% золота і +3% криту по слабких місцях.", "bonus": {"gold": 0.15, "crit": 0.03}},
 	"goddess_fav": {"name": "Улюблениця богині", "icon": "💌", "desc": "Люмі дзвонить частіше й надсилає подарунки. Іноді — листівки з сердечками.", "bonus": {"calls": 1.0}},
 	"truck": {"name": "Вантажівка-кун на виклик", "icon": "🚚", "desc": "СЕКРЕТ! Твій ривок (Shift) таранить ворогів, як вантажівка. Карма — штука кругла.", "bonus": {"dash_dmg": 1.4}, "secret": true},
+	"jack": {"name": "Майстер на всі руки", "icon": "🃏", "desc": "СЕКРЕТНИЙ ДЖЕКПОТ! Відкриває клас, що вчить навички ВСІХ класів. Ніщо не ідеально — зате все одразу.", "bonus": {"xp": 0.05}, "secret": true},
 	"lumi": {"name": "Улюбленець Люмі", "icon": "🌸", "desc": "СЕКРЕТНИЙ ДЖЕКПОТ! +10% до всього. Люмі пише тобі листи.", "bonus": {"hp": 0.1, "mp": 0.1, "atk": 0.1, "def": 0.1, "crit": 0.03, "xp": 0.1, "speed": 0.05}, "secret": true},
 }
 
@@ -67,6 +68,8 @@ static func roll_blessing(rng := RandomNumberGenerator.new()) -> String:
 		return "lumi"
 	if rng.randf() < 0.03:
 		return "truck"
+	if rng.randf() < 0.02 or OS.get_environment("ISEKAY_BLESS") == "jack":
+		return "jack"
 	var keys: Array = BLESSINGS.keys().filter(func(k): return not BLESSINGS[k].get("secret", false))
 	return keys[rng.randi() % keys.size()]
 

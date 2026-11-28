@@ -864,7 +864,7 @@ func open_inventory(town: Dictionary = {}) -> void:
 	var sl: Array = Classes.slots(p)
 	var names: Array = []
 	for k in Classes.SLOTS:
-		var S := Classes.skill_by_id(str(p.cls), str(sl[k]))
+		var S := Classes.skill_of(p, str(sl[k]))
 		names.append("%s %s" % [Classes.KEYS[k], S.get("name", "—")])
 	var skl := Game.make_label("Навички: " + ", ".join(PackedStringArray(names)), 15, Color(1, 1, 1, 0.7), 2)
 	skl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -2336,23 +2336,62 @@ func open_family() -> void:
 	c.grab_focus.call_deferred()
 
 
-## Книга навичок: усі навички класу й вибір, яку класти на Q / F / V / Shift.
+## Книга навичок: шлях класу, усі навички (з гілкою, майстром і вознесінням) і вибір клавіш Q / F / V / G.
 func open_skills() -> void:
 	var p := Player.ensure(Game.state)
 	var C := Player.cls(p)
-	var pv := _vbox_panel("📖 Книга навичок · %s %s" % [C.icon, C.name], 980)
+	var T := Classes.tier(p)
+	var pv := _vbox_panel("📖 Книга навичок · %s %s" % [T.icon, T.title], 1000)
 	var v: VBoxContainer = pv[1]
-	_info(v, "Натисни на клавішу біля навички — і вона ляже туди. Q також на середній кнопці миші. Shift/ПКМ — як і раніше ривок.", 16, Color(1, 1, 1, 0.75))
+	_info(v, "Шлях: %s  ·  %s" % [" → ".join(PackedStringArray(T.path)), T.tier_name], 17, Game.C_ACCENT2)
+	var pend := Classes.pending(p)
+	var top := HBoxContainer.new()
+	top.alignment = BoxContainer.ALIGNMENT_CENTER
+	top.add_theme_constant_override("separation", 10)
+	v.add_child(top)
+	if pend != "":
+		var lbl: String = {"branch": "🌟 Обрати клас ІІ!", "master": "🌟 Обрати клас ІІІ!", "ascend": "👼 Вознесіння!"}[pend]
+		var bb := _small_btn(top, lbl, open_class_path)
+		bb.add_theme_color_override("font_color", Game.C_GOLD)
+	else:
+		var nxt := ""
+		if not Classes.tree(str(p.cls)).is_empty():
+			if Classes.branch(p).is_empty():
+				nxt = "Клас ІІ — з %d рівня" % Classes.BRANCH_LVL
+			elif Classes.master(p).is_empty():
+				nxt = "Клас ІІІ — з %d рівня" % Classes.MASTER_LVL
+			elif not Classes.ascended(p):
+				nxt = "Вознесіння — з %d рівня" % Classes.ASCEND_LVL
+		if nxt != "":
+			_small_btn(top, "🌳 Дерево класу (%s)" % nxt, open_class_path)
+	if str(p.cls) == "jack":
+		_small_btn(top, "🃏 Вчитися в інших класів (%d/%d)" % [Classes.jack_list(p).size(), Classes.jack_cap(p)], open_jack)
+	_info(v, "Натисни на клавішу біля навички — і вона ляже туди. Q також на середній кнопці миші. Shift/ПКМ — ривок.", 15, Color(1, 1, 1, 0.65))
+	var sc := ScrollContainer.new()
+	sc.custom_minimum_size = Vector2(960, 520)
+	sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	v.add_child(sc)
+	var list := VBoxContainer.new()
+	list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	list.add_theme_constant_override("separation", 6)
+	sc.add_child(list)
 	var sl: Array = Classes.slots(p)
 	for S in C.skills:
 		var open: bool = int(p.lvl) >= int(S.lvl)
 		var row := HBoxContainer.new()
 		row.add_theme_constant_override("separation", 8)
-		v.add_child(row)
-		var txt := "%s%s — %s\n✦ %d · перезарядка %.1f с%s" % ["" if open else "🔒 ", S.name, S.desc, int(S.mp), float(S.cd), "" if open else " · відкриється на %d рівні" % int(S.lvl)]
+		list.add_child(row)
+		var tag := ""
+		if S.get("borrowed", "") != "":
+			tag = "🃏 "
+		elif str(S.id).begins_with("t_asc_"):
+			tag = "👼 "
+		elif str(S.id).begins_with("t_"):
+			tag = "🌟 "
+		var txt := "%s%s%s — %s\n✦ %d · перезарядка %.1f с%s" % ["" if open else "🔒 ", tag, S.name, S.desc, int(S.mp), float(S.cd), "" if open else " · відкриється на %d рівні" % int(S.lvl)]
 		var lab := Game.make_label(txt, 16, Color.WHITE if open else Color(1, 1, 1, 0.5), 3)
 		lab.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		lab.custom_minimum_size.x = 640
+		lab.custom_minimum_size.x = 600
 		lab.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		row.add_child(lab)
 		for k in Classes.SLOTS:
@@ -2361,11 +2400,151 @@ func open_skills() -> void:
 				Classes.assign(p, k, str(S.id))
 				Audio.sfx("click")
 				open_skills())
-			b.custom_minimum_size = Vector2(84, 40)
+			b.custom_minimum_size = Vector2(76, 40)
 			if on:
 				b.add_theme_color_override("font_color", Game.C_GOLD)
 				b.text = "★" + Classes.KEYS[k]
 	var c := _button(v, "Закрити", close_overlay)
+	_show_overlay(pv[0], 0.45)
+	c.grab_focus.call_deferred()
+
+
+## Дерево класу: гілки (клас ІІ), майстри (клас ІІІ) і вознесіння. Обирати можна, коли настав рівень.
+func open_class_path() -> void:
+	var p := Player.ensure(Game.state)
+	var key := str(p.cls)
+	var TR := Classes.tree(key)
+	var pend := Classes.pending(p)
+	var pv := _vbox_panel("🌳 Дерево класу · %s" % Classes.tier(p).title, 1100)
+	var v: VBoxContainer = pv[1]
+	var skl := func(arr: Array) -> String:
+		return ", ".join(PackedStringArray(arr.map(func(x): return "%s (рів. %d)" % [x.name, int(x.lvl)])))
+	var bon := func(b: Dictionary) -> String:
+		var names := {"hp": "❤", "mp": "✦", "atk": "атака", "def": "захист", "crit": "крит"}
+		var parts: Array = []
+		for k in b:
+			parts.append("%s +%d%%" % [names.get(k, k), int(round(float(b[k]) * 100))])
+		return ", ".join(PackedStringArray(parts))
+	var sc := ScrollContainer.new()
+	sc.custom_minimum_size = Vector2(1060, 560)
+	sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	v.add_child(sc)
+	var list := VBoxContainer.new()
+	list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	list.add_theme_constant_override("separation", 8)
+	sc.add_child(list)
+	var cur_b := Classes.branch(p)
+	for B in TR.get("branches", []):
+		if not cur_b.is_empty() and cur_b.id != B.id:
+			continue
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 10)
+		list.add_child(row)
+		var lab := Game.make_label("%s %s — %s\nБонус: %s · навички: %s" % [B.icon, B.name, B.desc, bon.call(B.bonus), skl.call(B.skills)], 17, Game.C_GOLD if cur_b.get("id", "") == B.id else Color.WHITE, 3)
+		lab.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		lab.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		row.add_child(lab)
+		if pend == "branch":
+			_small_btn(row, "Обрати", func():
+				if Classes.choose_branch(p, str(B.id)):
+					Audio.sfx("levelup")
+					toast("🌟 Новий клас: %s %s! Люмі ридає від гордості." % [B.icon, B.name], Game.C_GOLD, 5.0)
+					open_class_path())
+		for M in B.masters:
+			var cur_m := Classes.master(p)
+			if not cur_m.is_empty() and cur_m.id != M.id:
+				continue
+			var r2 := HBoxContainer.new()
+			r2.add_theme_constant_override("separation", 10)
+			list.add_child(r2)
+			var l2 := Game.make_label("      ↳ %s %s — %s\n      Бонус: %s · навички: %s" % [M.icon, M.name, M.desc, bon.call(M.bonus), skl.call(M.skills)], 15, Game.C_GOLD if cur_m.get("id", "") == M.id else Color(1, 1, 1, 0.8), 3)
+			l2.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			l2.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			r2.add_child(l2)
+			if pend == "master" and cur_b.get("id", "") == B.id:
+				_small_btn(r2, "Обрати", func():
+					if Classes.choose_master(p, str(M.id)):
+						Audio.sfx("levelup")
+						toast("🌟 Клас ІІІ: %s %s! Тепер ти майже легенда." % [M.icon, M.name], Game.C_GOLD, 5.0)
+						open_class_path())
+	if TR.has("ascend"):
+		var A: Dictionary = TR.ascend
+		var r3 := HBoxContainer.new()
+		r3.add_theme_constant_override("separation", 10)
+		list.add_child(r3)
+		var l3 := Game.make_label("👼 Вознесіння (рів. %d): %s %s — +12%% до всього. Навичка: %s — %s" % [Classes.ASCEND_LVL, A.icon, A.name, A.skill.name, A.skill.desc], 16, Game.C_GOLD if Classes.ascended(p) else Color(1, 1, 1, 0.8), 3)
+		l3.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		l3.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		r3.add_child(l3)
+		if pend == "ascend":
+			_small_btn(r3, "Вознестися!", func():
+				if Classes.ascend(p):
+					Audio.sfx("levelup")
+					toast("👼 ВОЗНЕСІННЯ! %s %s. Люмі просить автограф." % [A.icon, A.name], Game.C_GOLD, 6.0)
+					open_class_path())
+	var row2 := HBoxContainer.new()
+	row2.alignment = BoxContainer.ALIGNMENT_CENTER
+	row2.add_theme_constant_override("separation", 10)
+	v.add_child(row2)
+	_small_btn(row2, "📖 Книга навичок", open_skills)
+	var c := _button(row2, "Закрити", close_overlay)
+	_show_overlay(pv[0], 0.45)
+	c.grab_focus.call_deferred()
+
+
+## Майстер на всі руки: позичає навички інших класів (2 + рівень/5).
+func open_jack(filter := "") -> void:
+	var p := Player.ensure(Game.state)
+	var L := Classes.jack_list(p)
+	var pv := _vbox_panel("🃏 Вчитися в інших класів · %d/%d" % [L.size(), Classes.jack_cap(p)], 1100)
+	var v: VBoxContainer = pv[1]
+	_info(v, "Обери клас-вчителя, а тоді навичку. Вивчене одразу з'являється в книзі навичок. Ще раз натиснеш — забудеш (місце звільниться).", 15, Color(1, 1, 1, 0.7))
+	var flow := HFlowContainer.new()
+	flow.add_theme_constant_override("h_separation", 6)
+	flow.add_theme_constant_override("v_separation", 6)
+	v.add_child(flow)
+	if filter == "":
+		filter = "swordsman"
+	for k in Classes.all():
+		if k == "jack":
+			continue
+		var CI: Dictionary = Classes.info(k)
+		var b := _small_btn(flow, "%s %s" % [CI.icon, CI.name], func(): open_jack(k))
+		if k == filter:
+			b.add_theme_color_override("font_color", Game.C_GOLD)
+	var sc := ScrollContainer.new()
+	sc.custom_minimum_size = Vector2(1060, 420)
+	sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	v.add_child(sc)
+	var list := VBoxContainer.new()
+	list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	sc.add_child(list)
+	for S in Classes.jack_pool(p):
+		if S.borrowed != filter:
+			continue
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 10)
+		list.add_child(row)
+		var has: bool = S.id in L
+		var open: bool = int(p.lvl) >= int(S.lvl)
+		var lab := Game.make_label("%s%s — %s\n✦ %d · перезарядка %.1f с · рів. %d" % ["✅ " if has else "", S.name, S.desc, int(S.mp), float(S.cd), int(S.lvl)], 16, Game.C_GOLD if has else Color.WHITE if open else Color(1, 1, 1, 0.5), 3)
+		lab.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		lab.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		row.add_child(lab)
+		_small_btn(row, "Забути" if has else "Вивчити", func():
+			var r := Classes.jack_learn(p, str(S.id))
+			if r == "full":
+				toast("Місць немає: %d/%d. Ще одне — кожні 5 рівнів." % [L.size(), Classes.jack_cap(p)], Color("#ff8a8a"))
+				Audio.sfx("error")
+			else:
+				Audio.sfx("click")
+			open_jack(filter), not open and not has)
+	var row2 := HBoxContainer.new()
+	row2.alignment = BoxContainer.ALIGNMENT_CENTER
+	row2.add_theme_constant_override("separation", 10)
+	v.add_child(row2)
+	_small_btn(row2, "📖 Книга навичок", open_skills)
+	var c := _button(row2, "Закрити", close_overlay)
 	_show_overlay(pv[0], 0.45)
 	c.grab_focus.call_deferred()
 

@@ -89,6 +89,7 @@ const HERO_CLASSES := {
 	"swordsman": "Мечник", "mage": "Маг", "archer": "Лучник", "priest": "Жрець", "rogue": "Розбійник",
 	"paladin": "Паладин", "berserker": "Берсерк", "bard": "Бард", "monk": "Монах", "samurai": "Самурай",
 	"ninja": "Ніндзя", "summoner": "Призивач", "battle_chef": "Бойовий кухар",
+	"lancer": "Списник", "warlock": "Чорнокнижник", "alchemist": "Алхімік",
 }
 
 const REALM_COLORS := [

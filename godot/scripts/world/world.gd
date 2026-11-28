@@ -1342,6 +1342,50 @@ func _selftest() -> void:
 	hud.close_overlay()
 	Selftest.step("skill_slots", sk_all.size() == 6 and after[3] == sk_all[5].id and after.size() == 4, "%s → %s" % [before, after])
 	Classes.assign(pl2, 3, str(before[3]))
+	# v0.18: 17 класів, дерево класу (гілка → майстер → вознесіння), Майстер на всі руки
+	var types := ["arc", "nova", "projectile", "fan", "aoe_at", "meteor", "cloud", "heal", "shield", "buff", "blink", "charge"]
+	var bad: Array = []
+	for ck in Classes.all():
+		var CI: Dictionary = Classes.info(ck)
+		var pool: Array = CI.skills.duplicate()
+		for B in Classes.tree(ck).get("branches", []):
+			pool.append_array(B.skills)
+			for M in B.masters:
+				pool.append_array(M.skills)
+		if Classes.tree(ck).has("ascend"):
+			pool.append(Classes.tree(ck).ascend.skill)
+		for S in pool:
+			if not (S.type in types) or not S.has("mp") or not S.has("cd"):
+				bad.append("%s:%s" % [ck, S.id])
+	var tcls: Dictionary = pl2.duplicate(true)
+	tcls.cls = "paladin"
+	tcls.class_path = {"branch": "", "master": "", "asc": false}
+	tcls.lvl = 80
+	var hp0 := Player.max_hp(tcls)
+	var B0: Dictionary = Classes.tree("paladin").branches[1]
+	var ok_cls_path := Classes.choose_branch(tcls, str(B0.id)) and Classes.choose_master(tcls, str(B0.masters[0].id)) and Classes.ascend(tcls)
+	var T3 := Classes.tier(tcls)
+	var tjack: Dictionary = pl2.duplicate(true)
+	tjack.cls = "jack"
+	tjack.lvl = 10
+	tjack.jack_skills = []
+	var jid: String = Classes.jack_pool(tjack)[0].id
+	var jr := Classes.jack_learn(tjack, jid)
+	var has_j: bool = not Classes.skill_of(tjack, jid).is_empty()
+	Selftest.step("class_tree", Classes.all().size() == 17 and bad.is_empty() and ok_cls_path and T3.tier == 3 and Player.cls(tcls).skills.size() == 11 and Player.max_hp(tcls) > hp0 and jr == "learned" and has_j and Classes.jack_cap(tjack) == 4,
+		"класів %d, погані навички %s, шлях %s → %s, ❤ %d → %d, джек: %s %s" % [Classes.all().size(), bad, ok_cls_path, T3.title, int(hp0), int(Player.max_hp(tcls)), jr, jid])
+	var lvl0 := int(pl2.lvl)
+	pl2.lvl = maxi(lvl0, Classes.BRANCH_LVL)
+	hud.open_class_path()
+	await tree.create_timer(0.5).timeout
+	Selftest.shot(self, "21d_class_tree")
+	hud.close_overlay()
+	pl2.lvl = lvl0
+	if str(pl2.cls) == "jack":
+		hud.open_jack()
+		await tree.create_timer(0.4).timeout
+		Selftest.shot(self, "21e_jack")
+		hud.close_overlay()
 	# v0.17: дзвінок богині
 	var call := Goddess.make_call(pl2)
 	hud.open_goddess_call(call)

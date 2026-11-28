@@ -1,6 +1,8 @@
 ## Класи героя: базові характеристики, стиль звичайної атаки й шість навичок.
 ## Гравець сам кладе навички на 4 клавіші (Q, F, V, G) — `p.skill_slots`. Shift/ПКМ — ривок.
 ## Типи навичок виконує dungeon.gd (cast_skill).
+## Ще 11 класів і дерево класів (гілки, майстри, вознесіння) — у class_tree.gd (генерується з старої версії).
+## Шлях класу гравця — `p.class_path` {branch, master, asc}; позичені навички Майстра на всі руки — `p.jack_skills`.
 class_name Classes
 extends RefCounted
 
@@ -89,8 +91,203 @@ const CLASSES := {
 }
 
 
+const BRANCH_LVL := 20
+const MASTER_LVL := 45
+const ASCEND_LVL := 75
+const TIER_START := [1, 20, 45, 75]
+const TIER_END := [19, 44, 74, 100]
+const TIER_NAMES := ["Базовий клас", "Клас ІІ", "Клас ІІІ", "Вознесіння"]
+const GRADES := ["I", "II", "III"]
+
+static var _all: Dictionary = {}
+static var _cache: Dictionary = {}
+
+
+## Усі класи: шість рідних + перенесені зі старої версії.
+static func all() -> Dictionary:
+	if _all.is_empty():
+		_all = CLASSES.duplicate()
+		_all.merge(ClassTree.EXTRA)
+	return _all
+
+
 static func info(key: String) -> Dictionary:
-	return CLASSES.get(key, CLASSES.swordsman)
+	return all().get(key, CLASSES.swordsman)
+
+
+## Класи для створення героя; секретний «Майстер на всі руки» — лише з благословенням-джекпотом.
+static func playable(with_secret := false) -> Array:
+	return all().keys().filter(func(k): return with_secret or not all()[k].get("secret", false))
+
+
+static func tree(key: String) -> Dictionary:
+	return ClassTree.TREE.get(key, {})
+
+
+static func path(p: Dictionary) -> Dictionary:
+	if not (p.get("class_path") is Dictionary):
+		p.class_path = {"branch": "", "master": "", "asc": false}
+	return p.class_path
+
+
+static func branch(p: Dictionary) -> Dictionary:
+	var id := str(path(p).branch)
+	for b in tree(str(p.get("cls", ""))).get("branches", []):
+		if b.id == id:
+			return b
+	return {}
+
+
+static func master(p: Dictionary) -> Dictionary:
+	var id := str(path(p).master)
+	for m in branch(p).get("masters", []):
+		if m.id == id:
+			return m
+	return {}
+
+
+static func ascended(p: Dictionary) -> bool:
+	return bool(path(p).get("asc", false)) and not master(p).is_empty()
+
+
+## Щабель і грейд: {tier 0–3, grade 1–3, name, icon, title, path}.
+static func tier(p: Dictionary) -> Dictionary:
+	var C := info(str(p.get("cls", "swordsman")))
+	var B := branch(p)
+	var M := master(p)
+	var A: Dictionary = tree(str(p.get("cls", ""))).get("ascend", {})
+	var t := 3 if ascended(p) else 2 if not M.is_empty() else 1 if not B.is_empty() else 0
+	var names := [C.name, B.get("name", ""), M.get("name", ""), A.get("name", "")]
+	var icons := [C.icon, B.get("icon", ""), M.get("icon", ""), A.get("icon", "")]
+	var lvl := int(p.get("lvl", 1))
+	var span := float(TIER_END[t] - TIER_START[t] + 1)
+	var grade := clampi(1 + int(floor((lvl - TIER_START[t]) / span * 3.0)), 1, 3)
+	var chain: Array = []
+	for i in t + 1:
+		chain.append("%s %s" % [icons[i], names[i]])
+	return {"tier": t, "grade": grade, "name": names[t], "icon": icons[t], "title": "%s %s" % [names[t], GRADES[grade - 1]], "path": chain, "tier_name": TIER_NAMES[t]}
+
+
+## Що можна обрати зараз: "branch" / "master" / "ascend" / "".
+static func pending(p: Dictionary) -> String:
+	if tree(str(p.get("cls", ""))).is_empty():
+		return ""
+	var lvl := int(p.get("lvl", 1))
+	if branch(p).is_empty():
+		return "branch" if lvl >= BRANCH_LVL else ""
+	if master(p).is_empty():
+		return "master" if lvl >= MASTER_LVL else ""
+	if not ascended(p):
+		return "ascend" if lvl >= ASCEND_LVL else ""
+	return ""
+
+
+static func choose_branch(p: Dictionary, id: String) -> bool:
+	if pending(p) != "branch":
+		return false
+	for b in tree(str(p.cls)).branches:
+		if b.id == id:
+			path(p).branch = id
+			_cache.clear()
+			return true
+	return false
+
+
+static func choose_master(p: Dictionary, id: String) -> bool:
+	if pending(p) != "master":
+		return false
+	for m in branch(p).masters:
+		if m.id == id:
+			path(p).master = id
+			_cache.clear()
+			return true
+	return false
+
+
+static func ascend(p: Dictionary) -> bool:
+	if pending(p) != "ascend":
+		return false
+	path(p).asc = true
+	_cache.clear()
+	return true
+
+
+## Бонус до характеристики від гілки, майстра й вознесіння (hp, mp, atk, def, crit).
+static func bonus(p: Dictionary, key: String) -> float:
+	var s := float(branch(p).get("bonus", {}).get(key, 0.0)) + float(master(p).get("bonus", {}).get(key, 0.0))
+	if ascended(p):
+		s += 0.03 if key == "crit" else 0.12
+	return s
+
+
+# ---------------------------------------------------------------- Майстер на всі руки
+
+## Скільки чужих навичок може тримати Майстер на всі руки.
+static func jack_cap(p: Dictionary) -> int:
+	return 2 + int(p.get("lvl", 1)) / 5
+
+
+static func jack_list(p: Dictionary) -> Array:
+	if not (p.get("jack_skills") is Array):
+		p.jack_skills = []
+	return p.jack_skills
+
+
+## Чужі навички, які можна вивчити: базові навички інших класів (окрім рухових), уже доступні за рівнем.
+static func jack_pool(p: Dictionary) -> Array:
+	var out: Array = []
+	for k in all():
+		if k == "jack":
+			continue
+		var C: Dictionary = all()[k]
+		for S in C.skills:
+			if S.type in ["blink", "charge"]:
+				continue
+			var x: Dictionary = S.duplicate()
+			x.id = "j_%s_%s" % [k, S.id]
+			x.borrowed = k
+			x.desc = "%s %s: %s" % [C.icon, C.name, S.desc]
+			out.append(x)
+	return out
+
+
+static func jack_learn(p: Dictionary, id: String) -> String:
+	var L := jack_list(p)
+	if id in L:
+		L.erase(id)
+		_cache.clear()
+		return "forgot"
+	if L.size() >= jack_cap(p):
+		return "full"
+	L.append(id)
+	_cache.clear()
+	return "learned"
+
+
+## Клас гравця разом із навичками обраного шляху (і позиченими для Майстра на всі руки).
+## Навички шляху мають рівень відкриття: гілка 20/26, майстер 45/52, вознесіння 75.
+static func full(p: Dictionary) -> Dictionary:
+	var key := str(p.get("cls", "swordsman"))
+	var P := path(p)
+	var sig := "%s|%s|%s|%s|%s" % [key, P.branch, P.master, P.asc, ",".join(PackedStringArray(jack_list(p))) if key == "jack" else ""]
+	if _cache.has(sig):
+		return _cache[sig]
+	var C: Dictionary = info(key).duplicate()
+	var sk: Array = C.skills.duplicate()
+	sk.append_array(branch(p).get("skills", []))
+	sk.append_array(master(p).get("skills", []))
+	if ascended(p):
+		sk.append(tree(key).ascend.skill)
+	if key == "jack":
+		var pool := {}
+		for S in jack_pool(p):
+			pool[S.id] = S
+		for id in jack_list(p):
+			if pool.has(id):
+				sk.append(pool[id])
+	C.skills = sk
+	_cache[sig] = C
+	return C
 
 
 static func skills_open(key: String, lvl: int) -> Array:
@@ -99,6 +296,14 @@ static func skills_open(key: String, lvl: int) -> Array:
 
 static func skill_by_id(key: String, id: String) -> Dictionary:
 	for s in info(key).skills:
+		if s.id == id:
+			return s
+	return {}
+
+
+## Навичка з урахуванням шляху класу гравця.
+static func skill_of(p: Dictionary, id: String) -> Dictionary:
+	for s in full(p).skills:
 		if s.id == id:
 			return s
 	return {}
@@ -117,7 +322,7 @@ static func slots(p: Dictionary) -> Array:
 	if not (cur is Array) or cur.size() != SLOTS:
 		cur = default_slots(key)
 	for i in SLOTS:
-		if str(cur[i]) != "" and skill_by_id(key, str(cur[i])).is_empty():
+		if str(cur[i]) != "" and skill_of(p, str(cur[i])).is_empty():
 			cur[i] = default_slots(key)[i]
 	p.skill_slots = cur
 	return cur
