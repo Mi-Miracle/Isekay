@@ -1,77 +1,197 @@
-## Вікно налаштувань (спільне для головного меню й паузи).
+## Вікно налаштувань (спільне для головного меню й паузи): вкладки Загальне, Звук, Twitch, Події, Керування.
 class_name SettingsPanel
 extends PanelContainer
 
 signal closed
 
+const CONTROLS := [
+	["Мапа світу", ""],
+	["WASD / стрілки / стік", "рух"], ["Shift", "біг (верхи — галоп)"], ["ЛКМ по мапі", "іти сюди"], ["Коліщатко, + / −", "зум"],
+	["E / Enter", "увійти в поселення, оглянути підземелля"], ["X", "сісти верхи / злізти"], ["M", "мапа світу"], ["Tab", "політична мапа"],
+	["K", "королівства"], ["J", "хроніка"], ["I", "спорядження"], ["H", "мій дім"], ["L", "мої землі"], ["T", "почекати день"],
+	["F5", "зберегти"], ["F11", "повний екран"], ["Esc", "пауза / скасувати шлях"],
+	["Підземелля", ""],
+	["ЛКМ / Пробіл", "удар"], ["Shift / ПКМ", "ривок"], ["Q / F / V", "навички класу"], ["R / 1", "зілля"], ["2", "ефір"],
+	["E", "скриня, сходи, вихід, жила"],
+	["Місто", ""],
+	["E", "увійти в заклад / поговорити"], ["Esc або брама", "вийти"],
+	["Чат Twitch", ""],
+	["!допомога", "список команд"], ["!лікуй", "+20% ❤ герою"], ["!подарунок", "зілля, ефір або трохи золота"],
+	["!герой", "глядач з'являється у світі як НПС-герой"], ["!жарт", "жарт від Люмі"], ["!орда", "накликати орду (хаос)"],
+	["!1 / !2 / !3", "голос за варіант у події"],
+]
+
+var _status: Label
+
 
 func _ready() -> void:
 	theme = Game.theme
-	custom_minimum_size = Vector2(520, 0)
+	custom_minimum_size = Vector2(760, 0)
 	var v := VBoxContainer.new()
-	v.add_theme_constant_override("separation", 14)
+	v.add_theme_constant_override("separation", 12)
 	add_child(v)
 	var title := Game.make_label("Налаштування", 34, Game.C_GOLD, 8, Game.title_font)
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	v.add_child(title)
-	_toggle(v, "Повноекранний режим (F11)", "fullscreen")
-	_toggle(v, "Вертикальна синхронізація", "vsync")
-	_toggle(v, "Показувати FPS", "show_fps")
-	_toggle(v, "Автозбереження", "auto_save")
-	_slider(v, "🎵 Музика", "music_vol")
-	_slider(v, "🔔 Звуки", "sfx_vol")
+	var tabs := TabContainer.new()
+	tabs.custom_minimum_size = Vector2(720, 470)
+	tabs.add_theme_font_size_override("font_size", 19)
+	v.add_child(tabs)
+
+	var g := _page(tabs, "Загальне")
+	_toggle(g, "Повноекранний режим (F11)", "fullscreen")
+	_toggle(g, "Вертикальна синхронізація", "vsync")
+	_toggle(g, "Показувати FPS", "show_fps")
+	_toggle(g, "Автозбереження", "auto_save")
+
+	var a := _page(tabs, "Звук")
+	_slider(a, "🎵 Музика", "music_vol", 0.0, 1.0, 0.05, true)
+	_slider(a, "🔔 Звуки", "sfx_vol", 0.0, 1.0, 0.05, true)
+	_note(a, "0% — вимкнено. Музика змінюється за місцевістю, у містах, тавернах, удома й у підземеллях.")
+
+	var t := _page(tabs, "Twitch")
+	_toggle(t, "Підключити чат Twitch", "twitch_on", func(_on): Twitch.apply_settings())
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 10)
+	row.add_child(_lbl("Канал:", 20))
+	var le := LineEdit.new()
+	le.text = str(Game.settings.get("twitch_channel", "mi_miracle"))
+	le.placeholder_text = "mi_miracle"
+	le.custom_minimum_size = Vector2(300, 0)
+	le.add_theme_font_size_override("font_size", 20)
+	row.add_child(le)
+	var apply := Button.new()
+	apply.text = "Підключити"
+	apply.add_theme_font_size_override("font_size", 18)
+	var set_chan := func(_x = null):
+		Game.settings.twitch_channel = le.text.strip_edges()
+		Game.settings.twitch_on = true
+		Game.save_settings()
+		Twitch.apply_settings()
+	apply.pressed.connect(set_chan)
+	le.text_submitted.connect(set_chan)
+	row.add_child(apply)
+	t.add_child(row)
+	_status = _lbl("Стан: " + Twitch.status_text(), 18, Color("#c9a7ff"))
+	t.add_child(_status)
+	Twitch.status_changed.connect(_on_status)
+	_toggle(t, "Команди глядачів (!лікуй, !подарунок, !герой, !жарт)", "twitch_cmds")
+	_toggle(t, "Хаос-команди (!орда)", "twitch_chaos")
+	_toggle(t, "Чат голосує в подіях (!1 / !2 / !3)", "twitch_vote")
+	_slider(t, "⏱ Голосування", "twitch_vote_secs", 10, 60, 5, false, "%d с")
+	_slider(t, "🧊 Пауза глядача", "twitch_cooldown", 5, 120, 5, false, "%d с")
+	_note(t, "Підключення анонімне, лише читання чату — без логіна й токенів. Пауза глядача — як часто одна людина може писати команди.")
+
+	var e := _page(tabs, "Події")
+	_slider(e, "🎲 Події в дорозі", "events_freq", 0.0, 1.0, 0.1, true)
+	_toggle(e, "Події в містах (фонтан, дуелі, бійки в таверні…)", "events_town")
+	_note(e, "Хатинка на курячих ніжках, чемні розбійники, меч у камені, скриня «НЕ МІМІК» та інші — 18 подій з вибором. Деякі закінчуються боєм-засідкою. 0% — подій немає.")
+
+	var k := _page(tabs, "Керування")
+	var sc := ScrollContainer.new()
+	sc.custom_minimum_size = Vector2(680, 400)
+	sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	var grid := GridContainer.new()
+	grid.columns = 2
+	grid.add_theme_constant_override("h_separation", 24)
+	grid.add_theme_constant_override("v_separation", 4)
+	for c in CONTROLS:
+		if c[1] == "":
+			grid.add_child(_lbl(c[0], 20, Game.C_GOLD))
+			grid.add_child(_lbl("", 20))
+		else:
+			grid.add_child(_lbl(c[0], 17, Color("#ffe6b3")))
+			grid.add_child(_lbl(c[1], 17, Color(1, 1, 1, 0.85)))
+	sc.add_child(grid)
+	k.add_child(sc)
+
 	var back := Button.new()
 	back.text = "Готово"
-	back.pressed.connect(func():
-		Game.save_settings()
-		closed.emit()
-		queue_free())
+	back.pressed.connect(_close)
 	v.add_child(back)
 	back.grab_focus.call_deferred()
 
 
-func _toggle(parent: Control, text: String, key: String) -> void:
-	var cb := CheckButton.new()
-	cb.text = text
-	cb.button_pressed = bool(Game.settings[key])
-	cb.add_theme_font_size_override("font_size", 21)
-	cb.toggled.connect(func(on: bool):
+func _on_status(text: String) -> void:
+	if is_instance_valid(_status):
+		_status.text = "Стан: " + text
+
+
+func _close() -> void:
+	if Twitch.status_changed.is_connected(_on_status):
+		Twitch.status_changed.disconnect(_on_status)
+	Game.save_settings()
+	closed.emit()
+	queue_free()
+
+
+func _page(tabs: TabContainer, name: String) -> VBoxContainer:
+	var m := MarginContainer.new()
+	m.name = name
+	for side in ["left", "right", "top", "bottom"]:
+		m.add_theme_constant_override("margin_" + side, 14)
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", 12)
+	m.add_child(v)
+	tabs.add_child(m)
+	return v
+
+
+func _lbl(text: String, size: int, col: Color = Color.WHITE) -> Label:
+	return Game.make_label(text, size, col)
+
+
+func _note(parent: Control, text: String) -> void:
+	var n := _lbl(text, 16, Color(1, 1, 1, 0.6))
+	n.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	n.custom_minimum_size.x = 660
+	parent.add_child(n)
+
+
+func _toggle(parent: Control, text: String, key: String, cb: Callable = Callable()) -> void:
+	var b := CheckButton.new()
+	b.text = text
+	b.button_pressed = bool(Game.settings.get(key, false))
+	b.add_theme_font_size_override("font_size", 20)
+	b.toggled.connect(func(on: bool):
 		Game.settings[key] = on
-		Game.save_settings())
-	parent.add_child(cb)
+		Game.save_settings()
+		if cb.is_valid():
+			cb.call(on))
+	parent.add_child(b)
 
 
-func _slider(parent: Control, text: String, key: String) -> void:
+func _slider(parent: Control, text: String, key: String, lo: float, hi: float, step: float, percent: bool, fmt: String = "%d") -> void:
 	var h := HBoxContainer.new()
 	h.add_theme_constant_override("separation", 12)
-	var l := Game.make_label(text, 21, Color.WHITE)
-	l.custom_minimum_size.x = 150
+	var l := _lbl(text, 20)
+	l.custom_minimum_size.x = 210
 	h.add_child(l)
 	var s := HSlider.new()
-	s.min_value = 0.0
-	s.max_value = 1.0
-	s.step = 0.05
-	s.value = float(Game.settings.get(key, 0.7))
-	s.custom_minimum_size = Vector2(240, 28)
+	s.min_value = lo
+	s.max_value = hi
+	s.step = step
+	s.value = float(Game.settings.get(key, lo))
+	s.custom_minimum_size = Vector2(300, 28)
 	s.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	s.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	var pct := Game.make_label("%d%%" % int(s.value * 100), 19, Color(1, 1, 1, 0.75))
-	pct.custom_minimum_size.x = 60
+	var show := func(x: float) -> String: return ("%d%%" % int(roundf(x * 100))) if percent else (fmt % int(x))
+	var val := _lbl(show.call(s.value), 19, Color(1, 1, 1, 0.75))
+	val.custom_minimum_size.x = 70
 	s.value_changed.connect(func(x: float):
 		Game.settings[key] = x
-		pct.text = "%d%%" % int(x * 100)
-		Audio.apply_volume()
+		val.text = show.call(x)
+		if key.ends_with("_vol"):
+			Audio.apply_volume()
 		if key == "sfx_vol":
 			Audio.sfx("coin"))
 	s.drag_ended.connect(func(_c): Game.save_settings())
 	h.add_child(s)
-	h.add_child(pct)
+	h.add_child(val)
 	parent.add_child(h)
 
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("ui_cancel"):
 		get_viewport().set_input_as_handled()
-		Game.save_settings()
-		closed.emit()
-		queue_free()
+		_close()

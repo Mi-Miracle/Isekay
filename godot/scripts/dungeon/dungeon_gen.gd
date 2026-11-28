@@ -76,12 +76,30 @@ static func generate(seed_v: int, opts: Dictionary) -> Dictionary:
 	if mine:
 		pool = POOLS.minecave
 	# вороги
+	var amb: Dictionary = opts.get("ambush", {})
 	var floor_cells: Array = []
 	for y in H:
 		for x in W:
-			if L.tiles[y * W + x] == Tile.FLOOR and Vector2(x, y).distance_to(Vector2(L.start)) > 9:
+			var dist := Vector2(x, y).distance_to(Vector2(L.start))
+			if L.tiles[y * W + x] == Tile.FLOOR and (dist > 9 if amb.is_empty() else (dist > 4 and dist < 13)):
 				floor_cells.append(Vector2i(x, y))
+	if not amb.is_empty() and floor_cells.size() < 4:
+		for y in H:
+			for x in W:
+				if L.tiles[y * W + x] == Tile.FLOOR and Vector2(x, y).distance_to(Vector2(L.start)) > 4:
+					floor_cells.append(Vector2i(x, y))
 	rng.shuffle(floor_cells)
+	if not amb.is_empty():
+		# засідка: ватажок і (n-1) поплічників поруч зі входом, без скринь і сходів
+		L.boss = true
+		L.stairs = Vector2i(-1, -1)
+		var bpos: Vector2i = floor_cells.pop_back() if not floor_cells.is_empty() else far
+		var bk: String = amb.get("boss_kind", pool[0])
+		L.spawns.append({"pos": bpos, "kind": bk, "lvl": lvl, "boss": true, "name": amb.get("boss_name", MONSTERS[bk].name)})
+		for i in mini(int(amb.get("n", 1)) - 1, floor_cells.size()):
+			L.spawns.append({"pos": floor_cells[i], "kind": bk if rng.chance(0.6) else pool[rng.rangei(0, pool.size() - 1)], "lvl": lvl, "boss": false})
+		L.ambush = true
+		return L
 	var n_mobs := (10 if mine else 14) + floor_i * 2 + mini(8, lvl / 4)
 	for i in mini(n_mobs, floor_cells.size()):
 		var k: String = pool[rng.rangei(0, pool.size() - 1)]

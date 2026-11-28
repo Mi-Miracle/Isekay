@@ -86,6 +86,8 @@ func _on_generated(data: WorldData) -> void:
 	_update_location(true)
 	Audio.resync()
 	_world_music(true)
+	Twitch.command.connect(_on_viewer)
+	Twitch.status_changed.connect(_on_twitch_status)
 	if Game.state.get("intro_done", false) == false:
 		Game.state.intro_done = true
 		hud.banner("Ласкаво просимо до Дивосвіту", "%s, вантажівка-кун зробила свою справу. Люмі передає привіт і нагадує: M — мапа, Esc — меню." % Game.state.hero_name)
@@ -463,6 +465,10 @@ func enter_town(b: Dictionary) -> void:
 	for q in done:
 		hud.toast("📋 Завдання виконано: %s — здай у гільдії." % q.name, Game.C_GOLD, 5.0)
 	hud.banner(b.name, "%s · %s" % [Defs.SETTLEMENT[b.type].name, wd.realms[b.owner].full_name])
+	if not Game.selftest:
+		var tev := Events.on_town()
+		if not tev.is_empty():
+			get_tree().create_timer(1.5).timeout.connect(func(): if town != null and not hud.is_modal(): hud.open_event(tev))
 
 
 func _on_town_done() -> void:
@@ -517,6 +523,11 @@ func _on_dungeon_done(st: Dictionary, dinfo: Dictionary) -> void:
 		p.hp = Player.max_hp(p) * 0.5
 		p.deaths = int(p.deaths) + 1
 		hud.banner("Люмі тебе воскресила", "Ціна дива: %d 💰 і трохи гідності. «Наступного разу бери більше зілля!»" % lost)
+	elif dinfo.has("ambush"):
+		if st.cleared:
+			var lines := Events.apply(_ambush_fx)
+			hud.banner("Засідку відбито!", " · ".join(PackedStringArray(lines)) if not lines.is_empty() else "Вороги тікають, кульгаючи.")
+		_ambush_fx = {}
 	elif st.cleared:
 		hud.banner("Підземелля зачищено!", "%s: ворогів %d, золота %d, досвіду %d." % [dinfo.name, st.kills, st.gold, st.xp])
 	var ore_txt := ""
@@ -556,6 +567,65 @@ func sail_to(from: Dictionary, to: Dictionary) -> String:
 	hud.banner("⛵ %s" % to.name, "Пливли %.1f дн. за %d 💰 · %s" % [res.days, res.fare, wd.realms[to.owner].full_name])
 	enter_town.call_deferred(to)
 	return ""
+
+
+var _ambush_fx: Dictionary = {}
+
+
+## Бій із події: арена-засідка; fx — нагорода, яка дістанеться після перемоги.
+func start_ambush(fight: Dictionary, fx: Dictionary) -> void:
+	_ambush_fx = fx
+	enter_dungeon(Events.ambush_info(fight, wd))
+
+
+# ---------------------------------------------------------------- Twitch
+
+func _on_twitch_status(text: String) -> void:
+	if hud:
+		hud.toast("📡 Twitch: " + text, Color("#c9a7ff"))
+
+
+func _on_viewer(user: String, kind: String, _args: Array) -> void:
+	if not _ready_done:
+		return
+	var p := Player.ensure(Game.state)
+	var col := Color("#c9a7ff")
+	match kind:
+		"help":
+			hud.toast("📡 Команди чату: !лікуй · !подарунок · !герой · !жарт%s · у подіях голос !1 !2 !3" % (" · !орда" if Game.settings.get("twitch_chaos", true) else ""), col, 7.0)
+		"heal":
+			var h := Player.max_hp(p) * 0.2
+			p.hp = minf(Player.max_hp(p), float(p.hp) + h)
+			hud.toast("💚 %s кинув(ла) героєві цілющу травичку: +%d ❤" % [user, int(h)], Color("#9dffb0"))
+			Audio.sfx("potion")
+		"gift":
+			var r := randi() % 3
+			if r == 0:
+				p.potions = int(p.potions) + 1
+				hud.toast("🎁 %s подарував(ла) зілля! +1 🧪" % user, Game.C_GOLD)
+			elif r == 1:
+				p.ethers = int(p.ethers) + 1
+				hud.toast("🎁 %s подарував(ла) ефір! +1 ✦" % user, Game.C_GOLD)
+			else:
+				var g := randi_range(15, 30) + int(p.lvl) * 3
+				p.gold = int(p.gold) + g
+				hud.toast("🎁 %s закинув(ла) на чай: +%d 💰" % [user, g], Game.C_GOLD)
+		"hero":
+			for h in pol.P.heroes:
+				if h.alive and str(h.name).to_lower() == user.to_lower():
+					hud.toast("📡 %s уже мандрує Дивосвітом (рів. %d)!" % [user, int(h.lvl)], col)
+					return
+			var nh := Heroes.make_hero(pol, Rng.new(hash(user) & 0x7fffffff), {"name": user, "lvl": randi_range(1, 5), "bio": "Глядач, що переродився з чату Twitch."})
+			pol.P.heroes.append(nh)
+			pol.log_event(int(pol.P.day), "📡 %s переродився в Дивосвіті як герой! З'явився біля %s." % [user, wd.baronies[int(nh.node)].name], "info")
+			hud.toast("📡 %s переродився в Дивосвіті як %s!" % [user, Defs.HERO_CLASSES.get(nh.cls, "герой")], Color("#ffe27a"), 5.0)
+			Audio.sfx("magic")
+		"joke":
+			hud.toast("😄 %s: %s" % [user, Twitch.JOKES[randi() % Twitch.JOKES.size()]], Color("#ffd6ec"), 7.0)
+		"horde":
+			pol.P.next_horde = int(pol.P.day)
+			hud.toast("😈 %s накликав(ла) орду! Вона вирине найближчими днями. Люмі ховається під стіл." % user, Color("#ff9a9a"), 6.0)
+			Audio.sfx("roar")
 
 
 func wait_day() -> void:
@@ -613,6 +683,11 @@ func _move_hero(delta: float) -> void:
 		pl.hp = minf(Player.max_hp(pl), float(pl.hp) + dist * 0.6)
 		pl.mp = minf(Player.max_mp(pl), float(pl.mp) + dist * 0.3)
 		Game.state.steps = float(Game.state.get("steps", 0.0)) + dist
+		var ev := Events.on_walk(dist)
+		if not ev.is_empty() and not hud.is_modal():
+			_path.clear()
+			hero.moving = false
+			hud.open_event(ev)
 	var nc := Vector2i(hero.position / CELL)
 	if nc != _last_cell:
 		_last_cell = nc
@@ -1123,6 +1198,55 @@ func _selftest() -> void:
 		if town != null:
 			town.leave()
 		await tree.process_frame
+	# події з вибором, засідка, чат Twitch
+	var erng := RandomNumberGenerator.new()
+	erng.seed = 7
+	var chest_ev: Dictionary = EventsData.STORY.filter(func(e): return e.id == "chest_road")[0]
+	var r_pass := Events.choose(chest_ev, 2, erng)
+	var lines_pass := Events.apply(r_pass.fx, erng)
+	hud.open_event(Events.pick("road", erng))
+	await tree.create_timer(0.6).timeout
+	Selftest.shot(self, "26_event")
+	hud.close_overlay()
+	Twitch.connected = true
+	hud.open_event(chest_ev)
+	Twitch.handle_chat("Глядач1", "!1")
+	Twitch.handle_chat("Глядач2", "2")
+	Twitch.handle_chat("Глядач3", "!2")
+	await tree.create_timer(0.6).timeout
+	Selftest.shot(self, "27_event_vote")
+	var vc := Twitch.vote_counts()
+	hud.close_overlay()
+	await tree.process_frame
+	Twitch.connected = false
+	var plt := Player.ensure(Game.state)
+	plt.hp = 10.0
+	Game.settings.twitch_cmds = true
+	Twitch.handle_line("@badge-info=;display-name=Мірачка;color=#FF0000 :miracka!miracka@miracka.tmi.twitch.tv PRIVMSG #mi_miracle :!лікуй")
+	Twitch.handle_line(":viewer42!viewer42@viewer42.tmi.twitch.tv PRIVMSG #mi_miracle :!герой")
+	var has_vh: bool = pol.P.heroes.any(func(h): return str(h.name) == "viewer42")
+	Selftest.step("twitch", float(plt.hp) > 10.0 and has_vh and vc.size() == 3 and int(vc[1]) == 2 and int(vc[0]) == 1, "❤ %d, герой-глядач: %s, голоси %s" % [int(plt.hp), str(has_vh), vc])
+	var toll: Dictionary = EventsData.STORY.filter(func(e): return e.id == "goblin_toll")[0]
+	var r_fight := Events.choose(toll, 1, erng)
+	Selftest.step("event", not lines_pass.is_empty() and r_fight.fx.has("fight"), "%s → %s" % [r_pass.text, lines_pass])
+	plt.hp = Player.max_hp(plt)
+	plt.potions = 6
+	var fxr: Dictionary = r_fight.fx.duplicate()
+	fxr.erase("fight")
+	start_ambush(r_fight.fx.fight, fxr)
+	await tree.create_timer(3.0).timeout
+	Selftest.shot(dungeon, "28_ambush")
+	var n_en: int = dungeon.enemies.size()
+	var t_amb := Time.get_ticks_msec() + 40000
+	while dungeon != null and Time.get_ticks_msec() < t_amb:
+		await tree.process_frame
+	if dungeon != null:
+		dungeon.leave(false)
+		while dungeon != null:
+			await tree.process_frame
+	Selftest.step("ambush", n_en >= 2 and n_en <= 4 and int(last_dungeon.kills) > 0, "ворогів %d, переможено %d, перемога: %s" % [n_en, int(last_dungeon.kills), str(last_dungeon.cleared)])
+	await tree.create_timer(0.8).timeout
+	Selftest.shot(self, "29_after_ambush")
 	if OS.get_environment("ISEKAY_REVEALALL") == "1":
 		reveal_all()
 		var busiest: Dictionary = {}

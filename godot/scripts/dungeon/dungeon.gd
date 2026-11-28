@@ -122,7 +122,7 @@ func _load_floor(n: int) -> void:
 	floor_i = n
 	floor_cleared = false
 	var s := int(info.get("seed", 1)) * 101 + n * 7919
-	L = DungeonGen.generate(s, {"kind": info.kind, "dtype": info.dtype, "floor": n, "floors": info.floors, "level": info.level})
+	L = DungeonGen.generate(s, {"kind": info.kind, "dtype": info.dtype, "floor": n, "floors": info.floors, "level": info.level, "ambush": info.get("ambush", {})})
 	enemies.clear()
 	shots.clear()
 	drops.clear()
@@ -153,12 +153,13 @@ func _make_enemy(sp: Dictionary) -> Dictionary:
 	var M: Dictionary = DungeonGen.MONSTERS[sp.kind]
 	var lvl: int = sp.lvl
 	var boss: bool = sp.boss
-	var hp: float = M.hp * (1.0 + 0.22 * (lvl - 1)) * (9.0 if boss else 1.0)
+	var amb: Dictionary = info.get("ambush", {})
+	var hp: float = M.hp * (1.0 + 0.22 * (lvl - 1)) * ((float(amb.get("boss_hp", 9.0)) if boss else 1.0))
 	var e := {
 		"kind": sp.kind, "name": sp.get("name", M.name), "lvl": lvl, "boss": boss,
 		"pos": (Vector2(sp.pos) + Vector2(0.5, 0.5)) * TILE, "vel": Vector2.ZERO, "hp": hp, "max": hp,
 		"atk": M.atk * (1.0 + 0.16 * (lvl - 1)) * (1.5 if boss else 1.0), "speed": float(M.speed) * (0.85 if boss else 1.0),
-		"ai": M.ai, "size": float(M.size) * (2.0 if boss else 1.0), "xp": int(M.xp * (1.0 + 0.25 * (lvl - 1)) * (8 if boss else 1)),
+		"ai": M.ai, "size": float(M.size) * ((float(amb.get("boss_size", 2.0))) if boss else 1.0), "xp": int(M.xp * (1.0 + 0.25 * (lvl - 1)) * ((3 if not amb.is_empty() else 8) if boss else 1)),
 		"state": "idle", "t": 0.0, "aggro": false, "flash": 0.0, "face": 1.0, "target": Vector2.ZERO, "phase": 1, "burst": 4.0,
 		"seed": randf() * 10.0,
 	}
@@ -510,7 +511,7 @@ func _kill(e: Dictionary) -> void:
 		_say("✨ Новий рівень: %d! Люмі аплодує (стримано)." % int(p.lvl), 2.5)
 		fx.append({"type": "levelup", "pos": hero.position, "t": 1.0})
 	if randf() < (1.0 if e.boss else 0.45):
-		drops.append({"pos": e.pos, "kind": "gold", "n": randi_range(3, 9) * int(e.lvl) * (10 if e.boss else 1)})
+		drops.append({"pos": e.pos, "kind": "gold", "n": randi_range(3, 9) * int(e.lvl) * ((3 if info.has("ambush") else 10) if e.boss else 1)})
 	if randf() < (1.0 if e.boss else 0.06):
 		drops.append({"pos": e.pos + Vector2(12, 0), "kind": "potion", "n": 1})
 	if randf() < (1.0 if e.boss else 0.035):
@@ -740,6 +741,10 @@ func _on_boss_dead() -> void:
 	floor_cleared = true
 	stats.cleared = true
 	Audio.sfx("quest")
+	if info.has("ambush"):
+		_say("🏆 Засідку відбито! Повертаємось на дорогу…", 2.5)
+		get_tree().create_timer(2.5).timeout.connect(func(): if not done: leave(false))
+		return
 	for q in Guild.event("clear", int(info.id)):
 		_float_text(hero.position + Vector2(0, -80), "📋 %s ✅" % q.name, Game.C_GOLD)
 	var first: bool = not p.cleared.has(int(info.id))

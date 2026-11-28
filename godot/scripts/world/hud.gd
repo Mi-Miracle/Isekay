@@ -1254,6 +1254,93 @@ func _err(msg: String) -> bool:
 	return false
 
 
+# ---------------------------------------------------------------- події з вибором
+
+## Подія з вибором. Якщо підключено Twitch і ввімкнено голосування — чат обирає !1/!2/!3, але стример може клікнути сам.
+func open_event(ev: Dictionary) -> void:
+	var pv := _vbox_panel("%s %s" % [ev.icon, ev.title], 860)
+	var v: VBoxContainer = pv[1]
+	_info(v, ev.text, 19, Color("#ffe6f4"))
+	var decided := [false]
+	var pick := func(i: int):
+		if decided[0]:
+			return
+		decided[0] = true
+		if Twitch.vote_active:
+			Twitch.end_vote()
+		_event_result(ev, i)
+	var btns: Array = []
+	for i in ev.opts.size():
+		var o: Dictionary = ev.opts[i]
+		var b := _button(v, "%d. %s" % [i + 1, o.label], pick.bind(i))
+		btns.append(b)
+	if Twitch.start_vote(ev.opts.size()):
+		var secs := int(Game.settings.get("twitch_vote_secs", 25))
+		var lbl := _info(v, "", 18, Color("#c9a7ff"))
+		var left := [secs]
+		var upd := func():
+			var c := Twitch.vote_counts()
+			var parts: Array = []
+			for i in c.size():
+				parts.append("!%d — %d" % [i + 1, int(c[i])])
+			lbl.text = "📡 Чат голосує (%d с): %s" % [left[0], "   ".join(PackedStringArray(parts))]
+		upd.call()
+		var on_vote := func(_c): if is_instance_valid(lbl): upd.call()
+		Twitch.vote_changed.connect(on_vote)
+		lbl.tree_exiting.connect(func():
+			if Twitch.vote_changed.is_connected(on_vote):
+				Twitch.vote_changed.disconnect(on_vote)
+			if not decided[0] and Twitch.vote_active:
+				Twitch.end_vote())
+		var tm := Timer.new()
+		tm.process_mode = Node.PROCESS_MODE_ALWAYS
+		tm.wait_time = 1.0
+		v.add_child(tm)
+		tm.timeout.connect(func():
+			left[0] -= 1
+			if decided[0]:
+				tm.stop()
+				return
+			if left[0] > 0:
+				upd.call()
+				return
+			tm.stop()
+			var w := Twitch.end_vote()
+			if w < 0:
+				lbl.text = "📡 Чат мовчить. Обирай сам!"
+			else:
+				lbl.text = "📡 Чат обрав: %d. %s" % [w + 1, ev.opts[w].label]
+				Audio.sfx("quest")
+				get_tree().create_timer(1.2, true).timeout.connect(func(): pick.call(w)))
+		tm.start()
+	_show_overlay(pv[0], 0.5)
+	Audio.sfx("magic")
+	if not btns.is_empty():
+		btns[0].grab_focus.call_deferred()
+
+
+func _event_result(ev: Dictionary, i: int) -> void:
+	var res := Events.choose(ev, i)
+	var fx: Dictionary = res.fx.duplicate()
+	var fight = fx.get("fight")
+	fx.erase("fight")
+	var pv := _vbox_panel("%s %s" % [ev.icon, ev.opts[i].label], 820)
+	var v: VBoxContainer = pv[1]
+	_info(v, res.text, 19, Color.WHITE)
+	if fight is Dictionary:
+		_info(v, "⚔️ Бій! Переможеш — нагорода твоя.", 17, Color("#ffb3b3"))
+		var b := _button(v, "⚔️ До бою!", func(): world.start_ambush(fight, fx))
+		_show_overlay(pv[0], 0.5)
+		b.grab_focus.call_deferred()
+		return
+	var lines := Events.apply(fx)
+	if not lines.is_empty():
+		_info(v, " · ".join(PackedStringArray(lines)), 17, Game.C_GOLD)
+	var c := _button(v, "Далі", close_overlay)
+	_show_overlay(pv[0], 0.5)
+	c.grab_focus.call_deferred()
+
+
 func open_stable(b: Dictionary) -> void:
 	var t := Travel.st()
 	var p := Player.ensure(Game.state)
