@@ -309,6 +309,10 @@ func _unhandled_input(event: InputEvent) -> void:
 				world.hud.open_land(b)
 			KEY_U:
 				world.hud.open_hearts()
+			KEY_C:
+				world.hud.open_clan(b)
+			KEY_F:
+				world.hud.open_family()
 			KEY_J:
 				world.hud.open_chronicle()
 			KEY_K:

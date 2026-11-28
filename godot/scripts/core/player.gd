@@ -50,6 +50,8 @@ static func gear_sum(p: Dictionary, key: String) -> float:
 	# бонуси від розділів історії легенд
 	if p.get("perks") is Dictionary:
 		s += float(p.perks.get(key, 0.0))
+	# бонус подружжя
+	s += Family.perk(p, key)
 	for slot in p.gear:
 		var it = p.gear[slot]
 		if it is Dictionary:

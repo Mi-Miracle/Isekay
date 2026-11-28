@@ -122,6 +122,7 @@ static func rel(l: Dictionary) -> int:
 		v += 15
 	if Clan.lvl() >= 5:
 		v += 5
+	v += Family.lord_bonus()
 	return clampi(int(round(v)), -100, 100)
 
 

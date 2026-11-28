@@ -400,6 +400,8 @@ func _tick_days() -> void:
 		pol.tick(int(Game.state.day_ticked))
 		for msg in Estate.land_daily(pol):
 			hud.toast(msg, Color("#ffb37a"), 5.0)
+		for msg in Family.daily(int(Game.state.day_ticked)):
+			hud.toast(msg, Color("#ffc6e6"), 7.0)
 		for msg in Clan.daily(int(Game.state.day_ticked)):
 			hud.toast("🏯 " + msg, Color("#ffd27a"), 6.0)
 		n += 1
@@ -561,6 +563,8 @@ func _on_dungeon_done(st: Dictionary, dinfo: Dictionary) -> void:
 			hud.banner("Поразка від «%s»" % R.name, "Їхній чемпіон показав язика. Реванш — через %d дн. Ніхто не помер: це ж «дружній» поєдинок." % Clan.WAR_COOL)
 		save()
 		return
+	if not st.died and Family.after_dungeon(p):
+		hud.toast("💞 %s підлікувала тебе після походу (+25%% ❤)." % Family.st().spouse.name if Family.st().spouse.female else "💞 %s підлікував тебе після походу (+25%% ❤)." % Family.st().spouse.name, Color("#ffc6e6"), 4.0)
 	if st.died:
 		var lost := int(int(p.gold) * 0.25)
 		p.gold = int(p.gold) - lost
@@ -1074,6 +1078,8 @@ func _unhandled_input(event: InputEvent) -> void:
 				hud.open_hearts()
 			KEY_C:
 				hud.open_clan()
+			KEY_F:
+				hud.open_family()
 			KEY_F10:
 				reveal_all()
 				hud.toast("Чіт: Люмі показала всю мапу 👀", Game.C_ACCENT)
@@ -1703,6 +1709,32 @@ func _selftest() -> void:
 	var kres := Lords.knight(king)
 	Selftest.step("lords", lds.size() >= 2 and king.kind == "king" and talk_l != "" and not gres.has("err") and aerr == "" and not tl.is_empty() and derr == "" and duel_ok and not tl2.is_empty() and not kres.is_empty(),
 		"двір: %s · доручення: %s · поєдинок: %s · лицарство: %s" % [lds.map(func(x): return Lords.full(x)), tl, str(duel_ok), kres])
+	# родина
+	Bonds.known("ariel").bond = 100.0
+	plc.gold = int(plc.gold) + 1000
+	var f_hp0 := Player.max_hp(plc)
+	var f_atk0 := Player.atk(plc)
+	var f_mp0 := Player.max_mp(plc)
+	var f_crit0 := Player.crit(plc)
+	var f_perr := Family.propose("ariel")
+	var perk_ok := Player.max_hp(plc) > f_hp0 or Player.atk(plc) > f_atk0 or Player.max_mp(plc) > f_mp0 or Player.crit(plc) > f_crit0 or Family.gold_mul() > 1.0
+	var lm_err := Family.can_marry_lord(king)
+	var frng := RandomNumberGenerator.new()
+	frng.seed = 3
+	Family.born(Family.today(), frng)
+	Family.born(Family.today(), frng)
+	Family.st().kids[0].born = Family.today() - Family.HEIR_AGE * Family.DAYS_PER_YEAR
+	hud.open_family()
+	await tree.create_timer(0.5).timeout
+	Selftest.shot(self, "49_family")
+	hud.close_overlay()
+	var f_name0 := str(Game.state.hero_name)
+	var f_lvl0 := int(plc.lvl)
+	var young_err := Family.can_heir(1)
+	var f_heir := Family.take_heir(0)
+	Selftest.step("family", f_perr == "" and perk_ok and lm_err != "" and young_err != "" and not f_heir.is_empty() and str(Game.state.hero_name) != f_name0 and int(plc.lvl) < f_lvl0 and not Family.married() and Family.st().dynasty.size() == 1,
+		"%s · %s → %s, рівень %d → %d · %s" % [f_perr, f_name0, str(Game.state.hero_name), f_lvl0, int(plc.lvl), f_heir])
+	plc.lvl = f_lvl0
 	if town != null:
 		town.leave()
 		await tree.process_frame

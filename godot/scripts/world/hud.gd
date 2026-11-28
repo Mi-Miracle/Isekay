@@ -156,7 +156,7 @@ func _build_hud() -> void:
 	_prompt.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_root.add_child(_prompt)
 
-	_hints = Game.make_label("WASD — рух · Shift — біг · ЛКМ — іти сюди · E — дія · I — спорядження · H — дім · L — землі · U — серця · C — клан · M — мапа · Tab — держави · K — королівства · J — хроніка · X — верхи · T — чекати день · F5 — зберегти · Esc — меню", 15, Color(1, 1, 1, 0.75), 4)
+	_hints = Game.make_label("WASD — рух · Shift — біг · ЛКМ — іти сюди · E — дія · I — спорядження · H — дім · L — землі · U — серця · F — родина · C — клан · M — мапа · Tab — держави · K — королівства · J — хроніка · X — верхи · T — чекати день · F5 — зберегти · Esc — меню", 15, Color(1, 1, 1, 0.75), 4)
 	_hints.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
 	_hints.position = Vector2(18, -34)
 	_root.add_child(_hints)
@@ -224,7 +224,7 @@ func set_location(title: String, sub: String, info: String) -> void:
 func set_town_mode(on: bool) -> void:
 	_town_mode = on
 	_news.visible = not on and _news_box.get_child_count() > 0
-	_hints.text = "WASD — рух · ЛКМ — іти сюди · E — увійти / поговорити · I — спорядження · H — дім · L — землі · U — серця · C — клан · Esc або брама — вийти" if on else "WASD — рух · Shift — біг · ЛКМ — іти сюди · E — дія · I — спорядження · H — дім · L — землі · U — серця · C — клан · M — мапа · Tab — держави · K — королівства · J — хроніка · T — чекати день · F5 — зберегти · Esc — меню"
+	_hints.text = "WASD — рух · ЛКМ — іти сюди · E — увійти / поговорити · I — спорядження · H — дім · L — землі · U — серця · F — родина · C — клан · Esc або брама — вийти" if on else "WASD — рух · Shift — біг · ЛКМ — іти сюди · E — дія · I — спорядження · H — дім · L — землі · U — серця · F — родина · C — клан · M — мапа · Tab — держави · K — королівства · J — хроніка · T — чекати день · F5 — зберегти · Esc — меню"
 
 
 func update_news(entries: Array) -> void:
@@ -1397,7 +1397,8 @@ func open_hearts() -> void:
 	var top := _row(v)
 	_small_btn(top, "⇄ Змінити на: %s" % ("герой" if s.gender == "f" else "героїня"), func():
 		s.gender = "m" if s.gender == "f" else "f"
-		open_hearts())
+		open_hearts(), Family.married())
+	_small_btn(top, "🏡 Родина (F)", open_family)
 	var met: Array = s.legends.keys()
 	if met.is_empty():
 		_info(v, "Ти ще ні з ким не познайомився. Легенди трапляються в містах, після перемог і в шахтах — тримай очі відкритими!", 17, Color(1, 1, 1, 0.75))
@@ -1447,6 +1448,15 @@ func open_hearts() -> void:
 		if not ch.is_empty():
 			var rdy := Bonds.chapter_ready(id)
 			_small_btn(r, ("📖 Розділ «%s»" % ch.title) if rdy else ("📖 «%s» — з %d ❤" % [ch.title, int(ch.bond)]), func(): open_chapter(id), not rdy)
+		if not Family.married() and t >= 2:
+			var perr := Family.can_propose(id)
+			_small_btn(r, "💍 Освідчитися (%d 💰)" % Family.WEDDING_LEGEND if perr == "" else "💍 %s" % perr.trim_suffix("."), func():
+				if not _err(Family.propose(id)):
+					Audio.sfx("levelup")
+					banner("ВЕСІЛЛЯ! 💒", "%s %s каже «так»! Таверна гуляє, Люмі плаче в хусточку. F — родина." % [X.icon, X.name])
+					open_hearts(), perr != "")
+		elif Family.st().spouse.get("legend", "") == id:
+			_info(list, "💍 Твоє подружжя", 15, Color("#ffc6e6"))
 	var c := _button(v, "Закрити", close_overlay)
 	_show_overlay(pv[0], 0.5)
 	c.grab_focus.call_deferred()
@@ -2248,6 +2258,15 @@ func open_lord(b: Dictionary, key: String, said: String = "") -> void:
 					if not _err(Lords.accept(l, q)):
 						toast("👑 Нове доручення: %s" % q.name, Game.C_ACCENT2)
 						open_lord(b, key, "Чудово. І пам'ятай: ти працюєш на мене, а не на того графа через дорогу."))
+	if not Family.married():
+		var merr := Family.can_marry_lord(l)
+		var who := Family.lord_child_name(l, not Family.hero_female())
+		var rm := _row(v)
+		_small_btn(rm, ("💍 Просити руки: %s (%d 💰)" % [who, Family.lord_cost(l)]) if merr == "" else ("💍 %s — %s" % [who, merr.trim_suffix(".")]), func():
+			if not _err(Family.marry_lord(l)):
+				Audio.sfx("levelup")
+				banner("Весілля року! 💒", "%s і %s. %s" % [Game.state.hero_name, Family.st().spouse.name, "Королівство святкує тиждень!" if l.kind == "king" else "Сусіди заздрять."])
+				open_lord(b, key, "Бережи мою дитину! І приїжджайте на свята. Усі свята."), merr != "")
 	if l.kind == "king":
 		var kn := Lords.can_knight(l)
 		if Lords.st().knight.has(int(l.realm)):
@@ -2261,4 +2280,51 @@ func open_lord(b: Dictionary, key: String, said: String = "") -> void:
 				open_lord(b, key, "Меч на плече, клятва на вустах... Тепер ти — наш лицар! Не загуби меч."), kn != "")
 	var c := _button(v, "Назад", func(): open_settlement(b))
 	_show_overlay(pv[0], 0.4)
+	c.grab_focus.call_deferred()
+
+
+# ---------------------------------------------------------------- родина (F)
+
+func open_family() -> void:
+	var f := Family.st()
+	var p := Player.ensure(Game.state)
+	var pv := _vbox_panel("🏡 Родина %s" % Game.state.hero_name, 960)
+	var v: VBoxContainer = pv[1]
+	if not Family.married():
+		_info(v, "Ти поки сам(а). Люмі зітхає й гортає каталог наречених.", 18, Color("#ffd6ec"))
+		_info(v, "Як одружитися:\n💞 з легендою-супутником — «Споріднені душі» (❤ 80+) і %d 💰 (кнопка «Освідчитися» в Серцях, U);\n👑 з сином чи донькою лорда — ставлення двору (барон 55+, граф 60+, герцог 65+, монарх 70+) і весілля при дворі." % Family.WEDDING_LEGEND, 16, Color.WHITE)
+	else:
+		var sp: Dictionary = f.spouse
+		var B: Array = Family.BONUS[sp.kind]
+		_info(v, "%s %s — %s, разом з дня %d" % [sp.icon, sp.name, "дружина" if sp.female else "чоловік", int(sp.day) + 1], 20, Game.C_GOLD)
+		_info(v, "%s %s: %s" % [B[0], B[1], B[2]], 16, Color("#a8f0c0"))
+		var r := _row(v)
+		_small_btn(r, "💬 Поговорити", func():
+			toast("%s %s: «%s»" % [sp.icon, sp.name.split(",")[0], Family.spouse_line()], Color("#ffd6ec"), 5.0))
+	if not f.kids.is_empty():
+		_info(v, "Діти:", 18, Game.C_GOLD)
+		for i in f.kids.size():
+			var k: Dictionary = f.kids[i]
+			var a := Family.age(k)
+			var row := HBoxContainer.new()
+			row.add_theme_constant_override("separation", 10)
+			v.add_child(row)
+			var lab := Game.make_label("%s %s — %d р. · %s %s" % ["👧" if k.female else "👦", k.name, a, k.talent[0], k.talent[1]], 17, Color.WHITE, 3)
+			lab.custom_minimum_size.x = 640
+			lab.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			row.add_child(lab)
+			var herr := Family.can_heir(i)
+			_small_btn(row, "👑 Передати спадщину" if herr == "" else "👑 З %d років" % Family.HEIR_AGE, func():
+				var lines := Family.take_heir(i)
+				Audio.sfx("levelup")
+				banner("Династія продовжується!", " · ".join(PackedStringArray(lines)))
+				set_player(Player.short(p))
+				open_family(), herr != "")
+	elif Family.married():
+		_info(v, "Дітей поки немає. Лелеки Дивосвіту працюють повільно, але чесно.", 16, Color(1, 1, 1, 0.65))
+	if not f.dynasty.is_empty():
+		var names: Array = f.dynasty.map(func(d): return "%s (рів. %d)" % [d.name, int(d.lvl)])
+		_info(v, "📜 Предки династії: " + " → ".join(PackedStringArray(names)), 16, Color(1, 1, 1, 0.75))
+	var c := _button(v, "Закрити", close_overlay)
+	_show_overlay(pv[0], 0.45)
 	c.grab_focus.call_deferred()

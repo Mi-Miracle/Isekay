@@ -169,7 +169,7 @@ static func party_bonus() -> int:
 
 
 static func scale_gold(g: int) -> int:
-	return int(round(g * gold_mul()))
+	return int(round(g * gold_mul() * Family.gold_mul()))
 
 
 static func scale_xp(x: int) -> int:
