@@ -389,10 +389,11 @@
         if (e.boss && chance(0.5)) { const acc = D().ACCESSORIES.filter((a) => a.lvl <= e.lvl + 3); if (acc.length) { const a = pick(acc); items[a.id] = (items[a.id] || 0) + 1; } }
         if (e.dtype === 'dragon' && chance(0.5)) items.dragon_egg = 1;
       }
+      if (e.champion) { xp += e.xp; gold += Math.round(e.gold * 1.5); fame += 3; const cls = p.classes.primary ? D().CLASSES[p.classes.primary].weapon : null; const gid = D().randomGear(e.lvl + 2, Math.max(2, D().rollRarity(lootMul * 1.5, false)), cls); items[gid] = (items[gid] || 0) + 1; }
       p.kills[e.key] = (p.kills[e.key] || 0) + 1;
     }
     if (b.opts.xpMul) xp = Math.round(xp * b.opts.xpMul);
-    xp = Math.round(xp * diff().rew * (1 + b.breaks * 0.03)); gold = Math.round(gold * diff().rew);
+    xp = Math.round(xp * diff().rew * (1 + b.breaks * 0.03) * (b.rankMul || 1)); gold = Math.round(gold * diff().rew * (b.rankMul || 1));
     if (p.cheat === 'midas') gold = Math.round(gold * 1.6);
     if (b.art && b.art.gold) gold = Math.round(gold * 1.4);
     if (b.opts.horde) fame += 20;

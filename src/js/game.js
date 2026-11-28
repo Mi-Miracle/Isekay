@@ -22,8 +22,10 @@
     ISK.difficulty = G.difficulty;
     if (player.cheat === 'sailor') player.ship = true;
     if (ISK.life) ISK.life.init(G);
-    discoverAround(G, 30);
-    if (player.cheat === 'mapmaster') { for (const B of world.baronies) G.discovered['b:' + B.id] = 1; for (const Dg of world.dungeons) G.discovered['d:' + Dg.id] = 1; }
+    G.fog = new Uint8Array(WM().W * WM().H);
+    revealArea(G, world.baronies[world.startBarony].cell, 16, 2);
+    if (player.cheat === 'mapmaster') revealAll(G, 2);
+    spawnMonsters(G);
     for (const st of P.realms) { const R = world.realms[st.id]; if (R.isDemon) continue; if (R.raceKey === player.race) st.playerRep += 15; if (player.cheat === 'polyglot') st.playerRep += 20; }
     for (let d = 1; d <= 20; d++) POL().tick(world, P, d);
     G.time = 20; G.startDay = 20;
@@ -31,11 +33,118 @@
     return G;
   }
 
-  function discoverAround(G, r = 20) {
-    const h = WM().nodeXY(G.world, G.player.location);
-    for (const B of G.world.baronies) if (Math.hypot(B.x - h.x, B.y - h.y) < r) G.discovered['b:' + B.id] = 1;
-    for (const Dg of G.world.dungeons) if (Math.hypot(Dg.x - h.x, Dg.y - h.y) < r * 0.75) G.discovered['d:' + Dg.id] = 1;
+  // ---------------- v5.2: туман війни ----------------
+  // G.fog[cell]: 0 — невідомо, 1 — умовна мапа (куплена/чутки), 2 — бачив на власні очі
+  const SIGHT = 9;
+  function ensureFog(G) { if (!G.fog || G.fog.length !== WM().W * WM().H) G.fog = new Uint8Array(WM().W * WM().H); return G.fog; }
+  function sightAt(G, cell) { const t = G.world.terrain[cell]; const T = WM().T; return SIGHT + (t === T.HILLS ? 3 : t === T.MOUNTAIN || t === T.PEAK ? 5 : 0) + (G.player.cheat === 'mapmaster' ? 6 : 0); }
+  function discoverNodes(G, cx, cy, r, lvl) {
+    const w = G.world, f = G.fog, W = WM().W;
+    const chk = (o, key) => { if (Math.abs(o.x - cx) <= r && Math.abs(o.y - cy) <= r && f[o.cell] >= lvl) G.discovered[key] = 1; };
+    for (const B of w.baronies) chk(B, 'b:' + B.id);
+    for (const Dg of w.dungeons) chk(Dg, 'd:' + Dg.id);
+    for (const Rn of w.rnodes || []) chk(Rn, 'r:' + Rn.id);
+    void W;
   }
+  function revealArea(G, cell, r, lvl = 2) {
+    const f = ensureFog(G), W = WM().W, H = WM().H; const cx = cell % W, cy = (cell / W) | 0; let n = 0;
+    for (let y = Math.max(0, cy - r); y <= Math.min(H - 1, cy + r); y++) for (let x = Math.max(0, cx - r); x <= Math.min(W - 1, cx + r); x++) {
+      if ((x - cx) * (x - cx) + (y - cy) * (y - cy) > r * r) continue; const i = y * W + x; if (f[i] < lvl) { if (lvl === 2) n++; f[i] = lvl; }
+    }
+    if (n || lvl < 2) { G.fogDirty = true; discoverNodes(G, cx, cy, r, 2); }
+    if (n) { const p = G.player; p.stat.explored = (p.stat.explored || 0) + n; }
+    return n;
+  }
+  function revealAll(G, lvl) { const f = ensureFog(G); for (let i = 0; i < f.length; i++) if (f[i] < lvl) f[i] = lvl; G.fogDirty = true; for (const B of G.world.baronies) G.discovered['b:' + B.id] = 1; for (const Dg of G.world.dungeons) G.discovered['d:' + Dg.id] = 1; for (const Rn of G.world.rnodes || []) G.discovered['r:' + Rn.id] = 1; }
+  function discoverAround(G) { const c = WM().nodeCell(G.world, G.player.location); return revealArea(G, c, sightAt(G, c), 2); }
+  function revealAt(G, cell) { return revealArea(G, cell, sightAt(G, cell), 2); }
+  // нагорода дослідника: кожні 350 нових клітинок — досвід
+  function exploreReward(G) {
+    const p = G.player; p.flags.exploreAcc = (p.flags.exploreAcc || 0); const tot = p.stat.explored || 0;
+    if (tot - p.flags.exploreAcc < 350) return null;
+    p.flags.exploreAcc = tot; const xp = 15 + p.level * 6; const r = PL().addXp(p, xp); return { xp, ups: r.ups };
+  }
+  // RLE для збереження туману
+  function fogEncode(f) { if (!f) return ''; const out = []; let v = f[0], n = 0; for (let i = 0; i < f.length; i++) { if (f[i] === v) n++; else { out.push(v + n.toString(36)); v = f[i]; n = 1; } } out.push(v + n.toString(36)); return out.join(','); }
+  function fogDecode(str) { const f = new Uint8Array(WM().W * WM().H); let i = 0; for (const t of str.split(',')) { if (!t) continue; const v = +t[0], n = parseInt(t.slice(1), 36); f.fill(v, i, Math.min(f.length, i + n)); i += n; } return f; }
+
+  // ---- мапи на продаж (тири) ----
+  const MAP_TIERS = [
+    { id: 1, name: 'Нашкрябана мапа околиць', icon: '📜', price: 25, desc: 'Схематичні обриси земель навколо міста. Намалювала дитина старости. Схоже.', radius: 34 },
+    { id: 2, name: 'Мапа графства', icon: '🗺️', price: 110, desc: 'Усе графство: села, хутори й дороги позначені.', scope: 'county' },
+    { id: 3, name: 'Мапа герцогства', icon: '🧭', price: 380, desc: 'Ціле герцогство з підземеллями. Печатка картографа — справжня.', scope: 'duchy' },
+    { id: 4, name: 'Королівська мапа', icon: '👑', price: 1100, desc: 'Усе королівство: міста, підземелля, родовища й угіддя.', scope: 'realm' },
+    { id: 5, name: 'Атлас богині Люмі', icon: '🌟', price: 6000, desc: 'Весь Дивосвіт. Люмі малювала з неба, тому трохи криво, зате все.', scope: 'world' },
+  ];
+  function mapCells(G, tier, B) {
+    const w = G.world, W = WM().W, cb = w.cellBarony; const T0 = MAP_TIERS[tier - 1]; const set = [];
+    if (T0.scope === 'world') { for (let i = 0; i < cb.length; i++) set.push(i); return set; }
+    if (T0.radius) { const cx = B.x, cy = B.y, r = T0.radius; for (let y = Math.max(0, cy - r); y <= Math.min(WM().H - 1, cy + r); y++) for (let x = Math.max(0, cx - r); x <= Math.min(W - 1, cx + r); x++) if ((x - cx) ** 2 + (y - cy) ** 2 <= r * r) set.push(y * W + x); return set; }
+    const key = T0.scope === 'county' ? 'county' : T0.scope === 'duchy' ? 'duchy' : 'realm';
+    const mark = new Uint8Array(cb.length);
+    for (let i = 0; i < cb.length; i++) { const b = cb[i]; if (b >= 0 && w.baronies[b][key] === B[key]) mark[i] = 1; }
+    // трохи моря довкола
+    for (let i = 0; i < cb.length; i++) if (mark[i] === 1) { const x = i % W; for (const d of [-3, -2, -1, 1, 2, 3]) { const j = i + d; if (j >= 0 && j < cb.length && Math.abs((j % W) - x) <= 3 && cb[j] < 0 && !mark[j]) mark[j] = 2; const k2 = i + d * W; if (k2 >= 0 && k2 < cb.length && cb[k2] < 0 && !mark[k2]) mark[k2] = 2; } }
+    for (let i = 0; i < cb.length; i++) if (mark[i]) set.push(i);
+    return set;
+  }
+  function buyMap(G, tier, B) {
+    const p = G.player, T0 = MAP_TIERS[tier - 1]; const cost = Math.round(T0.price * priceMod(G, B));
+    if (p.gold < cost) return { ok: false, msg: 'Не вистачає золота.' };
+    p.gold -= cost; const f = ensureFog(G); const cells = mapCells(G, tier, B); let n = 0;
+    for (const i of cells) if (f[i] < 1) { f[i] = 1; n++; }
+    G.fogDirty = true; const w = G.world; const inSet = new Uint8Array(f.length); for (const i of cells) inSet[i] = 1;
+    if (tier >= 2) for (const Bb of w.baronies) if (inSet[Bb.cell]) G.discovered['b:' + Bb.id] = 1;
+    if (tier >= 3) for (const Dg of w.dungeons) if (inSet[Dg.cell]) G.discovered['d:' + Dg.id] = 1;
+    if (tier >= 4) for (const Rn of w.rnodes || []) if (inSet[Rn.cell]) G.discovered['r:' + Rn.id] = 1;
+    p.maps = p.maps || {}; p.maps[tier + ':' + (T0.scope === 'world' ? 0 : T0.scope ? B[T0.scope === 'realm' ? 'realm' : T0.scope] : B.id)] = 1;
+    return { ok: true, cost, n };
+  }
+  function mapOwned(G, tier, B) { const T0 = MAP_TIERS[tier - 1]; const p = G.player; return !!(p.maps && p.maps[tier + ':' + (T0.scope === 'world' ? 0 : T0.scope ? B[T0.scope === 'realm' ? 'realm' : T0.scope] : B.id)]); }
+
+  // ---------------- v5.2: монстри, що бродять мапою ----------------
+  function monsterKeysAt(G, cell) {
+    const w = G.world; const lm = WM().landmarkAt(w, cell); let keys;
+    if (lm) keys = lm.monsters.filter((k) => D().MONSTERS[k]);
+    else { const biome = D().BIOME_OF_TERRAIN[w.terrain[cell]] || 'plains'; keys = Object.entries(D().MONSTERS).filter(([, m]) => m.biome.includes(biome) && !m.boss).map(([k]) => k); }
+    return keys.length ? keys : ['slime', 'goblin'];
+  }
+  const MON_NAMES = ['Зграя', 'Ватага', 'Банда', 'Кодло', 'Табун', 'Рій'];
+  function spawnMonsters(G, max) {
+    const w = G.world, L = G.life = G.life || {}; L.mon = L.mon || []; L.monId = L.monId || 1;
+    const target = max || Math.round(w.baronies.length / 4.5);
+    let guard = 0;
+    while (L.mon.length < target && guard++ < target * 6) {
+      const B = w.baronies[Math.floor(Math.random() * w.baronies.length)];
+      if (B.id === w.startBarony || (B.danger || 0) < 1 && Math.random() < 0.6) continue;
+      const W = WM().W; const cell = B.cell + (Math.floor(Math.random() * 15) - 7) + (Math.floor(Math.random() * 15) - 7) * W;
+      if (cell < 0 || cell >= w.terrain.length || !WM().isLand(w.terrain[cell]) || cell === B.cell) continue;
+      const keys = monsterKeysAt(G, cell); const k0 = keys[Math.floor(Math.random() * keys.length)]; const M = D().MONSTERS[k0];
+      const lm = WM().landmarkAt(w, cell); const lvl = Math.max(1, (lm ? Math.max(B.danger, lm.lvl) : B.danger) + Math.floor(Math.random() * 3) - 1);
+      const n = lvl < 3 ? 1 : 1 + Math.floor(Math.random() * Math.min(3, 1 + lvl / 6));
+      L.mon.push({ id: L.monId++, cell, home: cell, tgt: cell, key: k0, keys: [k0, keys[Math.floor(Math.random() * keys.length)]], lvl, n, icon: M ? M.icon : '👹', name: `${MON_NAMES[Math.floor(Math.random() * MON_NAMES.length)]}: ${M ? M.name : 'монстри'}`, elite: lvl > 5 && Math.random() < 0.15 });
+    }
+  }
+  function moveMonsters(G) {
+    const w = G.world, L = G.life; if (!L || !L.mon) return; const W = WM().W;
+    for (const m of L.mon) {
+      for (let s = 0; s < 5; s++) {
+        if (m.cell === m.tgt || Math.random() < 0.05) { const c = m.home + (Math.floor(Math.random() * 25) - 12) + (Math.floor(Math.random() * 25) - 12) * W; if (c >= 0 && c < w.terrain.length && WM().isLand(w.terrain[c])) m.tgt = c; }
+        const x = m.cell % W, y = (m.cell / W) | 0, tx = m.tgt % W, ty = (m.tgt / W) | 0;
+        const nx = x + Math.sign(tx - x), ny = y + Math.sign(ty - y); const c = ny * W + nx;
+        if (c >= 0 && c < w.terrain.length && WM().isLand(w.terrain[c])) m.cell = c; else m.tgt = m.cell;
+      }
+    }
+  }
+  function monsterNear(G, cell, r = 2) {
+    const L = G.life; if (!L || !L.mon) return null; const W = WM().W; const x = cell % W, y = (cell / W) | 0;
+    return L.mon.find((m) => Math.abs((m.cell % W) - x) <= r && Math.abs(((m.cell / W) | 0) - y) <= r) || null;
+  }
+  function monsterEnemies(m) {
+    const out = []; for (let i = 0; i < m.n; i++) out.push(ISK.combat.makeEnemy(m.keys[i % m.keys.length] || m.key, m.lvl - (m.n > 1 ? 1 : 0), { elite: m.elite && i === 0 }));
+    return out;
+  }
+  function killMonster(G, m) { const L = G.life; if (!L || !L.mon) return; L.mon = L.mon.filter((x) => x !== m && x.id !== m.id); G.player.stat.monHunted = (G.player.stat.monHunted || 0) + 1; }
 
   function passTime(G, days) {
     if (ISK.life) ISK.life.beforeTime(G, days);
@@ -47,6 +156,7 @@
       for (const c of G.P.chronicle) { if (c === n0) break; news.push(c); }
       dailyPlayer(G, d);
       if (ISK.life) ISK.life.daily(G, d);
+      moveMonsters(G); if (d % 3 === 0) spawnMonsters(G);
     }
     return news;
   }
@@ -154,6 +264,7 @@
 
   function arrive(G, node) {
     const p = G.player; p.location = node; G.discovered[node] = 1; discoverAround(G);
+    if (node[0] === 'r') { const Rn = G.world.rnodes[+node.slice(2)]; p.flags.sitesVisited = p.flags.sitesVisited || {}; p.flags.sitesVisited[Rn.key] = 1; }
     const out = [];
     const [k, id] = node.split(':');
     if (k === 'b') { const B = G.world.baronies[+id]; p.stat.continents[B.cont] = 1; }
@@ -164,8 +275,8 @@
     }
     return out;
   }
-  function here(G) { const [k, id] = G.player.location.split(':'); return k === 'b' ? { kind: 'barony', B: G.world.baronies[+id] } : { kind: 'dungeon', Dg: G.world.dungeons[+id] }; }
-  function realmOfNode(G, node) { const [k, id] = node.split(':'); if (k === 'b') return G.world.baronies[+id].owner; const Dg = G.world.dungeons[+id]; return Dg.barony >= 0 ? G.world.baronies[Dg.barony].owner : -1; }
+  function here(G) { const [k, id] = G.player.location.split(':'); if (k === 'r') { const Rn = G.world.rnodes[+id]; return { kind: 'res', Rn, B: G.world.baronies[Rn.barony] }; } return k === 'b' ? { kind: 'barony', B: G.world.baronies[+id] } : { kind: 'dungeon', Dg: G.world.dungeons[+id] }; }
+  function realmOfNode(G, node) { const [k, id] = node.split(':'); if (k === 'b') return G.world.baronies[+id].owner; if (k === 'r') return G.world.baronies[G.world.rnodes[+id].barony].owner; const Dg = G.world.dungeons[+id]; return Dg.barony >= 0 ? G.world.baronies[Dg.barony].owner : -1; }
 
   // ---------------- Quests ----------------
   function localMonsterKeys(G, B) {
@@ -335,6 +446,24 @@
     return { count, ups };
   }
   // ---- resource sites ----
+  function rnodeLeft(G, rid) {
+    const Rn = G.world.rnodes[rid]; G.sites = G.sites || {}; const rec = G.sites['r' + rid];
+    if (!rec) return Rn.rich; return Math.min(Rn.rich, rec.left + Math.floor((day(G) - rec.day) / 3));
+  }
+  function gatherRnode(G, rid, quality) {
+    const p = G.player, Rn = G.world.rnodes[rid], S = D().RESOURCE_SITES[Rn.key];
+    const left = rnodeLeft(G, rid); if (left <= 0) return null;
+    G.sites['r' + rid] = { left: left - 1, day: day(G) };
+    const lvl = (p.professions[S.prof] || { lvl: 1 }).lvl; const items = {};
+    const rolls = Math.max(1, Math.round((2 + lvl / 6) * (0.5 + quality)));
+    const tot = S.mats.reduce((a, m) => a + m[1], 0);
+    for (let k = 0; k < rolls; k++) { let r = Math.random() * tot; for (const [id, w] of S.mats) { r -= w; if (r <= 0) { items[id] = (items[id] || 0) + 1; break; } } }
+    if (S.prof === 'mining' && Math.random() < 0.03 + lvl * 0.002) items.gem = (items.gem || 0) + 1;
+    if (p.cheat === 'harvest') for (const k in items) items[k] *= 2;
+    for (const [id, n] of Object.entries(items)) PL().addItem(p, id, n);
+    const ups = PL().addProfXp(p, S.prof, Math.round(12 + quality * 14 + rolls * 4)); p.stat.gathered += rolls;
+    return { items, ups };
+  }
   function siteLeft(G, bid, i) {
     const B = G.world.baronies[bid], st = B.sites && B.sites[i]; if (!st) return 0;
     G.sites = G.sites || {}; const k = bid + ':' + i; const rec = G.sites[k];
@@ -686,7 +815,7 @@
 
   // ---------------- Save / load ----------------
   function serialize(G) {
-    return JSON.stringify({ v: 4, difficulty: G.difficulty, life: G.life || {}, worldOpts: G.worldOpts || G.world.opts || {}, sites: G.sites || {}, seed: G.seed, time: G.time, player: G.player, boards: G.boards, cleared: G.cleared, dungeon: G.dungeon, discovered: G.discovered, politics: POL().serialize(G.world, G.P), startDay: G.startDay, savedAt: Date.now() });
+    return JSON.stringify({ v: 4, difficulty: G.difficulty, life: G.life || {}, worldOpts: G.worldOpts || G.world.opts || {}, sites: G.sites || {}, seed: G.seed, time: G.time, player: G.player, boards: G.boards, cleared: G.cleared, dungeon: G.dungeon, discovered: G.discovered, fog: fogEncode(G.fog), politics: POL().serialize(G.world, G.P), startDay: G.startDay, savedAt: Date.now() });
   }
   function deserialize(str) {
     const s = JSON.parse(str);
@@ -698,7 +827,15 @@
     ISK.difficulty = s.difficulty || 'normal';
     for (const k of ['jackSkills', 'children']) s.player[k] = s.player[k] || [];
     s.player.lordRel = s.player.lordRel || {}; if (!('artifact' in s.player.equipment)) s.player.equipment.artifact = null;
-    return { version: 4, difficulty: s.difficulty || 'normal', life: s.life || {}, sites: s.sites || {}, worldOpts: s.worldOpts || {}, seed: s.seed, world, P, player: s.player, time: s.time, boards: s.boards || {}, cleared: s.cleared || {}, dungeon: s.dungeon, discovered: s.discovered || {}, notices: [], hires: {}, startDay: s.startDay || 0 };
+    const G = { version: 4, difficulty: s.difficulty || 'normal', life: s.life || {}, sites: s.sites || {}, worldOpts: s.worldOpts || {}, seed: s.seed, world, P, player: s.player, time: s.time, boards: s.boards || {}, cleared: s.cleared || {}, dungeon: s.dungeon, discovered: s.discovered || {}, notices: [], hires: {}, startDay: s.startDay || 0 };
+    if (s.fog) G.fog = fogDecode(s.fog);
+    else { // міграція зі старих збережень: усе, що вже знав, — відкрите
+      G.fog = new Uint8Array(WM().W * WM().H);
+      for (const k of Object.keys(G.discovered)) { try { revealArea(G, WM().nodeCell(world, k), 12, 2); } catch (e) { /* ignore */ } }
+    }
+    if (G.player.location && G.player.location[0] === 'r' && !world.rnodes[+G.player.location.slice(2)]) G.player.location = 'b:' + world.startBarony;
+    if (!G.life.mon) spawnMonsters(G);
+    return G;
   }
 
   ISK.game = {
@@ -706,5 +843,7 @@
     shopStock, priceMod, gatherYield, canGather, canCraft, craft, smith, siteLeft, gatherSite, canCraftGear, craftGear, houseCost, buyHouse, upgradeHouse, upgradeCost, plant, harvest,
     socialCheck, promote, baronyPrice, grantBarony, buildOnLand, landIncome, loseHolding, hireOptions, hire, recruitHero, buyPet, buyMount, npcsAt, unlock, checkAchievements,
     genDungeon, dungeonMove, treasureLoot, completeDungeon, applyRewards, onDefeat, nearestTown, hitArmy, serialize, deserialize, discoverAround, MONTHS,
+    revealArea, revealAt, revealAll, exploreReward, fogEncode, fogDecode, MAP_TIERS, mapCells, buyMap, mapOwned, rnodeLeft, gatherRnode,
+    spawnMonsters, moveMonsters, monsterNear, monsterEnemies, killMonster, SIGHT,
   };
 })();

@@ -705,6 +705,87 @@
     if (res.ups.length) UI().toast(`${D().PROFESSIONS[prof].icon} ${D().PROFESSIONS[prof].name}: рівень ${res.ups[res.ups.length - 1]}!`, 'epic');
     UI().refresh();
   }
+  // ---- v5.2: угіддя в природі ----
+  function spotsNear(bid) {
+    const g = G(), w = g.world; const edges = (w.graph['b:' + bid] || []).filter((e) => e.to[0] === 'r');
+    UI().modal({ title: 'Угіддя поруч', icon: '🧺', sub: 'Ресурси тепер збирають у природі: йди стежкою до лісу, шахти, лугу чи озера.', size: 'mid', body: () => h('div', { class: 'items' }, edges.map((e) => {
+      const Rn = w.rnodes[+e.to.slice(2)], S2 = D().RESOURCE_SITES[Rn.key], left = GM().rnodeLeft(g, Rn.id); const days = GM().legDays(e, g.player);
+      return h('div', { class: 'item' }, h('div', { class: 'ic' }, S2.icon), h('div', { style: { flex: 1 } }, h('div', { class: 'nm' }, `${S2.name} · запас ${left}/${Rn.rich}`), h('div', { class: 'ds' }, `${S2.mats.map((m) => PL().item(m[0]).icon + ' ' + PL().item(m[0]).name).join(', ')} · ~${days < 1 ? Math.max(1, Math.round(days * 24)) + ' год.' : days.toFixed(1) + ' дн.'} стежкою`)),
+        h('div', { class: 'acts' }, h('button', { class: 'btn small primary', onclick: () => { UI().closeAll(); g.discovered[e.to] = 1; UI().startTravel(e.to); } }, '🚶 Іти')));
+    })) });
+  }
+  async function gatherNode(rid) {
+    const g = G(); const Rn = g.world.rnodes[rid]; const S2 = D().RESOURCE_SITES[Rn.key]; const prof = S2.prof; const lvl = (g.player.professions[prof] || { lvl: 1 }).lvl;
+    const q = prof === 'fishing' ? await ISK.minigames.fishing(lvl) : prof === 'mining' ? await ISK.minigames.mining(lvl, { title: `${S2.icon} ${S2.name}`, hint: 'Клікай / ПРОБІЛ, коли кільце співпаде з золотим. Жила багата!' }) : prof === 'lumber' ? await ISK.minigames.mining(lvl, { title: `${S2.icon} ${S2.name}`, hint: S2.verb ? 'Влуч у момент — здобич не втече!' : 'Рубай у ритм! Дерево падає... на когось.' }) : await ISK.minigames.herbs(lvl);
+    const res = GM().gatherRnode(g, rid, q); GM().passTime(g, 0.25);
+    if (!res) { UI().toast('Виснажено. Повертайся за кілька днів.', 'bad'); return; }
+    const txt = Object.entries(res.items).map(([id, n]) => `${PL().item(id).icon}${PL().item(id).name} ×${n}`).join(', ');
+    UI().toast(`${S2.icon} ${S2.name}: ${txt || 'нічого'}`, txt ? 'good' : 'bad', 4600);
+    if (res.ups.length) UI().toast(`${D().PROFESSIONS[prof].icon} ${D().PROFESSIONS[prof].name}: рівень ${res.ups[res.ups.length - 1]}!`, 'epic');
+    UI().refresh();
+  }
+  // ---- v5.2: картограф і мапи різних тирів ----
+  function mapPreview(g, tier, B) {
+    const cv = document.createElement('canvas'); cv.width = 240; cv.height = 160; cv.className = 'map-preview';
+    const W = ISK.world.W, S = ISK.render.S; const cells = GM().mapCells(g, tier, B);
+    let x0 = W, y0 = 1e9, x1 = 0, y1 = 0; for (const i of cells) { const x = i % W, y = (i / W) | 0; if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+    const pad = 3; x0 = Math.max(0, x0 - pad); y0 = Math.max(0, y0 - pad); x1 = Math.min(W - 1, x1 + pad); y1 = Math.min(ISK.world.H - 1, y1 + pad);
+    let bw = x1 - x0 + 1, bh = y1 - y0 + 1; const ar = cv.width / cv.height; if (bw / bh > ar) { const nh = bw / ar; y0 = Math.max(0, y0 - (nh - bh) / 2); bh = nh; } else { const nw = bh * ar; x0 = Math.max(0, x0 - (nw - bw) / 2); bw = nw; }
+    const q = cv.getContext('2d'); const w = g.world, T = ISK.world.T;
+    const inSet = new Uint8Array(W * ISK.world.H); for (const i of cells) inSet[i] = 1;
+    // схематична мапа на пергаменті: що вищий тир — то більше деталей
+    const mk = document.createElement('canvas'); mk.width = Math.max(1, Math.ceil(bw)); mk.height = Math.max(1, Math.ceil(bh)); const mg = mk.getContext('2d'); const img = mg.createImageData(mk.width, mk.height); const dd = img.data;
+    const land = (c) => c >= 0 && ISK.world.isLand(w.terrain[c]);
+    for (let y = 0; y < mk.height; y++) for (let x = 0; x < mk.width; x++) {
+      const cx = Math.floor(x0 + x), cy = Math.floor(y0 + y), o = (y * mk.width + x) * 4; const c = cx < W && cy < ISK.world.H ? cy * W + cx : -1;
+      let col = [222, 204, 160];
+      if (c >= 0) {
+        const t = w.terrain[c], L = land(c);
+        if (!L) col = tier >= 3 ? [196, 196, 170] : [208, 190, 146];
+        else if (tier >= 3 && (t === T.MOUNTAIN || t === T.PEAK)) col = [176, 150, 108]; else if (tier >= 3 && (t === T.FOREST || t === T.JUNGLE)) col = [190, 192, 140]; else if (tier >= 3 && t === T.DESERT) col = [236, 214, 160]; else if (tier >= 3 && t === T.SWAMP) col = [170, 178, 140]; else col = [232, 214, 170];
+        if (L && (!land(c - 1) || !land(c + 1) || !land(c - W) || !land(c + W))) col = [110, 76, 40];
+        if (tier >= 2 && w.river[c] && L) col = [130, 150, 160];
+        if (!inSet[c]) col = [col[0] * 0.25 + 216 * 0.75, col[1] * 0.25 + 198 * 0.75, col[2] * 0.25 + 152 * 0.75];
+      }
+      dd[o] = col[0]; dd[o + 1] = col[1]; dd[o + 2] = col[2]; dd[o + 3] = 255;
+    }
+    mg.putImageData(img, 0, 0); q.imageSmoothingEnabled = false; q.drawImage(mk, 0, 0, cv.width, cv.height);
+    const kx = cv.width / bw, ky = cv.height / bh; const at = (o) => [(o.x - x0 + 0.5) * kx, (o.y - y0 + 0.5) * ky];
+    q.lineCap = 'round';
+    if (tier >= 2) for (const r of w.roads) { if (!inSet[r.a !== undefined ? w.baronies[r.a].cell : 0] && !inSet[w.baronies[r.b].cell]) continue; q.strokeStyle = 'rgba(120,70,30,.75)'; q.lineWidth = r.major ? 1.6 : 1; q.setLineDash(r.major ? [] : [3, 2]); q.beginPath(); r.path.forEach((c, k) => { const p0 = at({ x: c % W, y: (c / W) | 0 }); k ? q.lineTo(p0[0], p0[1]) : q.moveTo(p0[0], p0[1]); }); q.stroke(); }
+    q.setLineDash([]);
+    if (tier >= 3) { q.fillStyle = 'rgba(90,60,30,.7)'; q.font = `${Math.max(7, Math.min(11, kx * 1.6))}px serif`; q.textAlign = 'center'; q.textBaseline = 'middle'; for (let k = 0; k < cells.length; k += Math.max(1, Math.floor(cells.length / 260))) { const c = cells[k]; const t = w.terrain[c]; if ((c * 7919) % 5) continue; const p0 = at({ x: c % W, y: (c / W) | 0 }); if (t === T.MOUNTAIN || t === T.PEAK) q.fillText('▲', p0[0], p0[1]); else if (t === T.FOREST || t === T.JUNGLE) q.fillText('♣', p0[0], p0[1]); } }
+    // кракелюр і рамка «пергамент»
+    q.strokeStyle = 'rgba(90,60,30,.25)'; q.lineWidth = 1; for (let i = 0; i < 8; i++) { q.beginPath(); const sx = (i * 53) % cv.width, sy = (i * 37) % cv.height; q.moveTo(sx, sy); q.lineTo(sx + 30 - (i % 3) * 20, sy + 18); q.stroke(); }
+    const vg = q.createRadialGradient(cv.width / 2, cv.height / 2, cv.height * 0.3, cv.width / 2, cv.height / 2, cv.width * 0.65); vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(80,50,20,.45)'); q.fillStyle = vg; q.fillRect(0, 0, cv.width, cv.height);
+    q.textAlign = 'center'; q.textBaseline = 'middle';
+    if (tier >= 2) for (const Bb of w.baronies) if (inSet[Bb.cell]) { const [x, y] = at(Bb); const big = ['capital', 'city'].includes(Bb.type); q.fillStyle = '#3a200c'; q.beginPath(); q.arc(x, y, big ? 3 : 1.6, 0, 7); q.fill(); if (big && tier >= 3) { q.font = 'italic 9px Georgia, serif'; q.fillText(Bb.name, x, y - 7); } }
+    if (tier >= 3) { q.font = '9px "Segoe UI Emoji", sans-serif'; for (const Dg of w.dungeons) if (inSet[Dg.cell]) { const [x, y] = at(Dg); q.fillStyle = '#7a1a10'; q.fillText('☠', x, y); } }
+    if (tier >= 4) for (const Rn of w.rnodes) if (inSet[Rn.cell]) { const [x, y] = at(Rn); q.fillStyle = '#2a5a20'; q.fillRect(x - 1, y - 1, 2, 2); }
+    // троянда вітрів
+    q.save(); q.translate(cv.width - 24, cv.height - 24); q.strokeStyle = '#5a3a18'; q.fillStyle = '#5a3a18'; q.lineWidth = 1; q.beginPath(); q.arc(0, 0, 9, 0, 7); q.stroke(); for (let a = 0; a < 4; a++) { q.rotate(Math.PI / 2); q.beginPath(); q.moveTo(0, -13); q.lineTo(3, 0); q.lineTo(-3, 0); q.fill(); } q.restore();
+    q.strokeStyle = '#5a3a18'; q.lineWidth = 4; q.strokeRect(2, 2, cv.width - 4, cv.height - 4); q.strokeStyle = '#a07a40'; q.lineWidth = 1; q.strokeRect(7, 7, cv.width - 14, cv.height - 14);
+    const [mx, my] = at(B); q.fillStyle = '#c0302a'; q.font = 'bold 15px sans-serif'; q.fillText('✕', mx, my);
+    return cv;
+  }
+  function cartographer(bid) {
+    const g = G(), B = g.world.baronies[bid];
+    UI().modal({ title: `Картограф ${B.name}`, icon: '🗺️', sub: '«Мапи! Свіжі мапи! Майже без помилок!» Купленe відкривається на мапі як умовна мапа; на власні очі побачиш, коли дійдеш.', size: 'wide', body: () => h('div', { class: 'map-tiers' }, GM().MAP_TIERS.map((T0) => {
+      const own = GM().mapOwned(g, T0.id, B); const cost = Math.round(T0.price * GM().priceMod(g, B));
+      return h('div', { class: 'map-tier' + (own ? ' owned' : '') }, mapPreview(g, T0.id, B), h('div', { class: 'nm' }, `${T0.icon} Тир ${T0.id}: ${T0.name}`), h('div', { class: 'ds' }, T0.desc),
+        h('button', { class: 'btn ' + (own ? 'ghost' : 'primary'), disabled: own, onclick: () => { const r = GM().buyMap(g, T0.id, B); if (!r.ok) { UI().toast(r.msg, 'bad'); return; } A().play('coin'); UI().toast(`${T0.icon} Мапу куплено! -${r.cost}🪙 · на мапі з'явилося ${r.n} нових клітинок`, 'good', 4200); reopen(() => cartographer(bid)); } }, own ? '✔️ Уже є' : `Купити · ${cost}🪙`));
+    })) });
+  }
+  function worldMap() {
+    const g = G(); if (!g) return; let political = false;
+    const cv = document.createElement('canvas'); const W = ISK.world.W, H = ISK.world.H; const vw = Math.min(window.innerWidth - 120, 1400, (window.innerHeight - 230) * W / H); cv.width = Math.round(vw); cv.height = Math.round(vw * H / W); cv.className = 'world-map-cv';
+    let raf = 0; const loop = () => { if (!cv.isConnected) { cancelAnimationFrame(raf); return; } ISK.render.drawWorldMap(cv, { political }); raf = requestAnimationFrame(loop); };
+    const known = g.fog ? Math.round(g.fog.reduce((a, v) => a + (v === 2 ? 1 : 0), 0) / g.fog.length * 1000) / 10 : 100;
+    cv.addEventListener('click', (e) => { const r = cv.getBoundingClientRect(); const k = (W * ISK.render.S) / r.width; ISK.render.lookAt((e.clientX - r.left) * k, (e.clientY - r.top) * k); UI().closeAll(); });
+    UI().modal({ title: 'Мапа Дивосвіту', icon: '🗺️', sub: `Досліджено власними очима: ${known}% світу · клік — перейти туди · мапи продає картограф у містах`, size: 'full',
+      body: () => h('div', { class: 'col' }, h('div', { class: 'row' }, h('button', { class: 'btn small', onclick: (e) => { political = !political; e.target.textContent = political ? '🏔️ Рельєф' : '👑 Королівства'; } }, '👑 Королівства'), h('span', { class: 'muted' }, '🟫 умовна (куплена) · ⬛ невідомо · кольорові кола — монстри поруч')), cv) });
+    loop();
+  }
   // ---- NPC heroes ----
   const heroBy = (id) => (G().P.heroes || []).find((x) => x.id === id);
   function heroTalk(id) {
@@ -747,7 +828,7 @@
         btn('Драконяче яйце', () => PL().addItem(p, 'dragon_egg')), btn('Корабель і грифон', () => { p.ship = true; if (!p.mounts.includes('griffin')) p.mounts.push('griffin'); p.mount = 'griffin'; })),
       h('h4', null, 'Світ'),
       h('div', { class: 'row', style: { flexWrap: 'wrap', gap: '6px' } },
-        btn('Відкрити всю мапу', () => { for (const B of g.world.baronies) g.discovered['b:' + B.id] = 1; for (const Dg of g.world.dungeons) g.discovered['d:' + Dg.id] = 1; p.flags.relicsRevealed = true; }),
+        btn('Відкрити всю мапу', () => { GM().revealAll(g, 2); p.flags.relicsRevealed = true; }),
         btn('+30 днів', () => UI().showNews(GM().passTime(g, 30))), btn('+1 рік', () => UI().showNews(GM().passTime(g, 360))),
         btn('Орда поруч', () => { const B = GM().here(g).B || g.world.baronies[0]; ISK.politics.spawnDemonArmy(g.world, g.P, Math.floor(g.time), null, { size: 3000, node: B.id, name: 'Тестова орда', horde: true, icon: '🧟' }); }),
         btn('Війна (випадкова)', () => { const al = g.P.realms.filter((r) => !r.dead && !ISK.politics.isDemon(g.P, r.id)); const a = al[Math.floor(Math.random() * al.length)], b = al[Math.floor(Math.random() * al.length)]; if (a !== b) ISK.politics.declareWar(g.world, g.P, a.id, b.id, Math.floor(g.time), new ISK.RNG(Date.now() >>> 0), 'Чіт-меню сказало'); }),
@@ -757,5 +838,5 @@
       h('div', { class: 'muted', style: { fontSize: '12px' } }, 'Порада: пробіл — пауза/хід часу, +/− — швидкість часу, F — до героя.')) });
   }
 
-  ISK.panels = { gatherSite, heroTalk, heroSpar, heroRecruit, cheats, gearTab, open, openService, gather, explore, talk, attackArmy, campfire, waitDays, save, load, autosave, slotInfo, itemEl, chooseClass, guild, store, cooking, settings, loadDialog, help, character, inventory, quests, realms, party, achievements, house, land, skills };
+  ISK.panels = { spotsNear, gatherNode, cartographer, worldMap, gatherSite, heroTalk, heroSpar, heroRecruit, cheats, gearTab, open, openService, gather, explore, talk, attackArmy, campfire, waitDays, save, load, autosave, slotInfo, itemEl, chooseClass, guild, store, cooking, settings, loadDialog, help, character, inventory, quests, realms, party, achievements, house, land, skills };
 })();

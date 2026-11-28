@@ -54,6 +54,21 @@
     whiteCache.set(cv, w); return w;
   }
 
+  // v5.2: чемпіони — рідкісні вороги з модифікаторами й кращим лутом
+  const CHAMPS = {
+    fiery: { name: 'Вогняний', icon: '🔥', col: '#ff7a30' },
+    swift: { name: 'Швидкий', icon: '💨', col: '#7cf0ff' },
+    split: { name: 'Розщеплювач', icon: '🧬', col: '#9af06a' },
+    iron: { name: 'Залізний', icon: '🛡️', col: '#c0c8d8' },
+    vampire: { name: 'Вампір', icon: '🩸', col: '#ff4070' },
+  };
+  const CHAMP_CHANCE = { easy: 0.04, normal: 0.08, hard: 0.12, hell: 0.17 };
+  function makeChampion(e) {
+    const key = Object.keys(CHAMPS)[Math.floor(Math.random() * 5)]; const C0 = CHAMPS[key];
+    e.champion = key; e.name = `${C0.name} ${e.name}`; const k = key === 'iron' ? 2.2 : 1.5;
+    e.maxHp = Math.round(e.maxHp * k); e.hp = e.maxHp; e.atk = Math.round(e.atk * 1.15); e.shieldMax = (e.shieldMax || 0) + (key === 'iron' ? 2 : 1); e.shield = e.shieldMax;
+  }
+
   // hp — множник здоров'я ворогів, dmg — їхньої шкоди, aggr — агресії (швидкість, частота атак, коротший замах)
   const ARENA_DIFF = {
     easy: { hp: 1.4, dmg: 1.0, aggr: 0.9 },
@@ -69,7 +84,10 @@
       // у реальному часі б'єш частіше, ніж у покроковому бою, тож на арені вороги міцніші
       // v5.1: окреме налаштування арени за складністю — вороги міцніші, б'ють сильніше й частіше
       const AR = ARENA_DIFF[ISK.difficulty] || ARENA_DIFF.normal;
-      for (const e of enemies) if (!e._arena) { e._arena = true; const k = AR.hp * (e.boss ? 0.85 : 1); e.hp = Math.round(e.hp * k); e.maxHp = Math.round(e.maxHp * k); }
+      for (const e of enemies) if (!e._arena) {
+        e._arena = true; const k = AR.hp * (e.boss ? 0.85 : 1); e.hp = Math.round(e.hp * k); e.maxHp = Math.round(e.maxHp * k);
+        if (!e.boss && !e.champion && !opts.noChampions && Math.random() < (CHAMP_CHANCE[ISK.difficulty] || 0.08) + (e.elite ? 0.06 : 0)) makeChampion(e);
+      }
       const b = C().startBattle(p, enemies, opts);
       let d = PL().derived(p);
       const bot = !!globalThis.ISK_ACTIONBOT;
@@ -103,9 +121,28 @@
       function addEnemy(e, x, y, mini) {
         const arch = archOf(e); const A0 = ARCH[arch];
         const ent = { e, arch, A: A0, x, y, r: e.boss ? 30 : mini ? 10 : 17, st: 'idle', t: rnd(0.3, 1.0), stun: 0, flash: 0, kx: 0, ky: 0, mini: !!mini, spr: SP().forEnemy(e), size: e.boss ? 84 : mini ? 30 : 48, aim: 0, tele: null, phase: 1, pat: 0, hop: 0, brokenT: 0, speedMul: e.elite ? 1.15 : 1 };
+        if (e.champion === 'swift') ent.speedMul *= 1.5;
+        if (e.champion === 'iron') ent.A = { ...A0, armor: true };
+        ent.face = Math.PI;
         E.push(ent); return ent;
       }
       enemies.forEach((e, i) => addEnemy(e, W * 0.68 + (i % 2) * 70, H / 2 + (i - (enemies.length - 1) / 2) * 90));
+      // v5.2: ролі в групі — щитоносець (блокує удари спереду) і цілитель (лікує своїх, якщо не перебити)
+      if (E.length >= 2 && !E.some((x) => x.e.boss)) {
+        const pool = E.filter((x) => !x.mini);
+        const sh = pool.find((x) => x.arch === 'melee' || x.arch === 'brute');
+        if (sh && Math.random() < 0.5) { sh.role = 'shield'; sh.A = { ...sh.A, spd: sh.A.spd * 0.8, armor: true }; sh.e.name = `${sh.e.name}-щитоносець`; sh.e.maxHp = Math.round(sh.e.maxHp * 1.2); sh.e.hp = sh.e.maxHp; }
+        const hl = pool.find((x) => x !== sh && x.role !== 'shield');
+        if (hl && Math.random() < 0.45) { hl.role = 'healer'; hl.arch = 'ranged'; hl.A = { ...ARCH.ranged, cd: 1.4 }; hl.e.name = `${hl.e.name}-цілитель`; }
+      }
+      let dmgTaken = 0;
+      // v5.2: рейтинг бою S/A/B/C — за отриману шкоду, швидкість і комбо; множить досвід і золото
+      function rankNow() {
+        const par = 18 + enemies.length * 12 + (enemies.some((e) => e.boss) ? 45 : 0); const lost = dmgTaken / Math.max(1, d.maxHp);
+        const pts = (lost < 0.1 ? 3 : lost < 0.3 ? 2 : lost < 0.6 ? 1 : 0) + (time < par ? 2 : time < par * 1.6 ? 1 : 0) + (b.maxCombo >= 10 ? 1 : 0);
+        b.rank = pts >= 5 ? 'S' : pts >= 4 ? 'A' : pts >= 2 ? 'B' : 'C'; b.rankMul = { S: 1.5, A: 1.25, B: 1, C: 0.85 }[b.rank];
+        return b.rank;
+      }
       const allies = b.allies.filter((a) => a.kind !== 'player' && a.alive).map((a, i) => ({ a, x: P.x - 40, y: P.y + (i ? 40 : -40) * (1 + Math.floor(i / 2)), t: 1 + i * 0.4, healT: 4, spr: a.kind === 'pet' ? SP().forPet(a.ref.key) : SP().forCompanion(a.ref) }));
       const proj = [], parts = [], floats = [], rings = [];
       let shake = 0, hitstop = 0, slow = 0, flashScr = 0, flashCol = '#fff', chain = 0, chainT = 0, time = 0, potionCd = 0, banner = null, over = null, endT = 0, paused = false, ultT = 0;
@@ -181,6 +218,11 @@
       }
       function damage(x, raw, o = {}) {
         const e = x.e; if (e.hp <= 0) return 0;
+        if (x.role === 'shield' && x.st !== 'stun' && !e.broken && !o.pierce && !o.shieldHit && x.st !== 'dead') {
+          const fr = o.from || P;
+          if (angDiff(Math.atan2(fr.y - x.y, fr.x - x.x), x.face) < 1.15) { raw *= 0.12; if (!o.quiet && Math.random() < 0.6) floater(x.x, x.y - x.size * 0.75, '🛡️ БЛОК! Зайди збоку', '#9ad8ff', 13, 0.6); burst(x.x + Math.cos(x.face) * 18, x.y + Math.sin(x.face) * 18 - 14, '#9ad8ff', 5, 160); A().play('clang'); }
+        }
+        if (x.kind === 'heal' && x.st === 'windup') { x.st = 'recover'; x.t = 0.9; x.tele = null; floater(x.x, x.y - x.size * 0.8, '✋ ПЕРЕРВАНО!', '#ffe08a', 16, 0.9); }
         const ev = []; const wasBroken = e.broken;
         const crit = o.crit !== undefined ? o.crit : Math.random() < (d.crit + (b.buffs.crit ? b.buffs.crit.amt : 0)) / 100;
         const dmg = C().hitEnemy(b, e, raw, { crit, phys: o.phys || phys, elem: o.elem, pierce: o.pierce, execute: o.execute }, ev, o.by || 'player');
@@ -200,8 +242,9 @@
       }
       function onKill(x) {
         x.st = 'dead'; x.t = 0.5; x.tele = null; burst(x.x, x.y, '#ffffff', 26, 360); floater(x.x, x.y - 20, '💀', '#fff', 26, 1);
+        if (x.e.champion === 'split' && !x.mini) for (let i = 0; i < 2; i++) { const m = C().makeEnemy(x.e.key, Math.max(1, x.e.lvl - 2)); m.maxHp = Math.round(x.e.maxHp * 0.25); m.hp = m.maxHp; m.name = 'Уламок чемпіона'; const n = addEnemy(m, x.x + (i ? 24 : -24), x.y, true); n.size = 36; n.r = 13; n.kx = (i ? 1 : -1) * 280; n.t = 0.7; }
         if (x.arch === 'slime' && !x.mini && !x.e.elite) for (let i = 0; i < 2; i++) { const m = C().makeEnemy(x.e.key, Math.max(1, x.e.lvl - 3)); m.maxHp = Math.round(m.maxHp * 0.3); m.hp = m.maxHp; m.name = 'Слимачок'; m.shield = m.shieldMax = 1; const n = addEnemy(m, x.x + (i ? 20 : -20), x.y, true); n.kx = (i ? 1 : -1) * 260; n.t = 0.8; }
-        if (!E.some((q) => q.e.hp > 0)) { over = 'win'; endT = 1.6; slow = 1.0; bigText(['ПЕРЕМОГА!', 'K.O.!', 'НАСТУПНИЙ!', 'ЛЕГЕНДАРНО (ЛОКАЛЬНО)!'][Math.floor(Math.random() * 4)], '#ffe08a', 1.6); kick(0.2, 12); }
+        if (!E.some((q) => q.e.hp > 0)) { over = 'win'; endT = 1.6; slow = 1.0; const rk = rankNow(); bigText(`${['ПЕРЕМОГА!', 'K.O.!', 'НАСТУПНИЙ!', 'ЛЕГЕНДАРНО (ЛОКАЛЬНО)!'][Math.floor(Math.random() * 4)]}  РАНГ ${rk}`, { S: '#ffe08a', A: '#9af0b0', B: '#9ad8ff', C: '#c0c0c0' }[rk], 1.6); kick(0.2, 12); }
       }
 
       // ---------- шкода гравцю ----------
@@ -213,7 +256,10 @@
           return 'dodge';
         }
         let dmg = Math.max(1, Math.round(C().mitig(raw * AR.dmg, d.def, false) * rnd(0.9, 1.1)));
-        p.hp = Math.max(0, p.hp - dmg); P.inv = 0.38; P.flash = 0.15; P.hurtT = 0.22; flashScr = 0.18; flashCol = '#ff3040';
+        p.hp = Math.max(0, p.hp - dmg); P.inv = 0.38; dmgTaken += dmg;
+        const ch = src && (src.e ? src : src.src); const cm = ch && ch.e && ch.e.champion;
+        if (cm === 'fiery') { P.burn = { t: 3, dps: Math.max(2, dmg * 0.12) }; floater(P.x, P.y - 60, '🔥 ГОРИШ!', '#ff7a30', 14, 0.7); }
+        if (cm === 'vampire' && ch.e.hp > 0) { const hh = Math.round(dmg * 0.6); ch.e.hp = Math.min(ch.e.maxHp, ch.e.hp + hh); floater(ch.x, ch.y - ch.size * 0.7, '🩸+' + hh, '#ff4070', 14, 0.7); } P.flash = 0.15; P.hurtT = 0.22; flashScr = 0.18; flashCol = '#ff3040';
         if (src) { const a = Math.atan2(P.y - src.y, P.x - src.x); P.kx = Math.cos(a) * 260; P.ky = Math.sin(a) * 260; }
         if (P.st !== 'roll') { P.st = 'idle'; P.t = 0; }
         floater(P.x, P.y - 42, '-' + dmg, '#ff5a6a', 22); burst(P.x, P.y, '#ff4050', 10, 220); kick(0.07, 8); A().play('hurt');
@@ -237,7 +283,7 @@
         rings.push({ x: P.x, y: P.y, a: P.face, half, r: range, life: 0.14, max: 0.14, col: o.col || '#ffffff' });
         for (const x of E) if (x.e.hp > 0 && !hit.has(x) && dist(P, x) < range + x.r && angDiff(Math.atan2(x.y - P.y, x.x - P.x), P.face) < half) { hit.add(x); damage(x, (caster ? d.matk : d.atk) * atkMul() * mult, { ...o, elem: o.elem || (caster ? 'magic' : null) }); }
         // відбиття ворожих снарядів ударом
-        for (const q of proj) if (q.side === 'enemy' && Math.hypot(q.x - P.x, q.y - P.y) < range && angDiff(Math.atan2(q.y - P.y, q.x - P.x), P.face) < half) { q.side = 'player'; q.vx *= -1.3; q.vy *= -1.3; q.dmg = d.atk * 0.8; q.col = '#ffe08a'; floater(q.x, q.y, 'ВІДБИТО', '#ffe08a', 12, 0.6); }
+        for (const q of proj) if (q.side === 'enemy' && Math.hypot(q.x - P.x, q.y - P.y) < range && angDiff(Math.atan2(q.y - P.y, q.x - P.x), P.face) < half) { q.side = 'player'; q.vx *= -1.3; q.vy *= -1.3; q.dmg = d.atk * 0.8; q.col = '#ffe08a'; q.hit = new Set(); floater(q.x, q.y, 'ВІДБИТО', '#ffe08a', 12, 0.6); }
         A().play('miss');
       }
       function shoot(mult, o = {}) {
@@ -341,6 +387,10 @@
           else x.tele = { type: 'circle', cx: x.x, cy: x.y, r: 50, ring: true };
           return;
         }
+        if (x.role === 'healer') {
+          const hurt = E.filter((q) => q !== x && q.e.hp > 0 && q.e.hp < q.e.maxHp * 0.85);
+          if (hurt.length) { x.kind = 'heal'; x.t = x.tw = 1.1; x.tele = { type: 'circle', cx: x.x, cy: x.y, r: 46, ring: true, col: 'heal' }; floater(x.x, x.y - x.size * 0.8, '✨ Лікує! Перебий!', '#6af0a0', 13, 0.8); return; }
+        }
         x.kind = x.arch; x.t = x.tw = A0.wind * (x.e.elite ? 0.85 : 1) / Math.sqrt(AR.aggr) * (x.enraged ? 0.85 : 1);
         if (x.arch === 'melee') x.tele = { type: 'cone', r: 82, half: 0.75 };
         else if (x.arch === 'brute') x.tele = { type: 'circle', cx: x.x, cy: x.y, r: 105 };
@@ -350,6 +400,11 @@
       }
       function activate(x) {
         const A0 = x.A; const mult = A0.mult * (x.phase > 1 ? 1.15 : 1); const raw = x.e.atk * mult * (x.mini ? 0.5 : 1);
+        if (x.kind === 'heal') {
+          for (const q of E) if (q.e.hp > 0 && q.st !== 'dead' && Math.hypot(q.x - x.x, q.y - x.y) < 320) { const hh = Math.round(q.e.maxHp * 0.18); q.e.hp = Math.min(q.e.maxHp, q.e.hp + hh); floater(q.x, q.y - q.size * 0.6, '+' + hh, '#6af0a0', 16); burst(q.x, q.y, '#6af0a0', 10, 160); }
+          rings.push({ x: x.x, y: x.y, a: 0, half: Math.PI, r: 320, life: 0.4, max: 0.4, col: '#6af0a0' }); A().play('heal');
+          x.tele = null; x.st = 'recover'; x.t = 1.2; return;
+        }
         x.st = 'active'; x.t = x.kind === 'charge' || x.kind === 'charger' ? 0.38 : A0.act; x.didHit = false;
         const T = x.tele;
         const tryHit = (inside, o) => { if (!inside) return; const r = hurtPlayer(raw * (o || 1), x); if (r === 'parry') parried(x); };
@@ -381,7 +436,8 @@
         }
         if (!x.enraged && !x.mini && !x.e.boss && enemies.length > 1 && !E.some((q) => q !== x && q.e.hp > 0)) { x.enraged = true; floater(x.x, x.y - x.size * 0.7, '😡 ЛЮТЬ!', '#ff5050', 16, 1); flashScr = 0.12; flashCol = '#ff2020'; }
         if (x.st === 'stun') { if ((x.stun -= dt) <= 0) { x.st = 'idle'; x.t = 0.4; } return; }
-        const dx = P.x - x.x, dy = P.y - x.y, dd = Math.hypot(dx, dy) || 1; const A0 = x.A; const spd = A0.spd * x.speedMul * (0.8 + 0.2 * AR.aggr) * (x.enraged ? 1.25 : 1);
+        const dx = P.x - x.x, dy = P.y - x.y, dd = Math.hypot(dx, dy) || 1; const A0 = x.A;
+        { const want = Math.atan2(dy, dx); let df = want - x.face; while (df > Math.PI) df -= 6.283; while (df < -Math.PI) df += 6.283; const tr = (x.role === 'shield' ? 2.0 : 9) * dt; x.face += Math.max(-tr, Math.min(tr, df)); } const spd = A0.spd * x.speedMul * (0.8 + 0.2 * AR.aggr) * (x.enraged ? 1.25 : 1);
         if (x.st === 'idle' || x.st === 'chase') {
           x.st = 'chase'; x.t -= dt;
           if (x.arch === 'ranged') { const want = dd < 200 ? -1 : dd > 300 ? 1 : 0; const side = Math.sin(time * 1.3 + x.r) * 0.6; x.x += (dx / dd * want - dy / dd * side) * spd * dt; x.y += (dy / dd * want + dx / dd * side) * spd * dt; }
@@ -426,6 +482,7 @@
         p.mp = Math.min(d.maxMp, p.mp + d.maxMp * (p.cheat === 'mana' ? 0.03 : 0.012) * dt);
         if (b.art && b.art.regen) p.hp = Math.min(d.maxHp, p.hp + d.maxHp * 0.006 * dt);
         if ((P.staT -= dt) <= 0) P.sta = Math.min(100, P.sta + 42 * dt);
+        if (P.burn && !over) { P.burn.t -= dt; p.hp = Math.max(1, p.hp - P.burn.dps * dt); if (Math.random() < 0.3) burst(P.x, P.y - 10, '#ff7a30', 1, 80); if (P.burn.t <= 0) P.burn = null; }
         P.inv = Math.max(0, P.inv - dt); P.flash = Math.max(0, P.flash - dt); P.comboT -= dt; P.hurtT -= dt;
         // ціль погляду — курсор
         if (!over) P.face = Math.atan2(mouse.y - P.y, mouse.x - P.x);
@@ -468,7 +525,7 @@
           q.x += q.vx * dt; q.y += q.vy * dt; q.life -= dt;
           if (q.x < PAD || q.x > W - PAD || q.y < PAD || q.y > H - PAD) q.life = 0;
           if (q.side === 'enemy') { if (Math.hypot(q.x - P.x, q.y - P.y) < q.r + P.r) { const r = hurtPlayer(q.dmg, q); if (r === 'parry') { q.side = 'player'; q.vx *= -1.4; q.vy *= -1.4; q.dmg = d.atk * 1.2; q.col = '#ffe08a'; q.hit = new Set(); P.st = 'idle'; floater(P.x, P.y - 46, 'ВІДБИТО!', '#ffe08a', 20); kick(0.1, 6); A().play('clang'); } else if (r !== 'dodge') q.life = 0; } }
-          else for (const x of E) if (x.e.hp > 0 && !q.hit.has(x) && Math.hypot(q.x - x.x, q.y - x.y) < q.r + x.r) { q.hit.add(x); damage(x, q.dmg, { elem: q.elem, by: q.ally ? 'ally' : 'player', kb: 90, limit: q.limit || 3, quiet: q.ally }); if (!q.pierce) { q.life = 0; break; } }
+          else for (const x of E) if (x.e.hp > 0 && !(q.hit || (q.hit = new Set())).has(x) && Math.hypot(q.x - x.x, q.y - x.y) < q.r + x.r) { q.hit.add(x); damage(x, q.dmg, { elem: q.elem, by: q.ally ? 'ally' : 'player', kb: 90, limit: q.limit || 3, quiet: q.ally, from: q }); if (!q.pierce) { q.life = 0; break; } }
           if (Math.random() < 0.5) parts.push({ x: q.x, y: q.y, vx: 0, vy: 0, life: 0.18, max: 0.18, col: q.col, sz: q.r * 0.6 });
         }
         for (let i = proj.length - 1; i >= 0; i--) if (proj[i].life <= 0) proj.splice(i, 1);
@@ -487,13 +544,14 @@
       function shadow(x, y, r) { g.fillStyle = 'rgba(0,0,0,.32)'; g.beginPath(); g.ellipse(x, y + 6, r * 1.1, r * 0.45, 0, 0, 7); g.fill(); }
       function drawTele(x) {
         const T = x.tele; if (!T) return; const k = 1 - clamp(x.t / (x.tw || 1), 0, 1);
-        g.save(); g.fillStyle = 'rgba(255,40,60,.16)'; g.strokeStyle = `rgba(255,60,70,${0.5 + k * 0.5})`; g.lineWidth = 2;
-        const fill = `rgba(255,40,60,${0.18 + k * 0.32})`;
+        const hc = T.col === 'heal';
+        g.save(); g.fillStyle = hc ? 'rgba(60,240,140,.14)' : 'rgba(255,40,60,.16)'; g.strokeStyle = hc ? `rgba(80,255,150,${0.5 + k * 0.5})` : `rgba(255,60,70,${0.5 + k * 0.5})`; g.lineWidth = 2;
+        const fill = hc ? `rgba(60,240,140,${0.18 + k * 0.32})` : `rgba(255,40,60,${0.18 + k * 0.32})`;
         if (T.type === 'cone') { g.beginPath(); g.moveTo(x.x, x.y); g.arc(x.x, x.y, T.r, x.aim - T.half, x.aim + T.half); g.closePath(); g.fill(); g.stroke(); g.fillStyle = fill; g.beginPath(); g.moveTo(x.x, x.y); g.arc(x.x, x.y, T.r * k, x.aim - T.half, x.aim + T.half); g.closePath(); g.fill(); }
         else if (T.type === 'circle') { const cx = T.ring ? x.x : T.cx, cy = T.ring ? x.y : T.cy; g.beginPath(); g.arc(cx, cy, T.r, 0, 7); g.fill(); g.stroke(); g.fillStyle = fill; g.beginPath(); g.arc(cx, cy, T.r * k, 0, 7); g.fill(); if (T.ring) { g.strokeStyle = `rgba(255,80,120,${k})`; g.lineWidth = 4; g.beginPath(); g.arc(cx, cy, T.r * (1.5 - k * 0.5), 0, 7); g.stroke(); } }
         else if (T.type === 'line') { g.translate(x.x, x.y); g.rotate(x.aim); g.fillRect(0, -T.w / 2, T.len, T.w); g.strokeRect(0, -T.w / 2, T.len, T.w); g.fillStyle = fill; g.fillRect(0, -T.w / 2, T.len * k, T.w); }
         g.restore();
-        if (k > 0.75) { g.fillStyle = '#ff4050'; g.font = FONT(22, 900); g.textAlign = 'center'; g.fillText('!', x.x, x.y - x.size - 4); }
+        if (k > 0.75 && !hc) { g.fillStyle = '#ff4050'; g.font = FONT(22, 900); g.textAlign = 'center'; g.fillText('!', x.x, x.y - x.size - 4); }
       }
       function bar(x, y, w, h, v, col, back = 'rgba(0,0,0,.6)') { g.fillStyle = back; g.fillRect(x - 1, y - 1, w + 2, h + 2); g.fillStyle = col; g.fillRect(x, y, w * clamp(v, 0, 1), h); }
       function render() {
@@ -541,9 +599,12 @@
         const squash = x.arch === 'slime' && x.st === 'chase' ? Math.sin(x.hop * Math.PI) * 10 : 0;
         g.save(); if (dead) { g.globalAlpha = clamp(x.t * 2, 0, 1); }
         if (x.st === 'stun') { g.translate(x.x, x.y); g.rotate(Math.sin(time * 18) * 0.08); g.translate(-x.x, -x.y); }
+        if (e.champion && !dead) { const cc = CHAMPS[e.champion].col; g.save(); g.globalAlpha = 0.35 + Math.sin(time * 6) * 0.15; g.strokeStyle = cc; g.lineWidth = 4; g.beginPath(); g.ellipse(x.x, x.y + 4, x.r * 1.6, x.r * 0.7, 0, 0, 7); g.stroke(); g.restore(); }
         drawSpr(x.spr, x.x, x.y - squash, x.size * pulse, flip, x.flash > 0 || (x.st === 'windup' && x.t < 0.12));
         g.restore();
         if (dead) return;
+        if (x.role === 'shield') { g.save(); g.translate(x.x + Math.cos(x.face) * 20, x.y - 14 + Math.sin(x.face) * 20); g.rotate(x.face); g.fillStyle = e.broken || x.st === 'stun' ? 'rgba(120,120,140,.6)' : '#8fb4d8'; g.strokeStyle = '#1a2230'; g.lineWidth = 2; g.fillRect(-4, -16, 8, 32); g.strokeRect(-4, -16, 8, 32); g.restore(); }
+        if (x.role === 'healer' || e.champion) { g.font = FONT(14); g.textAlign = 'center'; g.fillText(x.role === 'healer' ? '✚' : CHAMPS[e.champion].icon, x.x, x.y - x.size - 18); }
         if (x.st === 'stun') { g.font = FONT(14); g.textAlign = 'center'; g.fillText(e.broken ? '💥' : '💫', x.x + Math.cos(time * 6) * 14, x.y - x.size - 2); }
         if (e.boss) return;
         const w = x.mini ? 30 : 46, top = x.y - x.size - 8;
@@ -612,7 +673,10 @@
         root.remove();
         for (const a of b.allies) if (a.kind === 'comp' && a.ref.hp <= 0) a.ref.hp = 1;
         b.over = res;
-        if (res === 'win') { b.enemies = b.enemies.filter((e) => e.hp <= 0); C().computeRewards(b, p); }
+        if (res === 'win') {
+          if (!b.rank) rankNow();
+          b.enemies = b.enemies.filter((e) => e.hp <= 0); C().computeRewards(b, p);
+        }
         if (res === 'lose') p.hp = 0;
         await ISK.combatUI.settle(b, opts, resolve);
       }

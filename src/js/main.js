@@ -247,6 +247,27 @@
         if (!moved) errors.push('wasd: hero did not move from ' + from);
         console.log('WASD moved', from, '->', g.player.location); await shot('56_wasd_walk');
       });
+      await step('v52_map', async () => {
+        const g = G4(); const p = g.player; UI.closeAll(); const home = 'b:' + g.world.startBarony; if (p.location !== home) { ISK.game.arrive(g, home); UI.refresh(); }
+        ISK.render.centerOn(home, 1.3); await UI.sleep(500); await shot('70_fog');
+        ISK.panels.worldMap(); await UI.sleep(600); await shot('71_world_map'); UI.closeAll();
+        p.gold += 20000; ISK.panels.cartographer(g.world.startBarony); await UI.sleep(500); await shot('72_cartographer');
+        const btn = [...document.querySelectorAll('.map-tier .btn.primary')][1]; if (btn) btn.click(); await UI.sleep(400); UI.closeAll();
+        ISK.render.centerOn(home, 0.7); await UI.sleep(400); await shot('73_after_map');
+        const e = g.world.graph[home].find((x) => x.to[0] === 'r'); if (!e) errors.push('no resource spot near start');
+        UI.fastTravel = true; if (e) await UI.startTravel(e.to); UI.fastTravel = false; UI.closeAll();
+        if (e && p.location !== e.to) errors.push('did not reach resource spot ' + p.location);
+        ISK.render.centerOn(p.location, 2.2); await UI.sleep(400); await shot('74_resource_spot');
+        const W0 = ISK.world.W; const c0 = ISK.world.nodeCell(g.world, p.location);
+        g.life.mon.push({ id: 9999, cell: c0 + 3 + 2 * W0, home: c0, tgt: c0, key: 'wolf', keys: ['wolf'], lvl: p.level + 1, n: 2, icon: '🐺', name: 'Зграя: Вовк', elite: true }); ISK.game.revealAt(g, c0);
+        await UI.sleep(400); await shot('75_monster'); UI.showMonster(g.life.mon[g.life.mon.length - 1]); await UI.sleep(300); await shot('76_monster_info');
+        g.life.mon = g.life.mon.filter((m) => m.id !== 9999); document.getElementById('info-panel').classList.add('hidden');
+        // арена з ролями й чемпіоном
+        const es = [ISK.combat.makeEnemy('orc', p.level), ISK.combat.makeEnemy('goblin', p.level), ISK.combat.makeEnemy('skeleton', p.level)];
+        es[2].champion = 'fiery'; es[2].name = 'Вогняний Скелет';
+        const pr = ISK.combatUI.run(es, { biome: 'forest', noDeath: true }); await UI.sleep(2400); await shot('77_arena_roles');
+        ISK.actionCombat._live && ISK.actionCombat._live.finish('flee'); await pr; UI.closeAll();
+      });
       await step('v4_combat', async () => {
         const pr = ISK.combatUI.run([ISK.combat.makeEnemy('orc', 14), ISK.combat.makeEnemy('skeleton', 14)], { biome: 'plains', turnBased: true }); await UI.sleep(2000); await shot('54_combat_v4');
         globalThis.ISK_AUTOFIGHT = true; globalThis.ISK_AUTOPLAY = 1;

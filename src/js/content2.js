@@ -143,6 +143,11 @@
     pearlbay: { name: 'Перлова затока', icon: '🦪', terr: [2], prof: 'fishing', mats: [['pearl', 2], ['fish_salmon', 2], ['fish_silver', 1]], minD: 5, coast: true },
     oakgrove: { name: 'Дубовий гай', icon: '🌳', terr: [4], prof: 'lumber', mats: [['oak', 5], ['wood', 3], ['mushroom', 2]], minD: 0 },
     ebonyforest: { name: 'Ліс чорного дерева', icon: '🖤', terr: [12, 10, 4], prof: 'lumber', mats: [['ebony', 3], ['wood_ancient', 1]], minD: 12 },
+    lumbercamp: { name: 'Лісосіка', icon: '🪓', terr: [4, 12, 9], prof: 'lumber', mats: [['wood', 7], ['plank', 1], ['mushroom', 1]], minD: 0 },
+    herbglade: { name: 'Лісова галявина з травами', icon: '🌿', terr: [4, 10, 12], prof: 'herbalism', mats: [['herb_heal', 5], ['herb_moon', 2], ['mushroom', 2], ['berries', 1]], minD: 0 },
+    steppegrass: { name: 'Степове різнотрав\'я', icon: '🌾', terr: [3], prof: 'herbalism', mats: [['herb_heal', 6], ['herb_fire', 1], ['seed_wheat', 1]], minD: 0 },
+    fishspot: { name: 'Рибне місце', icon: '🐟', terr: [2, 3, 4], prof: 'fishing', mats: [['fish_carp', 6], ['fish_trout', 3], ['fish_salmon', 1]], minD: 0 },
+    oasis: { name: 'Оаза з пальмами', icon: '🌴', terr: [8], prof: 'lumber', mats: [['wood', 5], ['herb_fire', 2], ['berries', 2], ['fish_carp', 1]], minD: 0 },
     berrybush: { name: 'Ягідні зарості', icon: '🫐', terr: [4, 9], prof: 'herbalism', mats: [['berries', 5], ['mushroom', 3], ['herb_heal', 1]], minD: 0 },
   });
   D.PROFESSIONS.jewelcrafting = { name: 'Ювелірство', icon: '💍', desc: 'Персні, амулети й обереги з самоцвітів і золота.' };

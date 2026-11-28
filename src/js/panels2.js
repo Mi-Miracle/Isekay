@@ -160,7 +160,7 @@
     const g = G(); if (!g) return; const p = g.player; const items = [];
     if (node) {
       const [k, id] = node.split(':'); const here = p.location === node; const known = g.discovered[node];
-      const name = k === 'b' ? g.world.baronies[+id].name : g.world.dungeons[+id].name;
+      const name = UI().nodeName(node);
       items.push({ icon: '📍', label: `${known ? name : '???'}`, disabled: true }, '-');
       items.push({ icon: 'ℹ️', label: 'Інформація', fn: () => UI().showInfo(node) });
       if (!here) items.push({ icon: '🧭', label: 'Подорожувати сюди', fn: () => UI().startTravel(node) });

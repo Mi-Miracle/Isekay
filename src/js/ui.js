@@ -87,7 +87,7 @@
     $('#hud-date').textContent = GM().dateStr(G.time);
     if (ISK.life) { const env = ISK.life.environment(G); let we = $('#hud-weather'); if (!we) { we = h('div', { id: 'hud-weather', class: 'muted' }); $('#hud-date').after(we); } we.textContent = `${env.season.icon} ${env.season.name} · ${env.weather.icon} ${env.weather.name}`; we.title = `Швидкість подорожі ×${env.travel.toFixed(2)}`; document.body.dataset.season = env.season.id; document.body.dataset.weather = env.weatherKey; }
     const hr = GM().here(G); const realm = GM().realmOfNode(G, p.location);
-    $('#hud-loc').textContent = `📍 ${hr.kind === 'barony' ? hr.B.name : hr.Dg.name}${realm >= 0 ? ' · ' + G.world.realms[realm].name : ''} · ${ISK.data.MOUNTS[p.mount].icon}`;
+    $('#hud-loc').textContent = `📍 ${nodeName(p.location)}${realm >= 0 ? ' · ' + G.world.realms[realm].name : ''} · ${ISK.data.MOUNTS[p.mount].icon}`;
     const party = $('#hud-party'); party.innerHTML = '';
     for (const c of p.party) party.appendChild(h('div', { class: 'pmini', title: `${c.name} (${c.roleName}, рів. ${c.lvl})` }, ISK.sprites.img(ISK.sprites.forCompanion(c), 30)));
     const pet = p.pets[p.activePet]; if (pet) party.appendChild(h('div', { class: 'pmini', title: `${pet.name} (рів. ${pet.lvl})` }, ISK.sprites.img(ISK.sprites.forPet(pet.key), 30)));
@@ -132,15 +132,15 @@
       for (const s of st.services) { const S = SVC[s]; svcs.appendChild(h('div', { class: 'svc', onclick: () => { A().play('click'); ISK.panels.openService(s, B); } }, h('span', { class: 'i' }, S.icon), S.name)); }
       if (p.house && p.house.barony === B.id) svcs.appendChild(h('div', { class: 'svc hl', onclick: () => ISK.estate.open('house') }, h('span', { class: 'i' }, '🏡'), 'Мій дім'));
       if (p.holdings.includes(B.id)) svcs.appendChild(h('div', { class: 'svc hl', onclick: () => ISK.estate.open('land', B.id) }, h('span', { class: 'i' }, '🏰'), 'Мої землі'));
+      if (['capital', 'city', 'town', 'port', 'fortress'].includes(B.type) && !ISK.politics.isDemon(G.P, B.owner)) svcs.appendChild(h('div', { class: 'svc', onclick: () => ISK.panels.cartographer(B.id) }, h('span', { class: 'i' }, '🗺️'), 'Картограф'));
       if (B.type === 'port') svcs.appendChild(h('div', { class: 'svc', onclick: () => ISK.panels2.shipyard(B) }, h('span', { class: 'i' }, '⚓'), 'Верф і море'));
       if (ISK.life && ISK.life.lordsAt(G, B.id).length && !ISK.politics.isDemon(G.P, B.owner)) svcs.appendChild(h('div', { class: 'svc', onclick: () => ISK.panels2.lords(B.id) }, h('span', { class: 'i' }, '👑'), 'Двір лордів'));
       if (st.services.length || p.house) { el.appendChild(h('div', { class: 'loc-section' }, 'Заклади')); el.appendChild(svcs); }
       el.appendChild(h('div', { class: 'loc-section' }, 'Дії'));
       const acts = h('div', { class: 'svc-grid' });
-      for (const [prof, ic, nm] of [['herbalism', '🌿', 'Трави'], ['mining', '⛏️', 'Руда'], ['fishing', '🎣', 'Риба'], ['lumber', '🪓', 'Деревина']]) {
-        const ok = GM().canGather(G, prof);
-        acts.appendChild(h('div', { class: 'svc' + (ok ? '' : ' locked'), title: ok ? '' : 'Тут немає відповідних ресурсів', onclick: () => (ok ? ISK.panels.gather(prof) : toast('Тут цього не знайти.', 'bad')) }, h('span', { class: 'i' }, ic), nm));
-      }
+      // v5.2: збір ресурсів — лише в природі (стежками до лісосік, шахт, лугів, озер)
+      const spots = (w.graph['b:' + B.id] || []).filter((e) => e.to[0] === 'r');
+      if (spots.length) acts.appendChild(h('div', { class: 'svc hl', title: 'Ресурси збирають у природі: ліс, шахта, луг, озеро. Обери, куди йти.', onclick: () => ISK.panels.spotsNear(B.id) }, h('span', { class: 'i' }, '🧺'), `Угіддя поруч (${spots.length})`));
       acts.appendChild(h('div', { class: 'svc', onclick: () => ISK.panels.explore() }, h('span', { class: 'i' }, '🌲'), 'Полювати'));
       acts.appendChild(h('div', { class: 'svc', onclick: () => ISK.panels.talk(B) }, h('span', { class: 'i' }, '💬'), 'Поговорити'));
       acts.appendChild(h('div', { class: 'svc', onclick: () => ISK.panels.campfire() }, h('span', { class: 'i' }, '🔥'), 'Табір'));
@@ -150,19 +150,23 @@
       const hostile = G.P.armies.filter((a) => a.node === B.id && ISK.politics.isDemon(G.P, a.realm));
       for (const a of hostile) acts.appendChild(h('div', { class: 'svc danger', onclick: () => ISK.panels.attackArmy(a.id) }, h('span', { class: 'i' }, a.icon || '😈'), 'В бій з ордою!'));
       el.appendChild(acts);
-      if (B.sites && B.sites.length) {
-        el.appendChild(h('div', { class: 'loc-section' }, 'Родовища та угіддя'));
-        const sg = h('div', { class: 'svc-grid' });
-        B.sites.forEach((st, i) => { const S2 = ISK.data.RESOURCE_SITES[st.key]; const left = GM().siteLeft(G, B.id, i);
-          sg.appendChild(h('div', { class: 'svc' + (left ? ' hl' : ' locked'), title: `${S2.name}: ${S2.mats.map((m) => PL().item(m[0]).name).join(', ')} · запас ${left}/${st.rich} (відновлюється)`, onclick: () => (left ? ISK.panels.gatherSite(B.id, i) : toast('Родовище виснажене. Повертайся за кілька днів.', 'bad')) }, h('span', { class: 'i' }, S2.icon), `${S2.name} ${left}/${st.rich}`)); });
-        el.appendChild(sg);
-      }
       const heroes = ISK.heroes.at(G.P, 'b:' + B.id);
       if (heroes.length) {
         el.appendChild(h('div', { class: 'loc-section' }, 'Герої тут'));
         for (const hh of heroes.slice(0, 4)) el.appendChild(h('div', { class: 'item', style: { padding: '6px' } }, h('div', { class: 'ic' }, hh.icon), h('div', { style: { flex: 1 } }, h('div', { class: 'nm' }, `${hh.name} · рів. ${hh.lvl}`), h('div', { class: 'ds' }, `${ISK.data.CLASSES[hh.cls].name} · ${ISK.data.RACES[hh.race] ? ISK.data.RACES[hh.race].name : hh.race} · ⭐${hh.fame}${hh.rival ? ' · ісекайник!' : ''}`)),
           h('div', { class: 'acts' }, h('button', { class: 'btn small', onclick: () => ISK.panels.heroTalk(hh.id) }, '💬'), h('button', { class: 'btn small', onclick: () => ISK.panels.heroSpar(hh.id) }, '⚔️'), h('button', { class: 'btn small primary', onclick: () => ISK.panels.heroRecruit(hh.id) }, '🤝'))));
       }
+    } else if (hr.kind === 'res') {
+      const Rn = hr.Rn, S2 = ISK.data.RESOURCE_SITES[Rn.key], left = GM().rnodeLeft(G, Rn.id); const prof = ISK.data.PROFESSIONS[S2.prof];
+      el.appendChild(h('div', { class: 'row' }, h('div', { style: { fontSize: '34px' } }, S2.icon), h('div', null, h('h3', null, S2.name), h('div', { class: 'loc-sub' }, `Угіддя біля ${hr.B.name} · ${prof ? prof.icon + ' ' + prof.name : ''}`))));
+      el.appendChild(h('div', { class: 'muted', style: { margin: '6px 0' } }, `Тут можна добути: ${S2.mats.map((m) => `${PL().item(m[0]).icon} ${PL().item(m[0]).name}`).join(', ')}`));
+      el.appendChild(h('div', { class: 'kv' }, h('div', { class: 'k' }, 'Запас'), h('div', null, `${'🟩'.repeat(left)}${'⬛'.repeat(Math.max(0, Rn.rich - left))} ${left}/${Rn.rich}`), h('div', { class: 'k' }, 'Відновлення'), h('div', null, '+1 кожні 3 дні')));
+      const acts = h('div', { class: 'svc-grid', style: { marginTop: '8px' } });
+      acts.appendChild(h('div', { class: 'svc' + (left ? ' hl' : ' locked'), onclick: () => (left ? ISK.panels.gatherNode(Rn.id) : toast('Виснажено. Повертайся за кілька днів.', 'bad')) }, h('span', { class: 'i' }, S2.icon), S2.verb || 'Збирати'));
+      acts.appendChild(h('div', { class: 'svc', onclick: () => ISK.panels.explore() }, h('span', { class: 'i' }, '🌲'), 'Полювати'));
+      acts.appendChild(h('div', { class: 'svc', onclick: () => ISK.panels.campfire() }, h('span', { class: 'i' }, '🔥'), 'Табір'));
+      acts.appendChild(h('div', { class: 'svc', onclick: () => startTravel('b:' + hr.B.id) }, h('span', { class: 'i' }, '🏘️'), 'Назад до ' + hr.B.name));
+      el.appendChild(acts);
     } else {
       const Dg = hr.Dg;
       el.appendChild(h('div', { class: 'row' }, h('div', { style: { fontSize: '34px' } }, Dg.icon), h('div', null, h('h3', null, Dg.name), h('div', { class: 'loc-sub' }, `Підземелля · рекомендований рівень ${Dg.level} · поверхів: ${Dg.floors}`, G.cleared[Dg.id] ? h('span', { class: 'good' }, ' · зачищено') : null))));
@@ -202,13 +206,17 @@
         h('div', { class: 'k' }, 'Укріплення'), h('div', null, '🧱'.repeat(Math.min(8, B.fort))),
         h('div', { class: 'k' }, 'Небезпека'), h('div', { style: { color: B.danger > p.level + 3 ? 'var(--bad)' : B.danger > p.level ? 'var(--gold)' : 'var(--good)' } }, `монстри ~${B.danger} рівня`),
         lm ? [h('div', { class: 'k' }, 'Місцевість'), h('div', { class: 'gold' }, `${lm.icon} ${lm.name}`)] : null,
-        h('div', { class: 'k' }, 'Ресурси'), h('div', null, [res.herbs > 0.15 ? '🌿' : '', res.ore > 0.12 || B.type === 'mine' ? '⛏️' : '', res.fish > 0.5 ? '🎣' : ''].join(' ') || '—'),
+        h('div', { class: 'k' }, 'Угіддя'), h('div', null, (w.graph[node] || []).filter((e) => e.to[0] === 'r' && G.discovered[e.to]).map((e) => ISK.data.RESOURCE_SITES[w.rnodes[+e.to.slice(2)].key].icon).join(' ') || (known ? '—' : '?')),
         h('div', { class: 'k' }, 'Заклади'), h('div', null, st.services.map((s) => SVC[s].icon).join(' ') || '—')));
-      if (B.sites && B.sites.length && known) el.appendChild(h('div', { class: 'card' }, h('h4', null, 'Родовища'), B.sites.map((st) => { const S2 = ISK.data.RESOURCE_SITES[st.key]; return h('div', null, `${S2.icon} ${S2.name} — ${S2.mats.slice(0, 3).map((m) => PL().item(m[0]).icon).join(' ')}`); })));
       const hs = (G.P.heroes || []).filter((x) => x.alive && !x.joined && x.node === B.id);
       if (hs.length) el.appendChild(h('div', { class: 'card' }, h('h4', null, 'Герої'), hs.map((x) => h('div', null, `${x.icon} ${x.name}, рів. ${x.lvl}${x.path.length ? ' (в дорозі)' : ''}`))));
       const armiesHere = G.P.armies.filter((a) => a.node === B.id);
       if (armiesHere.length) el.appendChild(h('div', { class: 'card' }, h('h4', null, 'Армії тут'), armiesHere.map((a) => h('div', null, h('span', { style: { color: w.realms[a.realm].color } }, (a.icon || '⚑') + ' '), `${a.name}: ${a.size.toLocaleString('uk')}`, a.siege > 0 ? ` (облога ${Math.round(a.siege * 100)}%)` : ''))));
+    } else if (k === 'r') {
+      const Rn = w.rnodes[+id], S2 = ISK.data.RESOURCE_SITES[Rn.key];
+      el.appendChild(h('h3', null, `${S2.icon} ${S2.name}`));
+      el.appendChild(h('div', { class: 'muted' }, `Угіддя біля ${w.baronies[Rn.barony].name}`));
+      el.appendChild(h('div', { class: 'kv' }, h('div', { class: 'k' }, 'Здобич'), h('div', null, S2.mats.map((m) => PL().item(m[0]).icon + ' ' + PL().item(m[0]).name).join(', ')), h('div', { class: 'k' }, 'Запас'), h('div', null, `${GM().rnodeLeft(G, Rn.id)}/${Rn.rich}`), h('div', { class: 'k' }, 'Професія'), h('div', null, (ISK.data.PROFESSIONS[S2.prof] || { name: S2.prof }).name)));
     } else {
       const Dg = w.dungeons[+id];
       el.appendChild(h('h3', null, `${Dg.icon} ${Dg.name}`));
@@ -245,13 +253,17 @@
       if (leg.kind === 'sea' && !p.ship) { const t = GM().seaTicket(leg); p.gold -= t; toast(`⛴️ Квиток на корабель: -${t}🪙`, ''); p.flags.sailed = true; GM().unlock(G, 'sailor'); }
       const days = GM().legDays(leg, p); const steps = leg.path.length;
       const encAt = Math.floor(steps * (0.3 + Math.random() * 0.4));
-      const enc = GM().rollEncounter(G, leg.path[encAt] ?? leg.path[0], leg.kind, days);
+      let enc = GM().rollEncounter(G, leg.path[encAt] ?? leg.path[0], leg.kind, days);
+      if (enc && enc.type === 'combat' && leg.kind !== 'sea' && Math.random() < 0.5) enc = null; // частину бійок тепер дають видимі монстри
       $('#travel-text').textContent = `${leg.kind === 'sea' ? '⛵ Морем' : '🚶 Подорож'} до ${nodeName(target)} · ${GM().dateStr(G.time)}`;
       const stride = Math.max(1, Math.round(PL().travelSpeed(p)));
       let spent = 0; const stepMs = UI.fastTravel ? 4 : Math.max(8, Math.min(leg.kind === 'sea' ? 14 : 24, 2600 / steps));
       for (let s = 0; s < steps; s += stride) {
         const tgt = days * Math.min(1, (s + stride) / steps); if (tgt - spent > 0.02) { showNews(GM().passTime(G, tgt - spent)); spent = tgt; }
         const px = ISK.render.cellToPx(leg.path[s]); R.travel.pos = px;
+        // v5.2: туман розвіюється на ходу; монстри, що бродять, нападають, якщо пройти поруч
+        GM().revealAt(G, leg.path[s]);
+        if (leg.kind !== 'sea' && s > 1) { const mon = GM().monsterNear(G, leg.path[s], 1); if (mon) { const res = await fightMonster(mon, true); if (res === 'dead') { endTravel(); return; } if (res === 'fled') { toast('Ти відступив і повернувся назад.', ''); endTravel(); return; } } }
         if (s % 4 === 0) A().play(leg.kind === 'sea' ? 'splash' : 'step');
         const z = R.cam.z; const vw = R.canvas.clientWidth / z, vh = R.canvas.clientHeight / z;
         R.cam.x += (px.x - vw / 2 - R.cam.x) * 0.12; R.cam.y += (px.y - vh / 2 - R.cam.y) * 0.12;
@@ -261,6 +273,7 @@
       }
       if (days - spent > 0) showNews(GM().passTime(G, days - spent)); doneDays += days;
       p.location = route.nodes[li + 1]; GM().discoverAround(G); refresh();
+      { const xr = GM().exploreReward(G); if (xr) { toast(`🧭 Дослідник! Нові землі на мапі: +${xr.xp} ✨`, 'good', 3500); if (xr.ups.length) levelUp(p.level); } }
       if (UI.stopTravel && li < route.legs.length - 1 && route.legs[li + 1].kind !== 'sea' && leg.kind !== 'sea') { toast('Ти зупинився перепочити.', ''); break; }
     }
     const evs = GM().arrive(G, p.location); endTravel();
@@ -304,6 +317,28 @@
 
   function endTravel() { UI.travelling = false; const R = ISK.render.R; R.travel = null; R.route = null; R.selected = null; $('#travel-bar').classList.add('hidden'); $('#location-panel').classList.remove('hidden'); refresh(); }
 
+  // ---- v5.2: монстри на мапі ----
+  async function fightMonster(m, ambush) {
+    const G = UI.G, p = G.player;
+    if (ambush) toast(`⚠️ ${m.icon} ${m.name} (рів. ${m.lvl}) перегородили шлях!`, 'bad', 3500);
+    const r = await ISK.combatUI.run(GM().monsterEnemies(m), { biome: ISK.data.BIOME_OF_TERRAIN[G.world.terrain[m.cell]] || 'plains' });
+    if (r === 'win') { GM().killMonster(G, m); toast(`🏆 ${m.name} розбито! Дорога вільна.`, 'good'); refresh(); return 'ok'; }
+    if (r === 'lose') return 'dead';
+    if (r === 'flee') return 'fled';
+    return 'ok';
+  }
+  function showMonster(m) {
+    const G = UI.G, w = G.world, p = G.player; const el = $('#info-panel'); el.classList.remove('hidden'); el.innerHTML = ''; ISK.render.R.selected = null;
+    el.appendChild(h('button', { class: 'close-x', onclick: () => el.classList.add('hidden') }, '✕'));
+    const W0 = ISK.world.W; const at = ISK.world.nodeXY(w, p.location); const dist = Math.hypot((m.cell % W0) - at.x, ((m.cell / W0) | 0) - at.y);
+    const dl = m.lvl - p.level;
+    el.appendChild(h('h3', null, `${m.icon} ${m.name}`));
+    el.appendChild(h('div', { class: 'kv' }, h('div', { class: 'k' }, 'Рівень'), h('div', { style: { color: dl > 5 ? 'var(--bad)' : dl > 1 ? 'var(--gold)' : 'var(--good)' } }, String(m.lvl) + (m.elite ? ' ⭐ еліта' : '')), h('div', { class: 'k' }, 'Кількість'), h('div', null, String(m.n)), h('div', { class: 'k' }, 'Відстань'), h('div', null, `~${Math.round(dist)} кл.`)));
+    el.appendChild(h('div', { class: 'muted', style: { margin: '6px 0' } }, dl > 5 ? 'Виглядають так, ніби їдять героїв на сніданок. Краще обійти.' : 'Бродять околицями. Можна обійти іншою дорогою — або напасти першим.'));
+    const near = dist <= 14 && !UI.travelling;
+    el.appendChild(h('button', { class: 'btn primary', disabled: !near, style: { width: '100%' }, onclick: async () => { el.classList.add('hidden'); showNews(GM().passTime(G, Math.max(0.1, dist / 40))); const r = await fightMonster(m, false); if (r === 'dead') refresh(); } }, near ? '⚔️ Напасти першим' : 'Занадто далеко — підійди ближче'));
+  }
+
   async function handleEncounter(enc) {
     const G = UI.G, p = G.player;
     if (enc.type === 'event') {
@@ -338,12 +373,13 @@
 
   function biomeAt(node) {
     const G = UI.G; const [k, id] = node.split(':'); if (k === 'd') return 'dungeon';
+    if (k === 'r') { const Rn = G.world.rnodes[+id]; return ISK.data.BIOME_OF_TERRAIN[G.world.terrain[Rn.cell]] || 'plains'; }
     const B = G.world.baronies[+id]; const lm = ISK.world.landmarkAt(G.world, B.cell);
     if (lm) return { deathforest: 'ash', boneplains: 'tundra', despair: 'swamp', crystal: 'mountain', bonedesert: 'desert', dragonridge: 'mountain', feygrove: 'forest', frost: 'tundra', volcano: 'ash', graveyard: 'swamp', banditwoods: 'forest' }[lm.key];
     const top = Object.entries(B.terrain).sort((a, b) => b[1] - a[1])[0];
     return ISK.data.BIOME_OF_TERRAIN[top[0]] || 'plains';
   }
-  function nodeName(node) { const [k, id] = node.split(':'); return k === 'b' ? UI.G.world.baronies[+id].name : UI.G.world.dungeons[+id].name; }
+  function nodeName(node) { const [k, id] = node.split(':'); const w = UI.G.world; return k === 'b' ? w.baronies[+id].name : k === 'r' ? ISK.data.RESOURCE_SITES[w.rnodes[+id].key].name : w.dungeons[+id].name; }
 
   function showNews(news) {
     const G = UI.G; if (!G) return; const box = $('#news-ticker');
@@ -378,7 +414,7 @@
     c.addEventListener('contextmenu', (e) => { e.preventDefault(); if (UI.travelling) return; const node = ISK.render.pick(e.clientX, e.clientY); ISK.panels2.mapContext(e, node); });
     c.addEventListener('mousedown', (e) => { if (e.button !== 0) return; drag = { x: e.clientX, y: e.clientY, cx: R.cam.x, cy: R.cam.y }; moved = false; });
     window.addEventListener('mousemove', (e) => { if (!drag) return; const dx = e.clientX - drag.x, dy = e.clientY - drag.y; if (Math.abs(dx) + Math.abs(dy) > 4) { moved = true; c.classList.add('drag'); } R.cam.x = drag.cx - dx / R.cam.z; R.cam.y = drag.cy - dy / R.cam.z; ISK.render.clampCam(); });
-    window.addEventListener('mouseup', (e) => { if (drag && !moved && e.target === c) { const node = ISK.render.pick(e.clientX, e.clientY); if (node) { A().play('click'); showInfo(node); } } drag = null; c.classList.remove('drag'); });
+    window.addEventListener('mouseup', (e) => { if (drag && !moved && e.target === c) { const mon = ISK.render.pickMonster(e.clientX, e.clientY); if (mon) { A().play('click'); showMonster(mon); drag = null; return; } const node = ISK.render.pick(e.clientX, e.clientY); if (node) { A().play('click'); showInfo(node); } } drag = null; c.classList.remove('drag'); });
     c.addEventListener('wheel', (e) => { e.preventDefault(); const [wx, wy] = ISK.render.screenToWorld(e.clientX, e.clientY); R.cam.z = Math.max(0.22, Math.min(4, R.cam.z * (e.deltaY < 0 ? 1.12 : 0.89))); R.cam.x = wx - e.clientX / R.cam.z; R.cam.y = wy - e.clientY / R.cam.z; ISK.render.clampCam(); }, { passive: false });
     c.addEventListener('dblclick', (e) => { const node = ISK.render.pick(e.clientX, e.clientY); if (node && node !== UI.G.player.location && !UI.travelling) startTravel(node); });
     const mini = $('#minimap'); if (mini) mini.addEventListener('mousedown', (e) => ISK.render.miniClick(e));
@@ -400,6 +436,7 @@
       if (byCode[e.code]) ISK.panels.open(byCode[e.code]);
       if (e.code === 'Space') { e.preventDefault(); setSpeed(UI.timeSpeed ? 0 : 1); return; }
       if (e.code === 'KeyG') { $('#hl-toggle').click(); return; }
+      if (e.code === 'KeyM') { ISK.panels.worldMap(); return; }
       if (e.code === 'KeyF') { ISK.render.centerOn(UI.G.player.location); return; }
       if (e.code === 'Equal' || e.code === 'NumpadAdd') { setSpeed(Math.min(3, UI.timeSpeed + 1)); return; }
       if (e.code === 'Minus' || e.code === 'NumpadSubtract') { setSpeed(Math.max(0, UI.timeSpeed - 1)); return; }
@@ -457,6 +494,6 @@
     for (const b of btns) items.push({ icon: '▸', label: b.textContent.trim().slice(0, 34) || b.title || 'Дія', fn: () => b.click() });
     ISK.panels2.contextMenu(e.clientX, e.clientY, items);
   });
-  Object.assign(UI, { setSpeed, h, $, modal, closeTop, closeAll, confirm: confirmBox, alert: alertBox, toast, cutin, sparkle, levelUp, refresh, renderLocation, showInfo, startTravel, sleep, bindMap, loop, showScreen, startGame, showNews, checkMainQuest, biomeAt, nodeName, SVC });
+  Object.assign(UI, { fightMonster, showMonster, setSpeed, h, $, modal, closeTop, closeAll, confirm: confirmBox, alert: alertBox, toast, cutin, sparkle, levelUp, refresh, renderLocation, showInfo, startTravel, sleep, bindMap, loop, showScreen, startGame, showNews, checkMainQuest, biomeAt, nodeName, SVC });
   ISK.ui = UI;
 })();

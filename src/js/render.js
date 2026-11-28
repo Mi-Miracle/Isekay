@@ -11,7 +11,7 @@
 
   function init(canvas, G) {
     R.canvas = canvas; R.ctx = canvas.getContext('2d'); R.G = G; R.layers = {}; R.labels = null;
-    buildBase(); buildLabels(); resize(); centerOn(G.player.location, 1.6);
+    buildBase(); buildLabels(); resize(); centerOn(G.player.location, 1.6); R.fogFor = null;
     R.mini = document.getElementById('minimap');
     if (R.mini) { R.mini.width = 240; R.mini.height = Math.round(240 * ISK.world.H / ISK.world.W); }
   }
@@ -96,6 +96,8 @@
     };
     for (const s of w.seaRoutes) drawPath(s.path, 1.6, 'rgba(220,240,255,0.55)', [3, 7]);
     for (const t of w.trails) drawPath(t.path, 1.4, t.kind === 'sea' ? 'rgba(220,240,255,0.5)' : 'rgba(70,45,25,0.75)', [2, 4]);
+    // v5.2: стежки до угідь і пішохідні стежки між селами
+    for (const t of w.rtrails || []) { drawPath(t.path, t.kind === 'path' ? 2.2 : 1.8, 'rgba(30,20,10,0.35)'); drawPath(t.path, t.kind === 'path' ? 1.2 : 1, t.kind === 'path' ? 'rgba(232,205,150,0.8)' : 'rgba(190,150,95,0.85)', t.kind === 'path' ? [3, 2] : [1.5, 2.5]); }
     for (const r of w.roads) drawPath(r.path, r.major ? 4.2 : 2.8, 'rgba(40,25,12,0.55)');
     for (const r of w.roads) drawPath(r.path, r.major ? 2.4 : 1.5, r.major ? 'rgba(236,206,150,0.95)' : 'rgba(205,170,120,0.85)', r.major ? null : [5, 3]);
     R.base = c2;
@@ -200,7 +202,7 @@
     }
     if (w._ownerDirty) { invalidatePolitical(); w._ownerDirty = false; realmLabels = null; }
     const z = R.cam.z * R.dpr, inv = 1 / R.cam.z;
-    g.setTransform(1, 0, 0, 1, 0, 0); g.fillStyle = '#143a6c'; g.fillRect(0, 0, R.canvas.width, R.canvas.height);
+    g.setTransform(1, 0, 0, 1, 0, 0); g.fillStyle = G.fog ? '#0b0e1c' : '#143a6c'; g.fillRect(0, 0, R.canvas.width, R.canvas.height);
     g.setTransform(z, 0, 0, z, -R.cam.x * z, -R.cam.y * z); g.imageSmoothingEnabled = true;
     g.drawImage(R.base, 0, 0);
     if (!R.layers[R.mode]) buildLayer(R.mode);
@@ -239,6 +241,7 @@
     g.imageSmoothingEnabled = true;
     // landmark labels
     if (z1 > 0.55) for (const L of w.landmarks) {
+      if (fogAt(Math.round(L.y) * ISK.world.W + Math.round(L.x)) < 1) continue;
       text(g, `${L.icon} ${L.name}`, L.x * S, (L.y - L.r * 0.6) * S, 12 * inv + 5, `rgb(${shade(L.color, 1.35).join(',')})`, 700, 4 * inv, 'Georgia, serif');
     }
     // dungeons
@@ -258,17 +261,15 @@
     }
     // smooth world-clock fraction (time passes gradually while travelling / time-flow)
     const frac = G.time - Math.floor(G.time);
-    // resource sites
-    if (z1 > 0.75 || R.hl) for (const B of w.baronies) {
-      if (!vis(B.x * S, B.y * S)) continue;
-      if (!G.discovered['b:' + B.id]) continue;
-      if (B.type === 'mine') { const x = B.x * S + S / 2, y = B.y * S + S / 2; g.beginPath(); g.arc(x, y, 13 + (R.hl ? Math.sin(R.t / 9) * 2 : 0), 0, 7); g.strokeStyle = 'rgba(200,170,120,0.85)'; g.lineWidth = 1.6 * inv + 0.5; g.setLineDash([4, 3]); g.stroke(); g.setLineDash([]); }
-      if (!B.sites || !B.sites.length) continue;
-      B.sites.forEach((st, k) => { const S2 = ISK.data.RESOURCE_SITES[st.key]; if (!S2) return; const sk = Math.max(1, Math.min(1.8, inv * 1.1)); const x = B.x * S + S / 2 + (k === 0 ? 14 : k === 1 ? -14 : 0) * sk, y = B.y * S + S / 2 + (k === 2 ? 18 : 10) * sk;
-        g.beginPath(); g.arc(x, y, 6.5 * sk + (R.hl ? 1.5 : 0), 0, 7); g.fillStyle = st.temp ? 'rgba(80,50,10,0.8)' : 'rgba(15,20,30,0.7)'; g.fill(); g.strokeStyle = R.hl ? '#ffe36e' : 'rgba(255,230,160,0.75)'; g.lineWidth = R.hl ? 2 : 1; g.stroke();
-        g.font = `${9 * sk}px ${EMOJI}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = '#fff'; g.fillText(S2.icon, x, y + 0.5);
-        if (z1 > 2.2) text(g, S2.name, x, y + 11, 5.5, '#ffe9b8', 600, 2); });
+    // v5.2: угіддя й родовища — окремі точки в природі
+    if (z1 > 0.6 || R.hl) for (const Rn of w.rnodes || []) {
+      if (!G.discovered['r:' + Rn.id]) continue; const x = Rn.x * S + S / 2, y = Rn.y * S + S / 2; if (!vis(x, y)) continue;
+      const S2 = ISK.data.RESOURCE_SITES[Rn.key]; if (!S2) continue; const sk = Math.max(1, Math.min(1.9, inv * 1.15)); const left = ISK.game.rnodeLeft(G, Rn.id);
+      g.beginPath(); g.arc(x, y, 6.5 * sk + (R.hl ? 1.5 : 0), 0, 7); g.fillStyle = left ? 'rgba(20,28,16,0.78)' : 'rgba(40,30,30,0.6)'; g.fill(); g.strokeStyle = R.hl ? '#ffe36e' : left ? 'rgba(200,240,160,0.8)' : 'rgba(150,120,120,0.6)'; g.lineWidth = (R.hl ? 2 : 1.1) * Math.max(0.6, inv); g.stroke();
+      g.globalAlpha = left ? 1 : 0.45; g.font = `${9 * sk}px ${EMOJI}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = '#fff'; g.fillText(S2.icon, x, y + 0.5); g.globalAlpha = 1;
+      if (z1 > 2.2) text(g, S2.name, x, y + 11 * sk * 0.8, 5.5, '#e9ffd0', 600, 2);
     }
+    for (const B of w.baronies) if (B.type === 'mine' && G.discovered['b:' + B.id] && (z1 > 0.75 || R.hl)) { const x = B.x * S + S / 2, y = B.y * S + S / 2; if (!vis(x, y)) continue; g.beginPath(); g.arc(x, y, 13 + (R.hl ? Math.sin(R.t / 9) * 2 : 0), 0, 7); g.strokeStyle = 'rgba(200,170,120,0.85)'; g.lineWidth = 1.6 * inv + 0.5; g.setLineDash([4, 3]); g.stroke(); g.setLineDash([]); }
     // recent battles: dust clouds & crossed swords
     for (const bt of G.P.battles || []) {
       const age = G.time - bt.day; if (age > 3 || age < 0) continue;
@@ -332,18 +333,33 @@
       g.restore();
       if (z1 > 2) text(g, c.name, pos.x, pos.y + 8 * k, 5.5 * k, '#ffe9b8', 600, 2);
     }
+    // v5.2: монстри, що бродять (видно лише там, де бачиш зараз/бачив)
+    for (const m of (G.life && G.life.mon) || []) {
+      if (fogAt(m.cell) < 2) continue; const W0 = ISK.world.W; const x = (m.cell % W0) * S + S / 2, y = ((m.cell / W0) | 0) * S + S / 2; if (!vis(x, y)) continue;
+      const k = Math.max(0.9, Math.min(1.8, inv * 1.3)); const bob = Math.abs(Math.sin(R.t / 7 + m.id)) * 2 * k; const dl = m.lvl - G.player.level;
+      const col = dl <= -4 ? '#7cd67c' : dl <= 1 ? '#ffd36e' : dl <= 5 ? '#ff9a40' : '#ff4a5a';
+      g.beginPath(); g.ellipse(x, y + 3 * k, 7 * k, 2.6 * k, 0, 0, 7); g.fillStyle = 'rgba(0,0,0,0.4)'; g.fill();
+      g.beginPath(); g.arc(x, y - 6 * k - bob, 8 * k, 0, 7); g.fillStyle = 'rgba(30,8,12,0.82)'; g.fill(); g.strokeStyle = col; g.lineWidth = 1.6 * k; g.stroke();
+      g.font = `${10 * k}px ${EMOJI}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = '#fff'; g.fillText(m.icon, x, y - 5.5 * k - bob);
+      if (m.n > 1) { g.font = `800 ${6 * k}px "Segoe UI", sans-serif`; g.fillStyle = col; g.fillText('×' + m.n, x + 8 * k, y + 1 * k); }
+      if (m.elite) { g.font = `${6 * k}px ${EMOJI}`; g.fillText('⭐', x - 8 * k, y - 13 * k - bob); }
+      if (z1 > 1.6) text(g, `${m.name} · ${m.lvl}`, x, y + 9 * k, 5.5 * k, col, 700, 2.2);
+    }
+    // туман війни поверх світу
+    { const fc = buildFog(); if (fc) { g.imageSmoothingEnabled = true; g.drawImage(fc, 0, 0, ISK.world.W * S, ISK.world.H * S); } }
     // labels by zoom
     if (z1 < 1.25 && R.mode !== 'danger') {
       if (!realmLabels || R.t - rlT > 120) { realmLabels = realmLabelPositions(); rlT = R.t; }
       for (const L of realmLabels) {
+        if (fogAt(Math.round(L.y / S) * ISK.world.W + Math.round(L.x / S)) < 1) continue;
         const fs = Math.min(22, 10 + Math.sqrt(L.n) * 1.6) * inv;
         text(g, L.realm.name.toUpperCase(), L.x, L.y, fs, L.realm.isDemon ? '#ff9a8a' : 'rgba(255,245,220,0.95)', 700, 5 * inv);
         const sub = L.realm.liege >= 0 ? `${L.realm.title} (васал Імперії)` : L.realm.title;
         text(g, sub, L.x, L.y + fs * 0.72, fs * 0.42, 'rgba(255,230,180,0.9)', 600, 3 * inv);
       }
     }
-    if (z1 >= 0.8 && z1 < 2.2 && R.labels) for (const d of R.labels.duchies) if (d.n >= 3) text(g, d.name, d.x, d.y - 14 * inv, 11 * inv + 3, 'rgba(255,235,200,0.7)', 600, 3 * inv, 'Georgia, serif');
-    if (z1 >= 2.2 && R.labels) for (const c of R.labels.counties) text(g, 'гр. ' + c.name, c.x, c.y - 18 * inv, 9 * inv + 3, 'rgba(255,250,230,0.6)', 500, 3 * inv, 'Georgia, serif');
+    if (z1 >= 0.8 && z1 < 2.2 && R.labels) for (const d of R.labels.duchies) if (d.n >= 3 && fogAt(Math.round(d.y / S) * ISK.world.W + Math.round(d.x / S)) >= 1) text(g, d.name, d.x, d.y - 14 * inv, 11 * inv + 3, 'rgba(255,235,200,0.7)', 600, 3 * inv, 'Georgia, serif');
+    if (z1 >= 2.2 && R.labels) for (const c of R.labels.counties) if (fogAt(Math.round(c.y / S) * ISK.world.W + Math.round(c.x / S)) >= 1) text(g, 'гр. ' + c.name, c.x, c.y - 18 * inv, 9 * inv + 3, 'rgba(255,250,230,0.6)', 500, 3 * inv, 'Georgia, serif');
     if (z1 < 0.65) for (const C of w.continents) text(g, C.name, C.x * S, (C.y - C.ry * ISK.world.H * 0.85) * S, 30 * inv, 'rgba(210,235,255,0.75)', 700, 6 * inv, 'Georgia, serif');
     // quest markers
     if (R.t - mkT > 30) { markers = ISK.game.questMarkers(G); mkT = R.t; }
@@ -392,26 +408,67 @@
     else if (env.season.id === 'spring') { for (let i = 0; i < 18; i++) { const f = FL[i]; const x = ((f.x * W0 + R.t * 1 * f.s * dp) % W0), y = ((f.y * H0 + R.t * 0.6 * f.s * dp) % H0); g.font = `${9 * dp}px ${EMOJI}`; g.fillText('🌸', x, y); } }
   }
 
+  // ---- v5.2: туман війни ----
+  function buildFog() {
+    const G = R.G, W = ISK.world.W, H = ISK.world.H; if (!G.fog) return null;
+    if (!R.fogCv) { R.fogCv = document.createElement('canvas'); R.fogCv.width = W; R.fogCv.height = H; }
+    if (R.fogFor === G && !G.fogDirty) return R.fogCv;
+    const g = R.fogCv.getContext('2d'); const img = g.createImageData(W, H); const d = img.data, f = G.fog;
+    for (let i = 0; i < f.length; i++) {
+      const v = f[i], o = i * 4;
+      if (v === 0) { d[o] = 10; d[o + 1] = 12; d[o + 2] = 24; d[o + 3] = 247; }
+      else if (v === 1) { const n = ((i * 2654435761) >>> 24) & 15; d[o] = 188 + n; d[o + 1] = 156 + n; d[o + 2] = 104; d[o + 3] = 135; }
+      else d[o + 3] = 0;
+    }
+    g.putImageData(img, 0, 0); R.fogFor = G; G.fogDirty = false; return R.fogCv;
+  }
+  const fogAt = (cell) => (R.G.fog ? R.G.fog[cell] : 2);
+  // повна мапа світу (відкривається кліком по мінімапі)
+  function drawWorldMap(cv, opts = {}) {
+    const G = R.G, w = G.world, g = cv.getContext('2d'); const k = cv.width / (ISK.world.W * S);
+    g.fillStyle = '#0a0c18'; g.fillRect(0, 0, cv.width, cv.height);
+    g.save(); g.filter = 'sepia(0.35) saturate(0.85)'; g.drawImage(R.base, 0, 0, cv.width, cv.height); g.restore();
+    if (opts.political) { if (!R.layers.political) buildLayer('political'); g.globalAlpha = 0.55; g.drawImage(R.layers.political, 0, 0, cv.width, cv.height); g.globalAlpha = 1; }
+    const fc = buildFog(); if (fc) { g.imageSmoothingEnabled = true; g.drawImage(fc, 0, 0, cv.width, cv.height); }
+    const px = (o) => [(o.x + 0.5) * S * k, (o.y + 0.5) * S * k];
+    g.textAlign = 'center'; g.textBaseline = 'middle';
+    for (const B of w.baronies) { if (!G.discovered['b:' + B.id]) continue; const [x, y] = px(B); const big = ['capital', 'city'].includes(B.type); g.fillStyle = big ? '#ffe7a6' : '#f4e6c8'; g.strokeStyle = '#2a1a0a'; g.lineWidth = 1; g.beginPath(); g.arc(x, y, big ? 4 : 2.4, 0, 7); g.fill(); g.stroke(); if (big || cv.width > 1200) { g.font = `${big ? 700 : 500} ${big ? 11 : 9}px Georgia, serif`; g.lineWidth = 3; g.strokeStyle = 'rgba(20,12,4,.85)'; g.strokeText(B.name, x, y - 9); g.fillStyle = big ? '#ffe7a6' : '#f0e2c4'; g.fillText(B.name, x, y - 9); } }
+    g.font = `11px ${EMOJI}`;
+    for (const Dg of w.dungeons) if (G.discovered['d:' + Dg.id]) { const [x, y] = px(Dg); g.fillText(G.cleared[Dg.id] ? '✔️' : Dg.icon, x, y); }
+    g.font = `9px ${EMOJI}`;
+    for (const Rn of w.rnodes || []) if (G.discovered['r:' + Rn.id]) { const [x, y] = px(Rn); g.fillText(ISK.data.RESOURCE_SITES[Rn.key].icon, x, y); }
+    for (const m of (G.life && G.life.mon) || []) if (fogAt(m.cell) === 2) { const [x, y] = px({ x: m.cell % ISK.world.W, y: (m.cell / ISK.world.W) | 0 }); g.fillText(m.icon, x, y); }
+    for (const mk of ISK.game.questMarkers(G)) { const p = ISK.world.nodeXY(w, mk.node); const [x, y] = px(p); g.font = `13px ${EMOJI}`; g.fillText(mk.icon, x, y - 10); }
+    const hp = ISK.world.nodeXY(w, G.player.location); const [hx, hy] = px(hp);
+    g.strokeStyle = '#ff7eb6'; g.lineWidth = 2.5; g.beginPath(); g.arc(hx, hy, 9 + Math.sin(Date.now() / 200) * 2, 0, 7); g.stroke(); g.fillStyle = '#ff7eb6'; g.beginPath(); g.arc(hx, hy, 4, 0, 7); g.fill();
+    g.strokeStyle = 'rgba(255,223,142,.9)'; g.lineWidth = 1.5; g.strokeRect(R.cam.x * k, R.cam.y * k, R.canvas.clientWidth / R.cam.z * k, R.canvas.clientHeight / R.cam.z * k);
+    return k;
+  }
   function drawMini() {
     const m = R.mini; if (!m || R.t % 6) return; const g = m.getContext('2d');
     g.drawImage(R.base, 0, 0, m.width, m.height);
     if (R.layers[R.mode === 'terrain' ? 'terrain' : R.mode]) { g.globalAlpha = 0.7; g.drawImage(R.layers[R.mode], 0, 0, m.width, m.height); g.globalAlpha = 1; }
+    const fc = buildFog(); if (fc) { g.imageSmoothingEnabled = true; g.drawImage(fc, 0, 0, m.width, m.height); }
     const k = m.width / (ISK.world.W * S);
     g.strokeStyle = '#ffdf8e'; g.lineWidth = 1.5; g.strokeRect(R.cam.x * k, R.cam.y * k, R.canvas.clientWidth / R.cam.z * k, R.canvas.clientHeight / R.cam.z * k);
     const p = ISK.world.nodeXY(R.G.world, R.G.player.location); g.fillStyle = '#ff7eb6'; g.beginPath(); g.arc(p.x * S * k, p.y * S * k, 3, 0, 7); g.fill();
   }
-  function miniClick(e) {
-    const m = R.mini; const r = m.getBoundingClientRect(); const k = (ISK.world.W * S) / r.width;
-    R.cam.x = (e.clientX - r.left) * k - R.canvas.clientWidth / R.cam.z / 2; R.cam.y = (e.clientY - r.top) * k - R.canvas.clientHeight / R.cam.z / 2; clampCam();
-  }
+  function miniClick() { if (ISK.panels && ISK.panels.worldMap) ISK.panels.worldMap(); }
+  function lookAt(wx, wy) { R.cam.x = wx - R.canvas.clientWidth / R.cam.z / 2; R.cam.y = wy - R.canvas.clientHeight / R.cam.z / 2; clampCam(); }
 
+  function pickMonster(sx, sy) {
+    const [wx, wy] = screenToWorld(sx, sy); const W0 = ISK.world.W; let best = null, bd = 12 / R.cam.z + 6;
+    for (const m of (R.G.life && R.G.life.mon) || []) { if (fogAt(m.cell) < 2) continue; const d = Math.hypot((m.cell % W0) * S + S / 2 - wx, ((m.cell / W0) | 0) * S + S / 2 - 6 - wy); if (d < bd) { bd = d; best = m; } }
+    return best;
+  }
   function pick(sx, sy) {
     const [wx, wy] = screenToWorld(sx, sy); const w = R.G.world; let best = null, bd = (14 / R.cam.z) + 8;
-    for (const B of w.baronies) { const d = Math.hypot(B.x * S + S / 2 - wx, B.y * S + S / 2 - wy); if (d < bd) { bd = d; best = 'b:' + B.id; } }
+    for (const B of w.baronies) { if (!R.G.discovered['b:' + B.id] && fogAt(B.cell) < 1) continue; const d = Math.hypot(B.x * S + S / 2 - wx, B.y * S + S / 2 - wy); if (d < bd) { bd = d; best = 'b:' + B.id; } }
+    for (const Rn of w.rnodes || []) { if (!R.G.discovered['r:' + Rn.id]) continue; const d = Math.hypot(Rn.x * S + S / 2 - wx, Rn.y * S + S / 2 - wy); if (d < bd * 0.8) { bd = d; best = 'r:' + Rn.id; } }
     for (const Dg of w.dungeons) { if (!R.G.discovered['d:' + Dg.id] && !(R.G.player.flags.relicsRevealed && (Dg.relic || Dg.final))) continue; const d = Math.hypot(Dg.x * S + S / 2 - wx, Dg.y * S + S / 2 - wy); if (d < bd) { bd = d; best = 'd:' + Dg.id; } }
     return best;
   }
   const cellToPx = (cell) => ({ x: (cell % ISK.world.W) * S + S / 2, y: ((cell / ISK.world.W) | 0) * S + S / 2 });
 
-  ISK.render = { R, init, draw, resize, centerOn, clampCam, pick, cellToPx, screenToWorld, invalidatePolitical, S, miniClick };
+  ISK.render = { R, init, draw, resize, centerOn, clampCam, pick, pickMonster, cellToPx, screenToWorld, invalidatePolitical, S, miniClick, drawWorldMap, buildFog, lookAt, fogAt };
 })();

@@ -616,13 +616,61 @@
     for (const s of seaRoutes) addEdge('b:' + s.a, 'b:' + s.b, s.path, s.cost, 'sea');
     for (const t of trails2) addEdge('b:' + t.b, 'd:' + t.dungeon, t.path, t.cost, t.kind);
 
+    const rn = addResourceNodes({ seed, terrain, river, roadMask, cellBarony, baronies, dungeons: kept, realms, graph, addEdge });
     return {
+      rnodes: rn.rnodes, rtrails: rn.rtrails,
       seed, W, H, terrain, height, river, roadMask, cellBarony, cellLandmark, comp, cont,
       SEA: TG.SEA, HILL: TG.HILL, MOUNT: TG.MOUNT, PEAK: TG.PEAK,
       baronies, counties, duchies, realms, roads, seaRoutes, trails: trails2, dungeons: kept, landmarks,
       continents: CONTINENTS.map((c, i) => ({ ...c, id: i, x: c.cx * W, y: c.cy * H })), graph,
       startBarony: startB, startRealm, empireId, opts, demonId: realms.findIndex((r) => r.isDemon), genMs: Date.now() - t0,
     };
+  }
+
+  // v5.2: ресурси живуть у природі — окремі точки на мапі (ліс, луг, шахта, озеро...) зі стежками до них,
+  // плюс пішохідні стежки між сусідніми поселеннями, де немає дороги. Окремий RNG, щоб не міняти старі світи.
+  function addResourceNodes(o) {
+    const { terrain, river, roadMask, cellBarony, baronies, dungeons, realms, graph, addEdge } = o;
+    const rng = new ISK.RNG(((o.seed * 7919) ^ 0x5eed) >>> 0); const SITES = (ISK.data && ISK.data.RESOURCE_SITES) || {};
+    const used = new Set(); for (const B of baronies) used.add(B.cell); for (const Dg of dungeons) used.add(Dg.cell);
+    const cellsOf = baronies.map(() => []); for (let i = 0; i < cellBarony.length; i++) if (cellBarony[i] >= 0 && isLand(terrain[i])) cellsOf[cellBarony[i]].push(i);
+    const rnodes = [], rtrails = [];
+    const share = (B, ts) => ts.reduce((a, t) => a + (B.terrain[t] || 0), 0) / B.area;
+    for (const B of baronies) {
+      const want = (B.sites || []).map((st) => ({ key: st.key, rich: st.rich }));
+      const has = (prof) => want.some((x) => SITES[x.key] && SITES[x.key].prof === prof);
+      if (realms[B.realm] && realms[B.realm].isDemon && !rng.chance(0.5)) continue;
+      if (share(B, [T.FOREST, T.JUNGLE, T.TUNDRA]) > 0.14 && !has('lumber')) want.push({ key: B.danger > 9 && share(B, [T.JUNGLE]) > 0.1 ? 'oldwood' : share(B, [T.TUNDRA]) > 0.1 ? 'pinewood' : 'lumbercamp', rich: rng.int(3, 5) });
+      if (share(B, [T.DESERT]) > 0.3 && rng.chance(0.6)) want.push({ key: 'oasis', rich: rng.int(2, 4) });
+      if (!has('herbalism')) { const fo = share(B, [T.FOREST, T.SWAMP, T.JUNGLE]), pl = share(B, [T.PLAINS]); if (fo > 0.12 || pl > 0.2) want.push({ key: fo >= pl ? 'herbglade' : 'steppegrass', rich: rng.int(3, 5) }); }
+      if ((B.river || B.coastal) && !has('fishing') && rng.chance(0.7)) want.push({ key: 'fishspot', rich: rng.int(3, 5) });
+      if (share(B, [T.HILLS, T.MOUNTAIN]) > 0.1 && !has('mining')) want.push({ key: B.danger < 3 ? rng.pick(['copper', 'quarry', 'coal', 'iron']) : B.danger < 8 ? rng.pick(['iron', 'coal', 'copper', 'iron']) : rng.pick(['iron', 'coal', 'silver', 'goldmine']), rich: rng.int(3, 5) });
+      for (const wnt of want) {
+        const S0 = SITES[wnt.key]; if (!S0) continue;
+        const okT = (c) => (S0.prof === 'fishing' ? (river[c] || terrain[c] === T.BEACH) : S0.terr.includes(terrain[c]));
+        const bx = B.cell % W, by = (B.cell / W) | 0;
+        const dOk = (c) => { const d = Math.hypot((c % W) - bx, ((c / W) | 0) - by); return d >= 3 && d <= 15; };
+        let cand = cellsOf[B.id].filter((c) => !used.has(c) && dOk(c) && okT(c));
+        if (!cand.length) cand = cellsOf[B.id].filter((c) => !used.has(c) && dOk(c));
+        if (!cand.length) continue;
+        const cell = rng.pick(cand);
+        const res = astar(terrain, river, roadMask, B.cell, cell, {}); if (!res) continue;
+        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) used.add(cell + dy * W + dx);
+        const id = rnodes.length; const node = { id, key: wnt.key, rich: wnt.rich, cell, x: cell % W, y: (cell / W) | 0, barony: B.id };
+        rnodes.push(node); rtrails.push({ path: res.path, kind: 'trail' });
+        addEdge('b:' + B.id, 'r:' + id, res.path, travelCost(terrain, river, res.path, roadMask), 'trail');
+      }
+    }
+    // пішохідні стежки між сусідами без прямої дороги
+    for (const B of baronies) for (const m of B.adj) {
+      if (m <= B.id) continue; const M = baronies[m]; if (B.land !== M.land) continue;
+      if ((graph['b:' + B.id] || []).some((e) => e.to === 'b:' + m)) continue;
+      if (Math.hypot(B.x - M.x, B.y - M.y) > 22 || !rng.chance(0.7)) continue;
+      const res = astar(terrain, river, roadMask, B.cell, M.cell, {}); if (!res || res.path.length > 34) continue;
+      rtrails.push({ path: res.path, kind: 'path' });
+      addEdge('b:' + B.id, 'b:' + m, res.path, travelCost(terrain, river, res.path, roadMask) * 1.1, 'trail');
+    }
+    return { rnodes, rtrails };
   }
 
   function travelCost(terrain, river, path, roadMask) {
@@ -648,8 +696,9 @@
     return { nodes: nodes.reverse(), legs: legs.reverse(), cost: dist[to] };
   }
 
-  function nodeXY(world, node) { const [kind, id] = node.split(':'); const o = kind === 'b' ? world.baronies[+id] : world.dungeons[+id]; return { x: o.x, y: o.y }; }
+  function nodeXY(world, node) { const [kind, id] = node.split(':'); const o = kind === 'b' ? world.baronies[+id] : kind === 'r' ? world.rnodes[+id] : world.dungeons[+id]; return { x: o.x, y: o.y }; }
+  function nodeCell(world, node) { const [kind, id] = node.split(':'); const o = kind === 'b' ? world.baronies[+id] : kind === 'r' ? world.rnodes[+id] : world.dungeons[+id]; return o.cell; }
   function landmarkAt(world, cell) { const l = world.cellLandmark[cell]; return l >= 0 ? world.landmarks[l] : null; }
 
-  ISK.world = { generateWorld, findRoute, nodeXY, landmarkAt, W, H, T, TERRAIN_INFO, SETTLEMENT, MinHeap, astar, LANDMARKS, DTYPES, isLand };
+  ISK.world = { generateWorld, findRoute, nodeXY, nodeCell, landmarkAt, W, H, T, TERRAIN_INFO, SETTLEMENT, MinHeap, astar, LANDMARKS, DTYPES, isLand };
 })();

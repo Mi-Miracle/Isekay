@@ -25,7 +25,9 @@ for (const seed of [1, 42, 2026]) {
     assert.ok([...cells.values()].every((n) => n >= 5), 'every barony owns map cells');
     const seen = new Set(['b:0']); const st = ['b:0'];
     while (st.length) { const u = st.pop(); for (const e of w.graph[u] || []) if (!seen.has(e.to)) { seen.add(e.to); st.push(e.to); } }
-    assert.strictEqual(seen.size, w.baronies.length + w.dungeons.length, 'all nodes reachable (land + sea)');
+    assert.strictEqual(seen.size, w.baronies.length + w.dungeons.length + w.rnodes.length, 'all nodes reachable (land + sea + resource spots)');
+    assert.ok(w.rnodes.length > w.baronies.length, 'resource spots in nature');
+    for (const k of ['iron', 'coal', 'lumbercamp', 'fishspot']) assert.ok(w.rnodes.some((r) => r.key === k), 'has ' + k);
     assert.ok(w.dungeons.some((d) => d.final));
     assert.ok(w.landmarks.length >= 6, 'landmarks like Ліс Смерті');
   });
@@ -169,4 +171,21 @@ test('v4: artifacts, blessings, shops content', () => {
   const w = WM.generateWorld(31); assert.ok(w.dungeons.filter((d) => d.artifact).length >= 6, 'artifacts placed in dungeons');
   assert.ok(w.landmarks.length >= 20, 'more landmarks: ' + w.landmarks.length);
   assert.strictEqual(WM.W, 540);
+});
+
+test('v5.2: fog of war, maps, monsters, resource spots, save roundtrip', () => {
+  const G = GM.newGame(77, { name: 'Тест', race: 'human', cls: 'warrior' });
+  const known = G.fog.reduce((a, v) => a + (v ? 1 : 0), 0);
+  assert.ok(known > 200 && known < G.fog.length * 0.05, 'only a small area is open at start: ' + known);
+  const B = G.world.baronies[G.world.startBarony]; G.player.gold = 99999;
+  const r = GM.buyMap(G, 2, B); assert.ok(r.ok && r.n > 0, 'county map bought');
+  assert.ok(GM.mapOwned(G, 2, B));
+  assert.ok(G.life.mon.length > 20, 'roaming monsters: ' + G.life.mon.length);
+  const m0 = G.life.mon[0].cell; GM.passTime(G, 3); assert.ok(G.life.mon.some((m) => m.cell !== m.home) || G.life.mon[0].cell !== m0, 'monsters wander');
+  const e = G.world.graph['b:' + B.id].find((x) => x.to[0] === 'r'); assert.ok(e, 'start town has a trail to a resource spot');
+  GM.arrive(G, e.to); assert.strictEqual(GM.here(G).kind, 'res');
+  const rid = +e.to.slice(2); const res = GM.gatherRnode(G, rid, 1); assert.ok(res && Object.keys(res.items).length, 'gathered at spot');
+  const G2 = GM.deserialize(GM.serialize(G));
+  assert.strictEqual(GM.fogEncode(G2.fog), GM.fogEncode(G.fog), 'fog survives save');
+  assert.strictEqual(G2.player.location, e.to);
 });
