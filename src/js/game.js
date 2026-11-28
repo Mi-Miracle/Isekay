@@ -168,11 +168,10 @@
       const B = w.baronies[bid]; const L = p.land[bid] || (p.land[bid] = { tax: 1, buildings: {}, loyalty: 60 });
       if (B.owner < 0 || POL().isDemon(G.P, B.owner) || POL().isDemon(G.P, B.occ)) { loseHolding(G, bid, 'Темрява поглинула землі.'); continue; }
       if (B.occ >= 0) continue;
-      const bl = L.buildings;
-      let inc = B.dev * 3 + (bl.farm || 0) * 2 + (bl.mine || 0) * 3 + (bl.market || 0) * 2 + (bl.tavern || 0);
-      inc *= [0.6, 1, 1.5][L.tax];
-      p.gold += inc;
-      L.loyalty += ([0.25, 0.02, -0.25][L.tax] + (bl.tavern || 0) * 0.04 + (bl.temple || 0) * 0.05) - (L.loyalty - 60) * 0.004;
+      const bl = L.buildings; landState(G, bid);
+      p.gold += landIncome(G, bid);
+      landDaily(G, bid, d);
+      L.loyalty += ([0.25, 0.02, -0.25][L.tax] + (bl.tavern || 0) * 0.04 + (bl.temple || 0) * 0.05 + (bl.school || 0) * 0.04) - (L.loyalty - 60) * 0.004;
       L.loyalty = Math.max(0, Math.min(100, L.loyalty));
       if (bl.mine && d % 7 === 0) PL().addItem(p, ['ore_iron', 'ore_silver', 'ore_copper'][d % 3], bl.mine);
       if (bl.statue && d % 7 === 0) PL().addFame(p, 3);
@@ -727,19 +726,79 @@
     return null;
   }
   function buildOnLand(G, bid, key) {
-    const p = G.player, L = p.land[bid], Bd = D().LAND_BUILDINGS[key], B = G.world.baronies[bid];
+    const p = G.player, L = landState(G, bid), Bd = D().LAND_BUILDINGS[key], B = G.world.baronies[bid];
     const lvl = L.buildings[key] || 0; if (lvl >= Bd.max) return 'Максимум';
-    const cost = Math.round(Bd.cost * (1 + lvl * 0.7)); if (p.gold < cost) return `Потрібно ${cost}🪙`;
-    p.gold -= cost; L.buildings[key] = lvl + 1;
+    const lock = buildLock(G, bid, key); if (lock) return lock;
+    const cost = buildCost(G, bid, key); if (p.gold < cost) return `Потрібно ${cost}🪙`;
+    p.gold -= cost; L.buildings[key] = lvl + 1; if (!L.order.includes(key)) L.order.push(key);
+    if (key === 'watchtower') { B.fort = Math.min(10, B.fort + 1); revealArea(G, B.cell, 12 + (lvl + 1) * 5, 2); }
     if (key === 'market') B.dev = Math.min(10, B.dev + 1);
     if (key === 'walls') B.fort = Math.min(8, B.fort + 1);
     if (key === 'barracks' && G.P.realms[B.owner]) G.P.realms[B.owner].manpower += 400;
     return null;
   }
   function landIncome(G, bid) {
-    const B = G.world.baronies[bid], L = G.player.land[bid]; const bl = L.buildings;
-    return Math.round((B.dev * 3 + (bl.farm || 0) * 2 + (bl.mine || 0) * 3 + (bl.market || 0) * 2 + (bl.tavern || 0)) * [0.6, 1, 1.5][L.tax]);
+    const B = G.world.baronies[bid], L = landState(G, bid); const bl = L.buildings;
+    return Math.round((B.dev * 3 + (bl.farm || 0) * 2 + (bl.mine || 0) * 3 + (bl.market || 0) * 2 + (bl.tavern || 0) + L.pop * 0.12) * [0.6, 1, 1.5][L.tax]);
   }
+
+  // ---------------- v5.6: від маєтку до замку, жителі ----------------
+  function landState(G, bid) {
+    const p = G.player; const L = p.land[bid] || (p.land[bid] = { tax: 1, buildings: {}, loyalty: 60 });
+    if (L.tier === undefined) { const n = Object.keys(L.buildings).length; L.tier = n >= 6 ? 2 : n >= 3 ? 1 : 0; }
+    if (L.pop === undefined) L.pop = 20 + Object.values(L.buildings).reduce((a, b) => a + b, 0) * 8;
+    L.store = L.store || {}; L.incoming = L.incoming || []; L.cool = L.cool || {}; if (L.food === undefined) L.food = 20;
+    L.order = L.order || Object.keys(L.buildings);
+    return L;
+  }
+  function landInfo(G, bid) {
+    const L = landState(G, bid), bl = L.buildings, T = D().LAND_TIERS[L.tier];
+    const housing = T.houses + (bl.houses || 0) * 40, foodProd = 25 + (bl.farm || 0) * 35, foodCap = 30 + (bl.granary || 0) * 30;
+    return { L, T, next: D().LAND_TIERS[L.tier + 1] || null, used: Object.keys(bl).length, lots: T.lots, cap: T.cap, housing, foodProd, foodCap, need: L.pop, incoming: L.incoming.reduce((a, x) => a + x.n, 0) };
+  }
+  function buildCost(G, bid, key) { const lvl = landState(G, bid).buildings[key] || 0; return Math.round(D().LAND_BUILDINGS[key].cost * (1 + lvl * 0.7)); }
+  function buildLock(G, bid, key) {
+    const I = landInfo(G, bid), lvl = I.L.buildings[key] || 0, Bd = D().LAND_BUILDINGS[key];
+    if (!lvl && I.used >= I.lots) return `Немає вільних ділянок (${I.used}/${I.lots}) — розбудуй резиденцію`;
+    if (lvl >= Math.min(Bd.max, I.cap)) return lvl >= Bd.max ? 'Максимум' : `Рівень ${lvl + 1} — після розбудови (${I.next ? I.next.name : '—'})`;
+    return null;
+  }
+  function upgradeLandTier(G, bid) {
+    const p = G.player, L = landState(G, bid), B = G.world.baronies[bid], N = D().LAND_TIERS[L.tier + 1];
+    if (!N) return 'Вище замку — лише небо. І Люмі.';
+    for (const [id, n] of Object.entries(N.cost)) if (id === 'gold' ? p.gold < n : !PL().hasItem(p, id, n)) return 'Не вистачає: ' + Object.entries(N.cost).map(([k, v]) => (k === 'gold' ? `${v}🪙` : `${PL().item(k).icon}×${v}`)).join(', ');
+    for (const [id, n] of Object.entries(N.cost)) { if (id === 'gold') p.gold -= n; else PL().removeItem(p, id, n); }
+    const prev = D().LAND_TIERS[L.tier]; L.tier++; B.fort = Math.min(10, B.fort + N.fort - prev.fort); PL().addFame(p, 10 + L.tier * 10);
+    L.loyalty = Math.min(100, L.loyalty + 5);
+    POL().log(G.P, day(G), `🏰 ${p.name} перебудував резиденцію в ${B.name}: тепер це ${N.name}!`, 'dynasty', [B.owner]);
+    if (L.tier >= 4) unlock(G, 'castle');
+    return null;
+  }
+  function inviteSettlers(G, bid, id) {
+    const p = G.player, L = landState(G, bid), O = D().SETTLER_OFFERS.find((x) => x.id === id), B = G.world.baronies[bid];
+    if (!O) return 'Невідомо'; if ((L.cool[id] || 0) > day(G)) return `Ще рано: можна знову через ${Math.ceil(L.cool[id] - day(G))} дн.`;
+    if (O.gold && p.gold < O.gold) return `Потрібно ${O.gold}🪙`; if (O.fame && p.fame < O.fame) return `Потрібно ${O.fame}⭐ слави`;
+    if (O.gold) p.gold -= O.gold; if (O.fame) p.fame -= O.fame;
+    const n = rr(O.pop); L.incoming.push({ day: day(G) + O.days, n, from: O.id }); L.cool[id] = day(G) + 10;
+    if (O.loyalty) L.loyalty = Math.max(0, L.loyalty + O.loyalty); if (O.food) L.food -= n * 2; if (O.dev) B.dev = Math.min(10, B.dev + O.dev);
+    return null;
+  }
+  function landDaily(G, bid, d) {
+    const p = G.player, L = landState(G, bid), B = G.world.baronies[bid], I = landInfo(G, bid), bl = L.buildings;
+    // прибуття поселенців
+    for (const x of L.incoming.filter((y) => y.day <= d)) { const room = Math.max(0, I.housing - L.pop); const n = Math.min(room, x.n); L.pop += n; G.notices.push(n ? `🏘️ ${B.name}: прибуло ${n} нових жителів${x.from === 'lumi' ? ' (ісекайнуті! питають, де тут вай-фай)' : ''}!` : `🏘️ ${B.name}: поселенці прийшли, але жити ніде — збудуй житла!`); }
+    L.incoming = L.incoming.filter((y) => y.day > d);
+    // їжа
+    L.food = Math.min(I.foodCap, L.food + I.foodProd - L.pop);
+    if (L.food < 0) { const lost = Math.max(1, Math.ceil(L.pop * 0.03)); L.pop = Math.max(5, L.pop - lost); L.loyalty = Math.max(0, L.loyalty - 2); L.food = 0; if (d % 5 === 0) G.notices.push(`🍞 ${B.name}: голод! ${lost} жителів пішли шукати кращого життя. Будуй ферми й зерносховища.`); }
+    else if (L.loyalty > 40 && L.pop < I.housing && Math.random() < 0.15 + L.pop * 0.004) L.pop++;
+    if (L.pop > I.housing) L.pop = I.housing;
+    // виробництво на склад
+    if (bl.sawmill) { L.store.wood = (L.store.wood || 0) + bl.sawmill * 2; if (d % 2 === 0) L.store.plank = (L.store.plank || 0) + bl.sawmill; }
+    if (bl.quarry) L.store.stone = (L.store.stone || 0) + bl.quarry * 2;
+    if (bl.school && d % 30 === 0 && B.dev < 10) B.dev++;
+  }
+  function collectLand(G, bid) { const p = G.player, L = landState(G, bid); const got = { ...L.store }; for (const [id, n] of Object.entries(got)) PL().addItem(p, id, n); L.store = {}; return got; }
 
   // ---------------- Companions, pets, mounts ----------------
   const ROLE = { warrior: ['⚔️ Воїн', '🧔'], mage: ['🔥 Маг', '🧙'], healer: ['✨ Цілителька', '🧝‍♀️'], archer: ['🏹 Лучник', '🧝'], rogue: ['🗡️ Розбійник', '🥷'] };
@@ -985,6 +1044,7 @@
     revealArea, revealAt, revealAll, exploreReward, fogEncode, fogDecode, MAP_TIERS, mapCells, buyMap, mapOwned, rnodeLeft, gatherRnode,
     spawnMonsters, moveMonsters, monsterNear, monsterEnemies, killMonster, SIGHT,
     houseLevel, houseInfo, upgradeLock, ensurePlots, upgradeHouseLevel, storeCap, houseDaily, collectStore, plantAll, harvestAll, sleepAtHome,
+    landState, landInfo, buildCost, buildLock, upgradeLandTier, inviteSettlers, landDaily, collectLand,
     nav, canFly, airRoute, linePath, coachOffer, portalList, usePortal, hasTower, climbTower, homeNode, togglePin, navTargets, HURRY_MUL, PORTAL_RANK,
   };
 })();

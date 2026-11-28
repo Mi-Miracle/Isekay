@@ -340,6 +340,34 @@
   D.RECIPES && D.RECIPES.cooking && D.RECIPES.cooking.push({ id: 'food_applepie', lvl: 5, needs: { apple: 3, crop_wheat: 1, egg: 1 }, out: 'food_applepie', xp: 20 });
   if (D.CONSUMABLES && !D.CONSUMABLES.food_applepie) D.CONSUMABLES.food_applepie = { name: 'Яблучний пиріг', icon: '🥧', price: 60, use: { hp: 180 }, desc: 'Як у бабусі. Навіть краще: бабуся тут — ти.' };
 
+
+  // ---------------- v5.6: власні землі — від маєтку до замку, жителі ----------------
+  // lots — ділянок під різні будівлі; cap — макс. рівень будівель; houses — базове житло; fort — бонус укріплень
+  D.LAND_TIERS = [
+    { name: 'Маєток', icon: '🏚️', lots: 4, cap: 2, houses: 30, fort: 0, cost: null, desc: 'Хата старости, курка і великі плани.' },
+    { name: 'Садиба з частоколом', icon: '🛖', lots: 6, cap: 3, houses: 50, fort: 1, cost: { gold: 3000, wood: 40, stone: 20 }, desc: 'Частокіл! Тепер гуси не втечуть.' },
+    { name: 'Укріплений двір', icon: '🏯', lots: 8, cap: 3, houses: 80, fort: 2, cost: { gold: 8000, wood: 40, stone: 60, plank: 20 }, desc: 'Кам\'яні стіни й вежа з прапором.' },
+    { name: 'Фортеця', icon: '🏛️', lots: 10, cap: 4, houses: 120, fort: 3, cost: { gold: 20000, stone: 120, plank: 40, ore_iron: 30 }, desc: 'Сусідні барони нервово перераховують своїх лицарів.' },
+    { name: 'Замок', icon: '🏰', lots: 12, cap: 5, houses: 180, fort: 5, cost: { gold: 50000, stone: 250, plank: 80, ore_iron: 60, gem: 5 }, desc: 'Справжній замок! З баштами, ровом і привидом у підвалі.' },
+  ];
+  for (const k of ['farm', 'mine', 'market', 'walls', 'barracks']) D.LAND_BUILDINGS[k].max = 5;
+  for (const k of ['tavern', 'temple']) D.LAND_BUILDINGS[k].max = 3;
+  Object.assign(D.LAND_BUILDINGS, {
+    houses: { name: 'Житла', icon: '🏘️', cost: 500, max: 5, desc: '+40 місць для жителів за рівень.' },
+    granary: { name: 'Зерносховище', icon: '🌾', cost: 600, max: 5, desc: '+30 до запасу їжі за рівень. Голодні селяни — злі селяни.' },
+    sawmill: { name: 'Лісопилка', icon: '🪚', cost: 700, max: 5, desc: 'Щодня деревина й дошки на склад.' },
+    quarry: { name: 'Каменоломня', icon: '🪨', cost: 800, max: 5, desc: 'Щодня камінь на склад. Потрібен для замку!' },
+    school: { name: 'Школа', icon: '📚', cost: 1200, max: 3, desc: '+лояльність, раз на місяць +1 розвиток. Діти вчать абетку і як не боятися драконів.' },
+    watchtower: { name: 'Сторожова вежа', icon: '🗼', cost: 900, max: 3, desc: '+1 укріплення, менше нападів, видно околиці на мапі.' },
+  });
+  // їжа на жителя: 1 одиниця; ферма дає 35 за рівень, зерносховище — запас
+  D.SETTLER_OFFERS = [
+    { id: 'herald', icon: '📯', name: 'Глашатай на ярмарках', gold: 300, pop: [8, 14], days: 3, desc: 'Кличе охочих з усього графства. Голосно.' },
+    { id: 'refugees', icon: '🧺', name: 'Прихистити біженців', gold: 0, pop: [5, 12], days: 1, loyalty: -4, food: true, desc: 'Безкоштовно, але їм потрібна їжа одразу, а старожили бурчать.' },
+    { id: 'guild', icon: '🧑‍🔧', name: 'Запросити ремісників', gold: 1200, pop: [6, 10], days: 5, dev: 1, desc: 'Майстри з міста: +1 розвиток баронства.' },
+    { id: 'lumi', icon: '🌸', name: 'Попросити Люмі про диво', gold: 0, fame: 50, pop: [15, 25], days: 2, desc: 'Богиня телепортує ісекайнутих з іншого світу. Вони розгублені, але працьовиті. Коштує 50⭐ слави.' },
+  ];
+
   // ---------------- ships & naval ----------------
   D.SHIP_UPGRADES = {
     hull: { name: 'Укріплений корпус', icon: '🪵', cost: [800, 2000, 5000], desc: '+HP корабля' },

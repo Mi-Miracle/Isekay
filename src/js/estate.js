@@ -120,20 +120,48 @@
   }
   function smoke(g, x, y, col) { for (let i = 0; i < 4; i++) { const k = ((st.t / 900 + i / 4) % 1); g.fillStyle = col ? `rgba(255,154,64,${0.5 * (1 - k)})` : `rgba(230,230,240,${0.55 * (1 - k)})`; g.beginPath(); g.arc(x + Math.sin(k * 6 + i) * 6, y - k * 40, 4 + k * 8, 0, 7); g.fill(); } }
 
-  const LOT_POS = [[4, 2], [8, 2], [20, 2], [24, 2], [4, 11], [8, 11], [20, 11], [24, 11], [11, 12], [18, 12]];
-  const BCOL = { farm: ['#c89a3a', '#f0dca0'], mine: ['#5a5a64', '#9a8a7a'], market: ['#3a6ab0', '#e8d8b8'], walls: ['#7a7a84', '#b8b0a0'], barracks: ['#8a1a2a', '#b8a890'], tavern: ['#8a5a2a', '#e0c890'], temple: ['#f2f2ff', '#d8d0e8'], statue: ['#c0c0cc', '#e0e0e8'] };
+  // v5.6: 12 ділянок навколо резиденції; будівлі стають на ділянки в порядку будівництва
+  const LOT_POS = [[2, 2], [5, 2], [8, 2], [20, 2], [23, 2], [26, 2], [2, 11], [5, 11], [8, 11], [20, 11], [23, 11], [26, 11]];
+  const BCOL = { farm: ['#c89a3a', '#f0dca0'], mine: ['#5a5a64', '#9a8a7a'], market: ['#3a6ab0', '#e8d8b8'], walls: ['#7a7a84', '#b8b0a0'], barracks: ['#8a1a2a', '#b8a890'], tavern: ['#8a5a2a', '#e0c890'], temple: ['#f2f2ff', '#d8d0e8'], statue: ['#c0c0cc', '#e0e0e8'],
+    houses: ['#a0522d', '#e8d0a8'], granary: ['#b8862a', '#e8d8a0'], sawmill: ['#6a4a2a', '#c8a070'], quarry: ['#7a7a80', '#b0aaa0'], school: ['#2a5a8a', '#e8e0d0'], watchtower: ['#5a5a64', '#a8a098'] };
+  function castle(g, tier, col) {
+    const W0 = [3, 4, 5, 6, 7][tier], H0 = [3, 3, 4, 4, 5][tier], x0 = 15 - Math.floor(W0 / 2), y0 = 2 + (5 - H0);
+    if (tier >= 4) { g.fillStyle = '#3a6ac0'; g.fillRect((x0 - 1.4) * T, (y0 + H0) * T - 2, (W0 + 2.8) * T, 8); }
+    if (tier >= 1) { g.fillStyle = tier >= 2 ? '#8a8a94' : '#8a6a3a'; g.fillRect((x0 - 1) * T, (y0 + H0) * T - 6, (W0 + 2) * T, 8); }
+    building(g, x0, y0, W0, H0, tier >= 3 ? '#4a4a5a' : '#6a2a4a', tier >= 2 ? '#b8b0a8' : '#d8ccb8', { banner: col, label: D().LAND_TIERS[tier].name, chimney: tier < 3 });
+    if (tier >= 2) for (const tx of [x0 - 0.6, x0 + W0 - 0.4]) { g.fillStyle = '#9a9aa4'; g.fillRect(tx * T, (y0 - 0.5) * T, T, (H0 + 0.5) * T); g.fillStyle = '#7a7a84'; for (let k = 0; k < 3; k++) g.fillRect(tx * T + k * 12, (y0 - 0.8) * T, 8, 10); }
+    if (tier >= 4) { emoji(g, '👻', (x0 + W0 - 0.3) * T, (y0 + 0.4) * T + Math.sin(st.t / 700) * 4, 14); }
+    return { x0, y0, W0, H0 };
+  }
   function landScene(bid) {
-    const G = UI().G, p = G.player, B = G.world.baronies[bid], L = p.land[bid]; const objs = []; const s = season();
+    const G = UI().G, p = G.player, B = G.world.baronies[bid], L = GM().landState(G, bid); const objs = []; const s = season(); const I = GM().landInfo(G, bid);
     const col = G.world.realms[B.owner].color;
-    objs.push({ x: 13, y: 3, w: 5, h: 4, hint: `🏰 Садиба барона — керування землями`, draw: (g) => building(g, 13, 3, 5, 4, '#6a2a4a', '#d8ccb8', { banner: col, label: `Садиба: ${B.name}`, chimney: true }), click: () => ISK.panels.land(bid) });
-    const keys = Object.keys(D().LAND_BUILDINGS); let li = 0;
-    for (const k of keys) {
-      const lvl = (L.buildings && L.buildings[k]) || 0; const pos = LOT_POS[li++]; if (!pos) break; const LB = D().LAND_BUILDINGS[k]; const [x, y] = pos;
-      if (lvl > 0) objs.push({ x, y, w: 3, h: 3, hint: `${LB.icon} ${LB.name} ${'★'.repeat(lvl)} — ${LB.desc}`, draw: (g) => { if (k === 'farm') { field(g, x, y, s, lvl); g.font = '700 11px "Segoe UI"'; g.textAlign = 'center'; g.fillStyle = 'rgba(10,12,20,.75)'; const lb = `${LB.name} ${'★'.repeat(lvl)}`; const tw = g.measureText(lb).width + 8; g.fillRect(x * T + 48 - tw / 2, (y + 3) * T + 4, tw, 15); g.fillStyle = '#fff'; g.fillText(lb, x * T + 48, (y + 3) * T + 12); return; } if (k === 'statue') { g.fillStyle = '#9a9aa8'; g.fillRect(x * T + 28, y * T + 60, 40, 30); g.drawImage(SP().hero(p), x * T + 24, y * T + 2, 48, 60); } else building(g, x, y, 3, 3, BCOL[k][0], BCOL[k][1], { icon: LB.icon, label: `${LB.name} ${'★'.repeat(lvl)}` }); if (k === 'mine') { g.fillStyle = '#1a1410'; g.fillRect(x * T + 34, y * T + 70, 28, 20); } }, click: () => ISK.panels.land(bid) });
-      else objs.push({ x, y, w: 3, h: 3, hint: `➕ Вільна ділянка: збудувати «${LB.name}» (${LB.cost}🪙)`, draw: (g) => { g.setLineDash([6, 5]); g.strokeStyle = 'rgba(255,255,255,.55)'; g.lineWidth = 2; g.strokeRect(x * T + 8, y * T + 8, 3 * T - 16, 3 * T - 16); g.setLineDash([]); emoji(g, LB.icon, x * T + 48, y * T + 40, 22); g.font = '700 11px "Segoe UI"'; g.fillStyle = '#fff'; g.textAlign = 'center'; g.fillText('+ ' + LB.name, x * T + 48, y * T + 66); }, click: async () => { if (!(await UI().confirm(`Збудувати «${LB.name}» за ${LB.cost}🪙?\n${LB.desc}`))) return; const e = GM().buildOnLand(G, bid, k); if (e) UI().toast(e, 'bad'); else { A().play('clang'); UI().toast(`🔨 Збудовано: ${LB.name}!`, 'good'); } } });
+    { const W0 = [3, 4, 5, 6, 7][L.tier], H0 = [3, 3, 4, 4, 5][L.tier], x0 = 15 - Math.floor(W0 / 2), y0 = 2 + (5 - H0);
+      objs.push({ x: x0, y: y0, w: W0, h: H0, hint: `${I.T.icon} ${I.T.name} — керування землями, розбудова`, draw: (g) => castle(g, L.tier, col), click: () => ISK.panels.land(bid) }); }
+    for (let li = 0; li < LOT_POS.length; li++) {
+      const [x, y] = LOT_POS[li]; const k = L.order[li];
+      if (li >= I.lots) { objs.push({ x, y, w: 3, h: 3, hint: `🔒 Ділянка відкриється після розбудови резиденції`, draw: (g) => { g.fillStyle = 'rgba(0,0,0,.18)'; g.fillRect(x * T + 8, y * T + 8, 3 * T - 16, 3 * T - 16); emoji(g, '🔒', x * T + 48, y * T + 48, 18); }, click: () => ISK.panels.land(bid, 'main') }); continue; }
+      if (!k) { objs.push({ x, y, w: 3, h: 3, hint: '➕ Вільна ділянка — збудуй щось', draw: (g) => { g.setLineDash([6, 5]); g.strokeStyle = 'rgba(255,255,255,.55)'; g.lineWidth = 2; g.strokeRect(x * T + 8, y * T + 8, 3 * T - 16, 3 * T - 16); g.setLineDash([]); emoji(g, '➕', x * T + 48, y * T + 48, 20); }, click: () => ISK.panels.land(bid, 'build') }); continue; }
+      const lvl = L.buildings[k] || 0; const LB = D().LAND_BUILDINGS[k];
+      objs.push({ x, y, w: 3, h: 3, hint: `${LB.icon} ${LB.name} ${'★'.repeat(lvl)} — ${LB.desc}`, draw: (g) => {
+        if (k === 'farm') { field(g, x, y, s, lvl); g.font = '700 11px "Segoe UI"'; g.textAlign = 'center'; g.fillStyle = 'rgba(10,12,20,.75)'; const lb = `${LB.name} ${'★'.repeat(lvl)}`; const tw = g.measureText(lb).width + 8; g.fillRect(x * T + 48 - tw / 2, (y + 3) * T + 4, tw, 15); g.fillStyle = '#fff'; g.fillText(lb, x * T + 48, (y + 3) * T + 12); return; }
+        if (k === 'statue') { g.fillStyle = '#9a9aa8'; g.fillRect(x * T + 28, y * T + 60, 40, 30); g.drawImage(SP().hero(p), x * T + 24, y * T + 2, 48, 60); return; }
+        if (k === 'quarry') { g.fillStyle = '#8a8a90'; g.beginPath(); g.ellipse(x * T + 48, y * T + 52, 40, 30, 0, 0, 7); g.fill(); g.fillStyle = '#6a6a70'; g.beginPath(); g.ellipse(x * T + 48, y * T + 56, 26, 18, 0, 0, 7); g.fill(); emoji(g, '⛏️', x * T + 48 + Math.sin(st.t / 180) * 6, y * T + 46, 16); }
+        else if (k === 'watchtower') { g.fillStyle = '#8a8a94'; g.fillRect(x * T + 34, y * T + 10, 28, 78); g.fillStyle = '#6a6a74'; for (let q = 0; q < 3; q++) g.fillRect(x * T + 32 + q * 11, y * T + 4, 8, 8); g.fillStyle = col; g.fillRect(x * T + 47, y * T - 10, 14, 9); }
+        else building(g, x, y, 3, 3, BCOL[k][0], BCOL[k][1], { icon: LB.icon, label: `${LB.name} ${'★'.repeat(lvl)}` });
+        if (k === 'mine') { g.fillStyle = '#1a1410'; g.fillRect(x * T + 34, y * T + 70, 28, 20); }
+        if (k === 'sawmill') emoji(g, '🪵', x * T + 18, y * T + 84 + Math.sin(st.t / 300) * 2, 14);
+        if (k === 'quarry' || k === 'watchtower') { g.font = '700 11px "Segoe UI"'; g.textAlign = 'center'; g.fillStyle = 'rgba(10,12,20,.75)'; const lb = `${LB.name} ${'★'.repeat(lvl)}`; const tw = g.measureText(lb).width + 8; g.fillRect(x * T + 48 - tw / 2, (y + 3) * T + 4, tw, 15); g.fillStyle = '#fff'; g.fillText(lb, x * T + 48, (y + 3) * T + 12); }
+      }, click: () => ISK.panels.land(bid, 'build') });
     }
-    if (L.buildings && L.buildings.walls) objs.push({ x: 0, y: 0, w: 0, h: 0, draw: (g) => { g.fillStyle = '#8a8a94'; g.fillRect(T, T - 6, (COLS - 2) * T, 10); g.fillRect(T, (ROWS - 1) * T - 4, (COLS - 2) * T, 10); g.fillRect(T - 6, T, 10, (ROWS - 2) * T); g.fillRect((COLS - 1) * T - 4, T, 10, (ROWS - 2) * T); g.fillStyle = '#6a6a74'; for (let x = 1; x < COLS - 1; x += 1) { g.fillRect(x * T, T - 12, 14, 6); } } });
-    objs.push({ x: 0, y: 0, w: 0, h: 0, draw: (g) => { g.font = '700 13px "Segoe UI"'; g.fillStyle = 'rgba(10,12,20,.7)'; g.fillRect(8, ROWS * T - 30, 380, 24); g.fillStyle = L.loyalty < 30 ? '#ff8a9a' : '#c8ffc8'; g.textAlign = 'left'; g.fillText(`Лояльність ${Math.round(L.loyalty)}% · дохід ${GM().landIncome(G, bid)}🪙/день · податок ${['низький', 'середній', 'високий'][L.tax]}`, 16, ROWS * T - 14); } });
+    // хатки жителів у центрі: що більше людей — то більше хат
+    const huts = Math.min(10, Math.ceil(L.pop / 18));
+    objs.push({ x: 0, y: 0, w: 0, h: 0, draw: (g) => { for (let i = 0; i < huts; i++) { const hx = 11 + (i % 5) * 1.6, hy = 9.2 + Math.floor(i / 5) * 2.2; g.fillStyle = '#a0522d'; g.beginPath(); g.moveTo(hx * T, (hy + 0.5) * T); g.lineTo((hx + 0.6) * T, hy * T); g.lineTo((hx + 1.2) * T, (hy + 0.5) * T); g.fill(); g.fillStyle = '#e8d0a8'; g.fillRect(hx * T + 4, (hy + 0.5) * T, 1.2 * T - 8, 0.7 * T); g.fillStyle = '#5a3a1e'; g.fillRect((hx + 0.5) * T, (hy + 0.8) * T, 7, 0.4 * T); } } });
+    // склад
+    const stored = Object.values(L.store).reduce((a, b) => a + b, 0);
+    if (stored) objs.push({ x: 18, y: 7, w: 1, h: 1, hint: `📦 Склад: ${stored} — клікни, щоб забрати`, draw: (g) => { emoji(g, '📦', 18 * T + 16, 7 * T + 16, 22); const b = Math.sin(st.t / 250) * 2; g.fillStyle = '#ffd76e'; g.beginPath(); g.arc(18 * T + 28, 7 * T + b, 10, 0, 7); g.fill(); g.fillStyle = '#1a1410'; g.font = '700 10px "Segoe UI"'; g.textAlign = 'center'; g.fillText(String(stored), 18 * T + 28, 7 * T + 4 + b); }, click: () => { const r = GM().collectLand(G, bid); A().play('coin'); UI().toast('📦 ' + Object.entries(r).map(([id, n]) => `${PL().item(id).icon}×${n}`).join(' '), 'good'); } });
+    if ((L.buildings.walls) || L.tier >= 2) objs.push({ x: 0, y: 0, w: 0, h: 0, draw: (g) => { g.fillStyle = '#8a8a94'; g.fillRect(T, T - 6, (COLS - 2) * T, 10); g.fillRect(T, (ROWS - 1) * T - 4, (COLS - 2) * T, 10); g.fillRect(T - 6, T, 10, (ROWS - 2) * T); g.fillRect((COLS - 1) * T - 4, T, 10, (ROWS - 2) * T); g.fillStyle = '#6a6a74'; for (let x = 1; x < COLS - 1; x += 1) { g.fillRect(x * T, T - 12, 14, 6); } } });
+    objs.push({ x: 0, y: 0, w: 0, h: 0, draw: (g) => { g.font = '700 13px "Segoe UI"'; g.fillStyle = 'rgba(10,12,20,.7)'; g.fillRect(8, ROWS * T - 30, 560, 24); g.fillStyle = L.loyalty < 30 || I.foodProd < L.pop ? '#ff8a9a' : '#c8ffc8'; g.textAlign = 'left'; g.fillText(`👥 ${L.pop}/${I.housing} · 🍞 ${I.foodProd - L.pop >= 0 ? '+' : ''}${I.foodProd - L.pop} · лояльність ${Math.round(L.loyalty)}% · дохід ${GM().landIncome(G, bid)}🪙/день · податок ${['низький', 'середній', 'високий'][L.tax]}`, 16, ROWS * T - 14); } });
     return objs;
   }
   function field(g, x, y, s, lvl = 1) {
@@ -151,7 +179,7 @@
     for (const c of p.party) add(SP().forCompanion(c), 36, c.name);
     if (p.spouse) add(SP().npc('sp' + p.spouse.portrait, { female: p.spouse.female, crown: p.spouse.kind === 'noble' }), 36, '💞 ' + p.spouse.name.split(',')[0]);
     for (const c of p.children) add(SP().npc('ch' + c.name + c.born, { female: c.female }), 24, c.name);
-    if (kind === 'land') { for (let i = 0; i < 6; i++) add(SP().npc('peasant' + bid + i, { body: ['#8a6a3a', '#6a7a4a', '#9a5a3a'][i % 3], hat: i % 2 ? '#c8a050' : null }), 30, null); if (p.army) for (let i = 0; i < Math.min(6, ISK.life.armyCount(p) / 5); i++) add(SP().npc('sold' + i, { body: '#5a6a8a', weapon: 'spear', hat: '#8a8a94' }), 32, null); }
+    if (kind === 'land') { const LL = GM().landState(G, bid); for (let i = 0; i < Math.min(14, 3 + Math.floor(LL.pop / 15)); i++) add(SP().npc('peasant' + bid + i, { body: ['#8a6a3a', '#6a7a4a', '#9a5a3a'][i % 3], hat: i % 2 ? '#c8a050' : null }), 30, null); if (p.army) for (let i = 0; i < Math.min(6, ISK.life.armyCount(p) / 5); i++) add(SP().npc('sold' + i, { body: '#5a6a8a', weapon: 'spear', hat: '#8a8a94' }), 32, null); }
     return out;
   }
 

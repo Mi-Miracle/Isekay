@@ -115,7 +115,7 @@
       p.hp = ISK.player.maxHp(p); p.mp = ISK.player.maxMp(p);
       const hc = ISK.game.hireOptions(G, town.id); ISK.game.hire(G, hc[0]); ISK.game.buyPet(G, 'fox'); ISK.game.buyMount(G, 'horse');
       const bd = ISK.game.board(G, town.id); for (const q of bd.quests.slice(0, 3)) ISK.game.acceptQuest(G, town.id, q.id);
-      ISK.render.centerOn(p.location, 1.3); UI.refresh(); UI.showInfo('b:' + town.adj[0]); await shot('08_markers_info');
+      ISK.render.centerOn(p.location, 1.3); UI.refresh(); UI.showInfo('b:' + (town.adj && town.adj.length ? town.adj[0] : town.id)); await shot('08_markers_info');
       ISK.panels.character(); await shot('09_character'); UI.closeAll();
       ISK.panels.skills(); await shot('10_skills_advance'); UI.closeAll();
       ISK.panels.guild(town); await UI.sleep(200); await shot('11_guild'); UI.closeAll();
@@ -267,6 +267,21 @@
         es[2].champion = 'fiery'; es[2].name = 'Вогняний Скелет';
         const pr = ISK.combatUI.run(es, { biome: 'forest', noDeath: true }); await UI.sleep(2400); await shot('77_arena_roles');
         ISK.actionCombat._live && ISK.actionCombat._live.finish('flee'); await pr; UI.closeAll();
+      });
+      await step('v56_land', async () => {
+        const g = G4(), p = g.player; UI.closeAll(); p.gold += 500000; p.fame += 200;
+        for (const [id, n] of [['wood', 900], ['stone', 900], ['plank', 300], ['ore_iron', 100], ['gem', 10]]) ISK.player.addItem(p, id, n);
+        const B = g.world.baronies.find((b) => b.type === 'village' && b.owner >= 0 && !ISK.politics.isDemon(g.P, b.owner) && !p.holdings.includes(b.id));
+        ISK.game.grantBarony(g, B.id, true); ISK.game.arrive(g, 'b:' + B.id); UI.refresh();
+        for (const k of ['farm', 'houses', 'sawmill', 'granary']) ISK.game.buildOnLand(g, B.id, k);
+        ISK.estate.open('land', B.id); await UI.sleep(1200); await shot('99a_land_manor'); ISK.estate.close();
+        for (let i = 0; i < 4; i++) ISK.game.upgradeLandTier(g, B.id);
+        for (const k of ['quarry', 'market', 'school', 'watchtower', 'tavern', 'temple', 'barracks', 'farm', 'houses']) ISK.game.buildOnLand(g, B.id, k);
+        ISK.game.inviteSettlers(g, B.id, 'lumi'); const d0 = ISK.game.day(g); for (let d = 1; d <= 4; d++) ISK.game.landDaily(g, B.id, d0 + d);
+        if (g.player.land[B.id].tier !== 4) errors.push('land did not reach castle');
+        ISK.panels.land(B.id); await UI.sleep(300); await shot('99b_land_panel');
+        document.querySelector('.tabs button[data-id="people"]')?.click(); await UI.sleep(200); await shot('99c_land_people'); UI.closeAll();
+        ISK.estate.open('land', B.id); await UI.sleep(1200); await shot('99d_land_castle'); ISK.estate.close();
       });
       await step('v55_house', async () => {
         const g = G4(), p = g.player; UI.closeAll(); ISK.depthsUI.close && ISK.depths && (g.depth = null);

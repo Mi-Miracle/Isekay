@@ -663,14 +663,45 @@
     ] });
   }
 
-  function land(bid) {
-    const g = G(), p = g.player, B = g.world.baronies[bid], L = p.land[bid];
-    UI().modal({ title: `Баронство ${B.name}`, icon: '🏰', size: 'mid', sub: `Твої землі · сюзерен: ${g.world.realms[B.owner].fullName}`, body: () => h('div', { class: 'col' },
-      h('div', { class: 'kv' }, h('div', { class: 'k' }, 'Розвиток'), h('div', null, `${B.dev}/10`), h('div', { class: 'k' }, 'Укріплення'), h('div', null, String(B.fort)), h('div', { class: 'k' }, 'Лояльність'), h('div', { style: { color: L.loyalty < 30 ? 'var(--bad)' : 'var(--good)' } }, `${Math.round(L.loyalty)}%`), h('div', { class: 'k' }, 'Дохід'), h('div', { class: 'gold' }, `${GM().landIncome(g, bid)}🪙/день`)),
-      h('div', { class: 'row' }, 'Податки: ', ['Низькі', 'Звичайні', 'Високі'].map((t, i) => h('button', { class: 'btn small' + (L.tax === i ? ' primary' : ''), onclick: () => { L.tax = i; reopen(() => land(bid)); } }, t))),
-      h('div', { class: 'muted', style: { fontSize: '12px' } }, 'Високі податки — більше золота, але селяни злі. Нижче 12% лояльності — повстання з вилами.'),
-      h('h4', null, 'Будівництво'),
-      h('div', { class: 'items' }, Object.entries(D().LAND_BUILDINGS).map(([k, Bd]) => { const lvl = L.buildings[k] || 0; const cost = Math.round(Bd.cost * (1 + lvl * 0.7)); return itemElRaw(Bd.icon, `${Bd.name} ${lvl}/${Bd.max}`, Bd.desc, [lvl < Bd.max ? h('button', { class: 'btn small primary', disabled: p.gold < cost, onclick: () => { const e = GM().buildOnLand(g, bid, k); if (e) UI().toast(e, 'bad'); else { A().play('clang'); UI().toast(`🔨 ${Bd.name} збудовано!`, 'good'); reopen(() => land(bid)); } } }, `${cost}🪙`) : h('span', { class: 'good' }, '✔')]); }))) });
+  function land(bid, tab) {
+    const g = G(), p = g.player, B = g.world.baronies[bid]; const L = GM().landState(g, bid);
+    const again = (t) => { reopen(() => land(bid, t)); };
+    const kv = (k, v, st) => [h('div', { class: 'k' }, k), h('div', st ? { style: st } : null, v)];
+    UI().modal({ title: `Баронство ${B.name}`, icon: D().LAND_TIERS[L.tier].icon, size: 'wide', sub: `Твої землі · сюзерен: ${g.world.realms[B.owner].fullName}`, tab, tabs: [
+      { id: 'main', label: '🏰 Резиденція', render: () => {
+        const I = GM().landInfo(g, bid); const w = h('div', { class: 'col' });
+        w.appendChild(h('div', { class: 'card' }, h('div', { class: 'row', style: { justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' } },
+          h('div', null, h('div', { style: { fontSize: '20px', fontWeight: 800 } }, `${I.T.icon} ${I.T.name}`), h('div', { class: 'muted', style: { fontSize: '13px' } }, `${I.T.desc} · ділянок ${I.used}/${I.lots} · будівлі до рів. ${I.cap}`)),
+          I.next ? h('button', { class: 'btn primary', title: I.next.desc, onclick: () => { const e = GM().upgradeLandTier(g, bid); if (e) { UI().toast(e, 'bad', 4000); return; } A().play('clang'); UI().cutin(`${I.next.icon} ${I.next.name.toUpperCase()}!`, `${B.name} розбудовано!`, '#ffd76e'); again('main'); } }, `🔨 Розбудувати: ${I.next.name} · ${Object.entries(I.next.cost).map(([k2, v]) => (k2 === 'gold' ? `${v}🪙` : `${PL().item(k2).icon}${v}`)).join(' ')}`) : h('span', { class: 'gold' }, '👑 Найвеличніший замок округи'))));
+        w.appendChild(h('div', { class: 'kv' },
+          kv('Жителі', `👥 ${L.pop}/${I.housing}${I.incoming ? ` (+${I.incoming} в дорозі)` : ''}`),
+          kv('Їжа', `🍞 запас ${Math.max(0, Math.round(L.food))}/${I.foodCap} · ${I.foodProd >= L.pop ? '+' : ''}${I.foodProd - L.pop}/день`, { color: I.foodProd < L.pop ? 'var(--bad)' : 'var(--good)' }),
+          kv('Лояльність', `${Math.round(L.loyalty)}%`, { color: L.loyalty < 30 ? 'var(--bad)' : 'var(--good)' }),
+          kv('Дохід', h('span', { class: 'gold' }, `${GM().landIncome(g, bid)}🪙/день`)), kv('Розвиток', `${B.dev}/10`), kv('Укріплення', String(B.fort))));
+        w.appendChild(h('div', { class: 'row' }, 'Податки: ', ['Низькі', 'Звичайні', 'Високі'].map((t, i) => h('button', { class: 'btn small' + (L.tax === i ? ' primary' : ''), onclick: () => { L.tax = i; again('main'); } }, t))));
+        w.appendChild(h('div', { class: 'muted', style: { fontSize: '12px' } }, 'Високі податки — більше золота, але селяни злі. Нижче 12% лояльності — повстання з вилами. Кожен житель приносить трохи золота, але хоче їсти.'));
+        const stItems = Object.entries(L.store);
+        w.appendChild(h('h4', null, '📦 Склад баронства'));
+        w.appendChild(h('div', { class: 'row', style: { flexWrap: 'wrap', gap: '6px' } }, stItems.length ? stItems.map(([id, n]) => h('span', { class: 'tag' }, `${PL().item(id).icon} ${PL().item(id).name} ×${n}`)) : h('span', { class: 'muted' }, 'Порожньо. Лісопилка й каменоломня наповнять склад.'),
+          stItems.length ? h('button', { class: 'btn small primary', onclick: () => { const r = GM().collectLand(g, bid); A().play('coin'); UI().toast('📦 Забрано: ' + Object.entries(r).map(([id, n]) => `${PL().item(id).icon}×${n}`).join(' '), 'good'); again('main'); } }, '📦 Забрати все') : null));
+        return w;
+      } },
+      { id: 'build', label: '🔨 Будівництво', render: () => {
+        const I = GM().landInfo(g, bid);
+        return h('div', { class: 'col' }, h('div', { class: 'muted' }, `Ділянок зайнято ${I.used}/${I.lots}. Максимальний рівень будівель — ${I.cap}. Розбудова резиденції відкриває більше.`),
+          h('div', { class: 'items' }, Object.entries(D().LAND_BUILDINGS).map(([k, Bd]) => { const lvl = L.buildings[k] || 0; const cost = GM().buildCost(g, bid, k); const lock = lvl < Bd.max ? GM().buildLock(g, bid, k) : null;
+            return itemElRaw(Bd.icon, `${Bd.name} ${lvl}/${Bd.max}`, `${Bd.desc}${lvl < Bd.max ? ` · ${cost}🪙` : ''}${lock ? ' · 🔒 ' + lock : ''}`, [lvl < Bd.max ? h('button', { class: 'btn small ' + (lock ? 'ghost' : 'primary'), disabled: !!lock || p.gold < cost, onclick: () => { const e = GM().buildOnLand(g, bid, k); if (e) UI().toast(e, 'bad'); else { A().play('clang'); UI().toast(`🔨 ${Bd.name}: рівень ${lvl + 1}!`, 'good'); again('build'); } } }, lvl ? '⬆️' : 'Будувати') : h('span', { class: 'good' }, '✔')]); })));
+      } },
+      { id: 'people', label: '👥 Жителі', render: () => {
+        const I = GM().landInfo(g, bid); const w = h('div', { class: 'col' });
+        w.appendChild(h('div', null, `👥 Жителів: ${L.pop} з ${I.housing} місць${I.incoming ? ` · у дорозі ще ${I.incoming}` : ''}.`));
+        w.appendChild(h('div', { class: 'muted', style: { fontSize: '13px' } }, 'Щоб розширюватися, шукай поселенців. Їм потрібні житла 🏘️ та їжа 🌾. Якщо лояльність висока, а їжі вдосталь, люди народжуються й приходять самі.'));
+        w.appendChild(h('div', { class: 'items' }, D().SETTLER_OFFERS.map((O) => { const cd = Math.max(0, Math.ceil((L.cool[O.id] || 0) - GM().day(g)));
+          return itemElRaw(O.icon, O.name, `${O.desc} · +${O.pop[0]}–${O.pop[1]} жителів за ${O.days} дн.${O.gold ? ` · ${O.gold}🪙` : ''}${O.fame ? ` · ${O.fame}⭐` : ''}${cd ? ` · ⏳ ${cd} дн.` : ''}`, [h('button', { class: 'btn small primary', disabled: !!cd, onclick: () => { const e = GM().inviteSettlers(g, bid, O.id); if (e) { UI().toast(e, 'bad'); return; } A().play(O.id === 'lumi' ? 'magic' : 'coin'); UI().toast(O.id === 'lumi' ? '🌸 Люмі: «Окей, відправляю! Тільки не кажи їм про вантажівку.»' : `${O.icon} Поселенці вже в дорозі!`, 'good', 3500); again('people'); } }, 'Запросити')]); })));
+        if (L.pop >= I.housing) w.appendChild(h('div', { class: 'bad', style: { fontSize: '13px' } }, '🏘️ Усі житла зайняті — нові поселенці не зможуть оселитися. Будуй житла!'));
+        return w;
+      } },
+    ] });
   }
 
   // ---------------- Location actions ----------------
