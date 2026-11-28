@@ -1,13 +1,13 @@
 ## Класи героя: базові характеристики, стиль звичайної атаки й шість навичок.
-## Гравець сам кладе навички на 4 клавіші (Q, F, V, G) — `p.skill_slots`. Shift/ПКМ — ривок.
+## Гравець сам кладе навички на 5 клавіш (Q, F, V, G, ПКМ) — `p.skill_slots`. Shift — ривок.
 ## Типи навичок виконує dungeon.gd (cast_skill).
 ## Ще 11 класів і дерево класів (гілки, майстри, вознесіння) — у class_tree.gd (генерується з старої версії).
 ## Шлях класу гравця — `p.class_path` {branch, master, asc}; позичені навички Майстра на всі руки — `p.jack_skills`.
 class_name Classes
 extends RefCounted
 
-const KEYS := ["Q", "F", "V", "G"]
-const SLOTS := 4
+const KEYS := ["Q", "F", "V", "G", "ПКМ"]
+const SLOTS := 5
 
 const CLASSES := {
 	"swordsman": {
@@ -311,7 +311,7 @@ static func skill_of(p: Dictionary, id: String) -> Dictionary:
 
 static func default_slots(key: String) -> Array:
 	var sk: Array = info(key).skills
-	var order := [0, 2, 3, 1]
+	var order := [0, 2, 3, 1, 4]
 	return order.map(func(i): return sk[i].id if i < sk.size() else "")
 
 
@@ -319,8 +319,12 @@ static func default_slots(key: String) -> Array:
 static func slots(p: Dictionary) -> Array:
 	var key := str(p.get("cls", "swordsman"))
 	var cur = p.get("skill_slots")
-	if not (cur is Array) or cur.size() != SLOTS:
+	if not (cur is Array) or cur.size() > SLOTS or cur.is_empty():
 		cur = default_slots(key)
+	# старі збереження (4 клавіші): додати п'яту (ПКМ), не чіпаючи вибору гравця
+	while cur.size() < SLOTS:
+		var d: String = default_slots(key)[cur.size()]
+		cur.append("" if d in cur else d)
 	for i in SLOTS:
 		if str(cur[i]) != "" and skill_of(p, str(cur[i])).is_empty():
 			cur[i] = default_slots(key)[i]

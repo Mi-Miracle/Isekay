@@ -313,6 +313,7 @@ func _run() -> void:
 	_bg.t0 = _bg.now()
 	await say("Світ народжується", "Формуються континенти, острови, королівства й імперія… Боги грають у кості… ⏳")
 	Game.new_game(data.name, data.seed, data.cls, {"race": data.race, "gender": data.gender, "bless": data.bless, "god_goblin": data.get("god_goblin", false)})
+	Difficulty.set_key(str(data.get("diff", "normal")))
 	if auto:
 		Selftest.step("story", Game.state.player.gender == data.gender and Game.state.player.has("race"), "%s · %s · %s" % [data.gender, data.race, data.bless])
 	Voice.stop()
@@ -388,6 +389,25 @@ func _creation() -> Dictionary:
 	cdesc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	cdesc.custom_minimum_size = Vector2(740, 66)
 	v.add_child(cdesc)
+	st.diff = str(Game.settings.get("difficulty", "normal"))
+	var drow := HBoxContainer.new()
+	drow.add_theme_constant_override("separation", 6)
+	v.add_child(drow)
+	drow.add_child(Game.make_label("Складність:", 16, Game.C_GOLD, 3))
+	for dk in Difficulty.ORDER:
+		var D0: Dictionary = Difficulty.LEVELS[dk]
+		var db := Button.new()
+		db.toggle_mode = true
+		db.button_pressed = st.diff == dk
+		db.text = "%s %s" % [D0.icon, D0.name]
+		db.tooltip_text = D0.desc
+		db.add_theme_font_size_override("font_size", 14)
+		db.pressed.connect(func():
+			st.diff = dk
+			for c in drow.get_children():
+				if c is Button:
+					c.button_pressed = c == db)
+		drow.add_child(db)
 
 	var srow := HBoxContainer.new()
 	srow.add_theme_constant_override("separation", 10)
@@ -406,7 +426,7 @@ func _creation() -> Dictionary:
 	var cbtns: Array = []
 	var refresh := func() -> void:
 		var fem: bool = st.gender == "f"
-		preview.texture = load(Origin.hero_art(fem, true))
+		preview.texture = load(Origin.hero_art(fem, true, st.race))
 		gm.button_pressed = not fem
 		gf.button_pressed = fem
 		var R: Dictionary = Origin.RACES[st.race]

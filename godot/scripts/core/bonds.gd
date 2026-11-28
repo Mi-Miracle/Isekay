@@ -27,6 +27,10 @@ static func st() -> Dictionary:
 	for k in {"legends": {}, "party": [], "cool": -999, "gender": "m"}:
 		if not s.has(k):
 			s[k] = {"legends": {}, "party": [], "cool": -999, "gender": "m"}[k]
+	# стать для легенд завжди та сама, що в героя (обрана при створенні або в спадкоємця)
+	var pl = Game.state.get("player")
+	if pl is Dictionary and pl.has("gender"):
+		s.gender = "f" if str(pl.gender) == "f" else "m"
 	return s
 
 

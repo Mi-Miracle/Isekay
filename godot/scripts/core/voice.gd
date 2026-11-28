@@ -28,6 +28,8 @@ var _thread: Thread
 var _queue: Array = []
 var _speakers := {}
 var _blip_n := 0
+var _dir := ""
+var last_error := ""
 
 
 func _ready() -> void:
@@ -46,8 +48,45 @@ func volume() -> float:
 	return float(Game.settings.get("voice_vol", 0.8))
 
 
+## Тека голосу. На Windows piper отримує шляхи у «вузькому» кодуванні, тому кирилиця в шляху
+## (user:// — «...\app_userdata\Хроніки Дивосвіту», або ім'я користувача) ламає його.
+## Тож беремо ASCII-теку: %PUBLIC%\Dyvosvit\voice, інакше C:\Dyvosvit\voice. Старе встановлення переносимо.
 func dir() -> String:
-	return ProjectSettings.globalize_path("user://voice")
+	if _dir != "":
+		return _dir
+	var old := ProjectSettings.globalize_path("user://voice")
+	_dir = old
+	if OS.get_name() == "Windows":
+		var cands: Array = []
+		if OS.get_environment("PUBLIC") != "":
+			cands.append(OS.get_environment("PUBLIC").path_join("Dyvosvit").path_join("voice"))
+		cands.append((OS.get_environment("SystemDrive") if OS.get_environment("SystemDrive") != "" else "C:") + "/Dyvosvit/voice")
+		for c in cands:
+			var cs := str(c).replace("\\", "/")
+			if not _ascii(cs):
+				continue
+			if DirAccess.make_dir_recursive_absolute(cs) == OK or DirAccess.dir_exists_absolute(cs):
+				_dir = cs
+				break
+		if _dir != old and DirAccess.dir_exists_absolute(old):
+			_migrate(old, _dir)
+	return _dir
+
+
+static func _ascii(s: String) -> bool:
+	for i in s.length():
+		if s.unicode_at(i) > 126:
+			return false
+	return true
+
+
+## Перенести вже завантажені файли зі старої теки (щоб не качати 95 МБ удруге).
+func _migrate(from: String, to: String) -> void:
+	for name in ["uk.onnx", "uk.onnx.json"]:
+		if FileAccess.file_exists(from.path_join(name)) and not FileAccess.file_exists(to.path_join(name)):
+			DirAccess.rename_absolute(from.path_join(name), to.path_join(name))
+	if DirAccess.dir_exists_absolute(from.path_join("piper")) and not DirAccess.dir_exists_absolute(to.path_join("piper")):
+		DirAccess.rename_absolute(from.path_join("piper"), to.path_join("piper"))
 
 
 func exe_path() -> String:
@@ -108,6 +147,10 @@ func stop() -> void:
 		_player.stop()
 
 
+func is_playing() -> bool:
+	return _player.playing
+
+
 func speaking() -> bool:
 	return _player.playing or (_thread != null and _thread.is_alive())
 
@@ -143,28 +186,49 @@ func _synth(j: Dictionary) -> void:
 		f.store_string(str(j.text) + "\n")
 		f.close()
 		var out: Array = []
-		var args := [exe_path(), model_path(), wav, "%.2f" % float(j.ls), str(sid), txt]
+		var code := 0
+		# у скрипт ідуть лише ASCII-аргументи: ключ кешу, темп і номер голосу; скрипт сам переходить у теку голосу
+		var args := [key, "%.2f" % float(j.ls), str(sid)]
 		if OS.get_name() == "Windows":
-			OS.execute(_helper(), args, out, true, false)
+			code = OS.execute("cmd.exe", ["/c", _helper().replace("/", "\\")] + args, out, true, false)
 		else:
-			OS.execute("sh", [_helper()] + args, out, true, false)
+			code = OS.execute("sh", [_helper()] + args, out, true, false)
 		DirAccess.remove_absolute(txt)
+		if not FileAccess.file_exists(wav):
+			last_error = "piper не створив звук (код %d): %s" % [code, "".join(PackedStringArray(out)).strip_edges().left(300)]
+			_log(last_error)
+		else:
+			last_error = ""
 	call_deferred("_play", int(j.job), wav)
+
+
+func _log(msg: String) -> void:
+	var f := FileAccess.open(dir().path_join("voice.log"), FileAccess.READ_WRITE if FileAccess.file_exists(dir().path_join("voice.log")) else FileAccess.WRITE)
+	if f:
+		f.seek_end()
+		f.store_line("[%s] %s" % [Time.get_datetime_string_from_system(), msg])
+		f.close()
+	push_warning("Voice: " + msg)
 
 
 ## Допоміжний скрипт: піпер читає текст зі stdin, тому подаємо файл через «<».
 ## Усі шляхи (і кириличні) йдуть аргументами — сам скрипт лише ASCII.
 func _helper() -> String:
 	var win := OS.get_name() == "Windows"
-	var path := dir().path_join("say.bat" if win else "say.sh")
+	var path := dir().path_join("say2.bat" if win else "say2.sh")
 	if not FileAccess.file_exists(path):
 		var f := FileAccess.open(path, FileAccess.WRITE)
 		if win:
-			f.store_string("@echo off\r\n\"%~1\" --model \"%~2\" --output_file \"%~3\" --length_scale %4 --speaker %5 -q < \"%~6\"\r\n")
+			f.store_string("@echo off\r\ncd /d \"%~dp0\"\r\n\"piper\\piper.exe\" --model uk.onnx --espeak_data \"piper\\espeak-ng-data\" --output_file \"cache\\%~1.wav\" --length_scale %2 --speaker %3 -q < \"cache\\%~1.txt\" 2>&1\r\n")
 		else:
-			f.store_string("#!/bin/sh\n\"$1\" --model \"$2\" --output_file \"$3\" --length_scale \"$4\" --speaker \"$5\" -q < \"$6\"\n")
+			f.store_string("#!/bin/sh\ncd \"$(dirname \"$0\")\" || exit 1\n./piper/piper --model uk.onnx --output_file \"cache/$1.wav\" --length_scale \"$2\" --speaker \"$3\" -q < \"cache/$1.txt\" 2>&1\n")
 		f.close()
 	return path
+
+
+## Тест з налаштувань: сказати фразу й повернути помилку (або "").
+func test_voice() -> void:
+	say("Богиня Люмі", "Привіт! Це Люмі. Якщо ти мене чуєш — озвучка працює!")
 
 
 func _play(job: int, wav: String) -> void:

@@ -15,6 +15,7 @@ var _clock: Label
 var _fps: Label
 var _prompt: Label
 var _tracker: Label
+var _sel_slot := 0
 var _banner: VBoxContainer
 var _banner_title: Label
 var _banner_sub: Label
@@ -162,7 +163,7 @@ func _build_hud() -> void:
 	_prompt.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_root.add_child(_prompt)
 
-	_hints = Game.make_label("WASD — рух · Shift — біг · ЛКМ — іти сюди · E — дія · I — спорядження · B — навички · H — дім · L — землі · U — серця · F — родина · C — клан · M — мапа (ПКМ — мітка) · N — до цілі · V — інша ціль · G — рибалка/трави · Tab — держави · K — королівства · J — хроніка · X — верхи · T — чекати день · F5 — зберегти · Esc — меню", 15, Color(1, 1, 1, 0.75), 4)
+	_hints = Game.make_label("WASD — рух · Shift — біг · ЛКМ — іти сюди · E — дія · I — спорядження · B — навички · H — дім · L — землі · U — серця · F — родина · C — клан · M — мапа (ПКМ — мітка) · N — до цілі · V — інша ціль · G — рибалка/трави · Tab — держави · K — королівства · J — хроніка · X — верхи · T — чекати день · F5 — зберегти · F10 — чіти · Esc — меню", 15, Color(1, 1, 1, 0.75), 4)
 	_hints.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
 	_hints.position = Vector2(18, -34)
 	_root.add_child(_hints)
@@ -908,10 +909,11 @@ func open_inventory(town: Dictionary = {}) -> void:
 	left.add_theme_constant_override("separation", 8)
 	hb.add_child(left)
 	for slot in Items.SLOTS:
-		left.add_child(Game.make_label(Items.SLOT_NAME[slot], 16, Color(1, 1, 1, 0.6), 2))
-		var l := _item_label(p.gear[slot])
-		l.custom_minimum_size.x = 350
-		left.add_child(l)
+		var it = p.gear.get(slot)
+		var gl := Game.make_label("%s %s: %s" % [Items.SLOT_ICON[slot], Items.SLOT_NAME[slot], ("%s (%s)" % [it.name, Items.describe(it).get_slice(" · ", 2)]) if it is Dictionary else "—"], 14, Items.RARITY[int(it.rarity)].col if it is Dictionary else Color(1, 1, 1, 0.45), 2)
+		gl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		gl.custom_minimum_size.x = 360
+		left.add_child(gl)
 	var sl: Array = Classes.slots(p)
 	var names: Array = []
 	for k in Classes.SLOTS:
@@ -994,7 +996,7 @@ func open_smith(b: Dictionary) -> void:
 		seed(int(b.id) * 7919 + day * 131)
 		for i in 4:
 			var lvl := maxi(1, int(p.lvl) + randi_range(-1, 2))
-			stock.append(Items.make(str(p.cls), lvl, mini(3, Items.roll_rarity(0.03 * int(b.dev))), Items.SLOTS[i % 3]))
+			stock.append(Items.make(str(p.cls), lvl, mini(3, Items.roll_rarity(0.03 * int(b.dev))), Items.SLOTS[(i * 3 + day) % Items.SLOTS.size()]))
 		randomize()
 		Game.state.smith = {"key": key, "stock": stock}
 	var stock: Array = Game.state.smith.stock
@@ -1475,9 +1477,6 @@ func open_hearts() -> void:
 	var v: VBoxContainer = pv[1]
 	_info(v, "Загін: %d/%d · 💰 %d · Ти: %s" % [s.party.size(), Bonds.party_cap(), int(p.gold), "героїня" if s.gender == "f" else "герой"], 17, Game.C_GOLD)
 	var top := _row(v)
-	_small_btn(top, "⇄ Змінити на: %s" % ("герой" if s.gender == "f" else "героїня"), func():
-		s.gender = "m" if s.gender == "f" else "f"
-		open_hearts(), Family.married())
 	_small_btn(top, "🏡 Родина (F)", open_family)
 	var met: Array = s.legends.keys()
 	if met.is_empty():
@@ -1940,7 +1939,7 @@ func open_workshop(b: Dictionary) -> void:
 		var l := Game.make_label("%s: %d/%d → предмет ~%d рівня" % [Player.ORES[ore].name, have, int(F.need), maxi(int(F.lvl), int(p.lvl) - 2)], 16, Player.ORES[ore].color, 3)
 		l.custom_minimum_size.x = 420
 		r.add_child(l)
-		var slots: Array = ["trinket"] if ore == "crystal" else ["weapon", "armor"]
+		var slots: Array = ["trinket", "amulet", "cloak"] if ore == "crystal" else ["weapon", "helmet", "armor", "gloves", "boots"]
 		for sl in slots:
 			var do_forge := func():
 				var res := Estate.forge(ore, sl)
@@ -2488,21 +2487,39 @@ func open_skills() -> void:
 			_small_btn(top, "🌳 Дерево класу (%s)" % nxt, open_class_path)
 	if str(p.cls) == "jack":
 		_small_btn(top, "🃏 Вчитися в інших класів (%d/%d)" % [Classes.jack_list(p).size(), Classes.jack_cap(p)], open_jack)
-	_info(v, "Натисни на клавішу біля навички — і вона ляже туди. Q також на середній кнопці миші. Shift/ПКМ — ривок.", 15, Color(1, 1, 1, 0.65))
+	var sl: Array = Classes.slots(p)
+	_sel_slot = clampi(_sel_slot, 0, Classes.SLOTS - 1)
+	_info(v, "① Обери клавішу  →  ② натисни на навичку нижче, і вона ляже на цю клавішу. Shift — ривок, ЛКМ/Пробіл — звичайний удар.", 16, Color("#ffe6b3"))
+	var slots_row := HBoxContainer.new()
+	slots_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	slots_row.add_theme_constant_override("separation", 8)
+	v.add_child(slots_row)
+	for k in Classes.SLOTS:
+		var S0 := Classes.skill_of(p, str(sl[k]))
+		var sb := Button.new()
+		sb.toggle_mode = true
+		sb.button_pressed = k == _sel_slot
+		sb.text = "%s\n%s" % [Classes.KEYS[k], S0.get("name", "— порожньо —")]
+		sb.custom_minimum_size = Vector2(178, 64)
+		sb.add_theme_font_size_override("font_size", 16)
+		if k == _sel_slot:
+			sb.add_theme_color_override("font_color", Game.C_GOLD)
+			sb.add_theme_color_override("font_pressed_color", Game.C_GOLD)
+		sb.pressed.connect(func():
+			_sel_slot = k
+			Audio.sfx("click")
+			open_skills())
+		slots_row.add_child(sb)
 	var sc := ScrollContainer.new()
-	sc.custom_minimum_size = Vector2(960, 520)
+	sc.custom_minimum_size = Vector2(960, 470)
 	sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	v.add_child(sc)
 	var list := VBoxContainer.new()
 	list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	list.add_theme_constant_override("separation", 6)
 	sc.add_child(list)
-	var sl: Array = Classes.slots(p)
 	for S in C.skills:
 		var open: bool = int(p.lvl) >= int(S.lvl)
-		var row := HBoxContainer.new()
-		row.add_theme_constant_override("separation", 8)
-		list.add_child(row)
 		var tag := ""
 		if S.get("borrowed", "") != "":
 			tag = "🃏 "
@@ -2510,22 +2527,24 @@ func open_skills() -> void:
 			tag = "👼 "
 		elif str(S.id).begins_with("t_"):
 			tag = "🌟 "
-		var txt := "%s%s%s — %s\n✦ %d · перезарядка %.1f с%s" % ["" if open else "🔒 ", tag, S.name, S.desc, int(S.mp), float(S.cd), "" if open else " · відкриється на %d рівні" % int(S.lvl)]
-		var lab := Game.make_label(txt, 16, Color.WHITE if open else Color(1, 1, 1, 0.5), 3)
-		lab.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		lab.custom_minimum_size.x = 600
-		lab.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		row.add_child(lab)
-		for k in Classes.SLOTS:
-			var on := str(sl[k]) == str(S.id)
-			var b := _small_btn(row, Classes.KEYS[k], func():
-				Classes.assign(p, k, str(S.id))
-				Audio.sfx("click")
-				open_skills())
-			b.custom_minimum_size = Vector2(76, 40)
-			if on:
-				b.add_theme_color_override("font_color", Game.C_GOLD)
-				b.text = "★" + Classes.KEYS[k]
+		var on_key := sl.find(str(S.id))
+		var b := Button.new()
+		b.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		b.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		b.custom_minimum_size = Vector2(940, 58)
+		b.add_theme_font_size_override("font_size", 16)
+		b.text = "%s%s%s%s — %s\n✦ %d · перезарядка %.1f с%s" % ["[%s] " % Classes.KEYS[on_key] if on_key >= 0 else "", "" if open else "🔒 ", tag, S.name, S.desc, int(S.mp), float(S.cd), "" if open else " · відкриється на %d рівні" % int(S.lvl)]
+		if on_key >= 0:
+			b.add_theme_color_override("font_color", Game.C_GOLD)
+		elif not open:
+			b.add_theme_color_override("font_color", Color(1, 1, 1, 0.5))
+		b.tooltip_text = "Покласти на %s" % Classes.KEYS[_sel_slot]
+		b.pressed.connect(func():
+			Classes.assign(p, _sel_slot, str(S.id))
+			Audio.sfx("click")
+			toast("«%s» тепер на %s" % [S.name, Classes.KEYS[_sel_slot]], Game.C_ACCENT2, 2.0)
+			open_skills())
+		list.add_child(b)
 	var c := _button(v, "Закрити", close_overlay)
 	_show_overlay(pv[0], 0.45)
 	c.grab_focus.call_deferred()
@@ -2987,6 +3006,82 @@ func open_coach(b: Dictionary) -> void:
 			_err(world.coach_to(b, to)), int(p.gold) < int(r.cost))
 	var c := _button(v, "Закрити", close_overlay)
 	_show_overlay(pv[0], 0.4)
+	c.grab_focus.call_deferred()
+
+
+## Чіт-меню (F10 або `): для тестів і веселих стрімів.
+func open_cheats() -> void:
+	var p := Player.ensure(Game.state)
+	var pv := _vbox_panel("🎮 Чіт-меню", 980)
+	var v: VBoxContainer = pv[1]
+	_info(v, "Люмі закриває очі долонями: «Я нічого не бачила 🙈». · рів. %d · 💰 %d · складність: %s %s" % [int(p.lvl), int(p.gold), Difficulty.cur().icon, Difficulty.cur().name], 16, Color("#ffd6ec"))
+	var done := func(msg: String) -> void:
+		Audio.sfx("magic")
+		toast("🎮 " + msg, Game.C_ACCENT, 3.0)
+		set_player(Player.short(p))
+		open_cheats()
+	var r1 := _row(v)
+	_small_btn(r1, "👀 Уся мапа", func():
+		world.reveal_all()
+		done.call("Люмі показала всю мапу"))
+	_small_btn(r1, "⬆️ +5 рівнів", func():
+		for i in 5:
+			Player.add_xp(p, Player.xp_need(int(p.lvl)) - int(p.xp))
+		done.call("Рівень %d!" % int(p.lvl)))
+	_small_btn(r1, "⏫ +20 рівнів", func():
+		for i in 20:
+			Player.add_xp(p, Player.xp_need(int(p.lvl)) - int(p.xp))
+		done.call("Рівень %d!" % int(p.lvl)))
+	_small_btn(r1, "💰 +10 000", func():
+		p.gold = int(p.gold) + 10000
+		done.call("Податкова нічого не дізнається"))
+	_small_btn(r1, "❤️ Повне здоров'я +10 🧪", func():
+		p.hp = Player.max_hp(p)
+		p.mp = Player.max_mp(p)
+		p.potions = int(p.potions) + 10
+		p.ethers = int(p.ethers) + 5
+		done.call("Як новенький"))
+	var r2 := _row(v)
+	_small_btn(r2, "🛡️ Режим бога: %s" % ("УВІМК" if p.get("cheat_god", false) else "вимк"), func():
+		p.cheat_god = not p.get("cheat_god", false)
+		done.call("Режим бога " + ("увімкнено — вороги плачуть" if p.cheat_god else "вимкнено")))
+	_small_btn(r2, "🎁 Легендарний комплект", func():
+		for sl in Items.SLOTS:
+			p.gear[sl] = Items.make(str(p.cls), int(p.lvl), 4, sl)
+		done.call("Усе легендарне. Сяє так, що очі болять"))
+	_small_btn(r2, "🎒 Ресурси для професій", func():
+		for o in Player.ORES:
+			Player.add_ore(p, o, 10)
+		for h in ["healroot", "starroot", "fireleaf", "moonflower"]:
+			Estate.herbs(p)[h] = int(Estate.herbs(p).get(h, 0)) + 10
+		for f in Crafts.FISH:
+			Crafts.bag(p, "fish")[f] = int(Crafts.bag(p, "fish").get(f, 0)) + 3
+		done.call("Руда, трави й риба — по кишенях"))
+	_small_btn(r2, "🐾 Усі пітомці", func():
+		for id in Pets.PETS:
+			Pets.give(p, id)
+		done.call("Зоопарк зібрано"))
+	_small_btn(r2, "🔮 Усі артефакти", func():
+		for A in Artifacts.LIST:
+			Artifacts.give(p, A.id)
+		done.call("Колекціонер року"))
+	var r3 := _row(v)
+	_small_btn(r3, "🌦️ Інша погода (%s)" % Weather.current().name, func():
+		var ks: Array = Weather.KINDS.keys()
+		Weather.st().kind = ks[(ks.find(Weather.kind()) + 1) % ks.size()]
+		set_clock(Game.time_text(Game.state.minutes))
+		done.call("Погода: " + Weather.current().name))
+	_small_btn(r3, "⏩ +1 день", func():
+		world.wait_day()
+		done.call("Минув день"))
+	_small_btn(r3, "🌳 Скинути шлях класу", func():
+		p.class_path = {"branch": "", "master": "", "asc": false}
+		Classes._cache.clear()
+		done.call("Клас ІІ/ІІІ можна обрати заново (B)"))
+	_small_btn(r3, "📞 Дзвінок Люмі", func():
+		open_goddess_call(Goddess.make_call(p)))
+	var c := _button(v, "Закрити", close_overlay)
+	_show_overlay(pv[0], 0.45)
 	c.grab_focus.call_deferred()
 
 

@@ -1199,9 +1199,8 @@ func _unhandled_input(event: InputEvent) -> void:
 				hud.open_clan()
 			KEY_F:
 				hud.open_family()
-			KEY_F10:
-				reveal_all()
-				hud.toast("Чіт: Люмі показала всю мапу 👀", Game.C_ACCENT)
+			KEY_F10, KEY_QUOTELEFT:
+				hud.open_cheats()
 			KEY_EQUAL, KEY_KP_ADD:
 				_zoom_target = clampf(_zoom_target * 1.25, 0.3, 5.0)
 			KEY_MINUS, KEY_KP_SUBTRACT:
@@ -1451,7 +1450,7 @@ func _selftest() -> void:
 	await tree.create_timer(0.5).timeout
 	Selftest.shot(self, "21b_skills")
 	hud.close_overlay()
-	Selftest.step("skill_slots", sk_all.size() == 6 and after[3] == sk_all[5].id and after.size() == 4, "%s → %s" % [before, after])
+	Selftest.step("skill_slots", sk_all.size() == 6 and after[3] == sk_all[5].id and after.size() == 5, "%s → %s" % [before, after])
 	Classes.assign(pl2, 3, str(before[3]))
 	# v0.18: 17 класів, дерево класу (гілка → майстер → вознесіння), Майстер на всі руки
 	var types := ["arc", "nova", "projectile", "fan", "aoe_at", "meteor", "cloud", "heal", "shield", "buff", "blink", "charge"]
@@ -1625,6 +1624,33 @@ func _selftest() -> void:
 	hud.close_overlay()
 	Selftest.step("navigation", v23_pin_txt.begins_with("📍 Мітку поставлено") and v23_trk != "" and v23_tw_err == "" and v23_map_err == "" and v23_fog1 > v23_fog0 + 200,
 		"%s · трекер: «%s» · туман %d → %d · карета: %d маршрутів" % [v23_pin_txt, v23_trk, v23_fog0, v23_fog1, v23_croutes.size()])
+	# v0.24: складність, чіт-меню, 8 слотів спорядження, 5 клавіш навичок, арт рас
+	var v24_d0 := Difficulty.key()
+	Difficulty.set_key("hard")
+	var v24_hard := Difficulty.mul("hp") > 1.2
+	Difficulty.set_key(v24_d0)
+	var v24_slots_ok := true
+	for v24_sl in Items.SLOTS:
+		var v24_it := Items.make(str(pl2.cls), int(pl2.lvl), 2, v24_sl)
+		v24_slots_ok = v24_slots_ok and Items.power(v24_it) > 0.0 and pl2.gear.has(v24_sl)
+	var v24_art := 0
+	for v24_rk in Origin.RACES:
+		if Origin.hero_art(true, true, v24_rk).contains("/races/"):
+			v24_art += 1
+	hud.open_cheats()
+	await tree.create_timer(0.4).timeout
+	Selftest.shot(self, "21q_cheats")
+	hud.close_overlay()
+	hud.open_inventory()
+	await tree.create_timer(0.4).timeout
+	Selftest.shot(self, "21r_inventory_8slots")
+	hud.close_overlay()
+	hud.open_skills()
+	await tree.create_timer(0.4).timeout
+	Selftest.shot(self, "21s_skillbook_slots")
+	hud.close_overlay()
+	Selftest.step("options_v24", v24_hard and v24_slots_ok and v24_art >= 8 and Classes.slots(pl2).size() == 5,
+		"складність ок: %s, слотів спорядження %d, арт рас: %d, клавіші: %s" % [v24_hard, Items.SLOTS.size(), v24_art, Classes.KEYS])
 	# v0.17: дзвінок богині
 	var call := Goddess.make_call(pl2)
 	hud.open_goddess_call(call)

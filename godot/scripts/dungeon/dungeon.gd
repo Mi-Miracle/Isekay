@@ -1,5 +1,5 @@
 ## Підземелля й шахти: екшен-бій у реальному часі просто на рівні.
-## WASD — рух, ЛКМ/Пробіл — удар, Shift/ПКМ — ривок, Q/F/V/G — навички зі слотів (книга навичок, B), R/1 — зілля, 2 — ефір,
+## WASD — рух, ЛКМ/Пробіл — удар, Shift — ривок, Q/F/V/G/ПКМ — навички зі слотів (книга навичок, B), R/1 — зілля, 2 — ефір,
 ## E — скриня/сходи/вихід/жила, Esc — пауза.
 class_name Dungeon
 extends Node2D
@@ -190,11 +190,11 @@ func _make_enemy(sp: Dictionary) -> Dictionary:
 	var boss: bool = sp.boss
 	var amb: Dictionary = info.get("ambush", {})
 	var guard: bool = sp.get("guard", false)
-	var hp: float = M.hp * (1.0 + 0.22 * (lvl - 1)) * ((float(amb.get("boss_hp", 9.0)) if boss else (3.5 if guard else 1.0)))
+	var hp: float = M.hp * (1.0 + 0.22 * (lvl - 1)) * ((float(amb.get("boss_hp", 9.0)) if boss else (3.5 if guard else 1.0))) * Difficulty.mul("hp")
 	var e := {
 		"kind": sp.kind, "name": sp.get("name", M.name), "lvl": lvl, "boss": boss,
 		"pos": (Vector2(sp.pos) + Vector2(0.5, 0.5)) * TILE, "vel": Vector2.ZERO, "hp": hp, "max": hp,
-		"atk": M.atk * (1.0 + 0.16 * (lvl - 1)) * (1.5 if boss else 1.0), "speed": float(M.speed) * (0.85 if boss else 1.0),
+		"atk": M.atk * (1.0 + 0.16 * (lvl - 1)) * (1.5 if boss else 1.0) * Difficulty.mul("atk"), "speed": float(M.speed) * (0.85 if boss else 1.0),
 		"ai": M.ai, "size": float(M.size) * ((float(amb.get("boss_size", 2.0))) if boss else (1.45 if guard else 1.0)), "guard": guard, "xp": int(M.xp * (1.0 + 0.25 * (lvl - 1)) * ((3 if not amb.is_empty() else 8) if boss else (4 if guard else 1))),
 		"state": "idle", "t": 0.0, "aggro": false, "flash": 0.0, "face": 1.0, "target": Vector2.ZERO, "phase": 1, "burst": 4.0,
 		"seed": randf() * 10.0,
@@ -257,7 +257,7 @@ func _hero_input(delta: float) -> void:
 	_move_hero(dir, delta)
 	if Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) or Input.is_key_pressed(KEY_SPACE):
 		attack()
-	if Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT) or Input.is_key_pressed(KEY_SHIFT):
+	if Input.is_key_pressed(KEY_SHIFT):
 		dash(dir if dir != Vector2.ZERO else facing)
 
 
@@ -513,6 +513,8 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif event is InputEventMouseButton and event.pressed and not paused:
 		if event.button_index == MOUSE_BUTTON_MIDDLE:
 			cast_slot(0)
+		elif event.button_index == MOUSE_BUTTON_RIGHT:
+			cast_slot(4)
 
 
 func interact() -> void:
@@ -670,7 +672,7 @@ func _kill(e: Dictionary) -> void:
 	if e.boss:
 		Audio.sfx("roar", 2.0, 0.0)
 	p.kills = int(p.kills) + 1
-	var xp: int = Clan.scale_xp(int(e.xp * (1.2 if p.get("rested", false) else 1.0)))
+	var xp: int = Clan.scale_xp(int(e.xp * (1.2 if p.get("rested", false) else 1.0) * Difficulty.mul("reward")))
 	stats.xp += xp
 	for q in Guild.event("kill", e.kind):
 		_say("📋 Завдання «%s» виконано! Здай у гільдії." % q.name, 2.5)
@@ -694,7 +696,7 @@ func _kill(e: Dictionary) -> void:
 
 
 func _hurt_hero(dmg: float) -> void:
-	if invuln > 0 or done:
+	if invuln > 0 or done or p.get("cheat_god", false):
 		return
 	if randf() < Origin.mul(p, "dodge"):
 		invuln = 0.3
@@ -1194,26 +1196,41 @@ func _build_ui() -> void:
 	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.theme = Game.theme
 	ui.add_child(root)
+	# компактна панель героя: менші шрифти й тонші смуги, навички — окремим рядком унизу
 	var panel := PanelContainer.new()
-	panel.position = Vector2(16, 16)
+	panel.position = Vector2(10, 10)
 	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var ps := StyleBoxFlat.new()
+	ps.bg_color = Color(0.06, 0.03, 0.12, 0.62)
+	ps.set_corner_radius_all(8)
+	ps.content_margin_left = 10
+	ps.content_margin_right = 10
+	ps.content_margin_top = 6
+	ps.content_margin_bottom = 6
+	panel.add_theme_stylebox_override("panel", ps)
 	root.add_child(panel)
 	var v := VBoxContainer.new()
-	v.add_theme_constant_override("separation", 4)
+	v.add_theme_constant_override("separation", 3)
 	panel.add_child(v)
-	_top = Game.make_label("", 22, Game.C_GOLD, 5)
+	_top = Game.make_label("", 15, Game.C_GOLD, 3)
 	v.add_child(_top)
-	_hp_bar = _bar(Color("#ff5a7a"), 330)
-	_mp_bar = _bar(Color("#5ab4ff"), 330)
-	_xp_bar = _bar(Color("#c9a7ff"), 330)
-	_xp_bar.custom_minimum_size.y = 8
+	_hp_bar = _bar(Color("#ff5a7a"), 230)
+	_mp_bar = _bar(Color("#5ab4ff"), 230)
+	_xp_bar = _bar(Color("#c9a7ff"), 230)
+	_hp_bar.custom_minimum_size.y = 11
+	_mp_bar.custom_minimum_size.y = 8
+	_xp_bar.custom_minimum_size.y = 4
 	v.add_child(_hp_bar)
 	v.add_child(_mp_bar)
 	v.add_child(_xp_bar)
-	_stat = Game.make_label("", 16, Color.WHITE, 4)
+	_stat = Game.make_label("", 13, Color.WHITE, 3)
 	v.add_child(_stat)
-	_cd_label = Game.make_label("", 15, Color(1, 1, 1, 0.8), 3)
-	v.add_child(_cd_label)
+	_cd_label = Game.make_label("", 14, Color(1, 1, 1, 0.85), 3)
+	_cd_label.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
+	_cd_label.position = Vector2(-700, -62)
+	_cd_label.size = Vector2(1400, 24)
+	_cd_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	root.add_child(_cd_label)
 	_boss_name = Game.make_label("", 24, Color("#ffb0c0"), 6)
 	_boss_name.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
 	_boss_name.position = Vector2(-400, -132)
@@ -1232,7 +1249,7 @@ func _build_ui() -> void:
 	_msg.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_msg.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	root.add_child(_msg)
-	var hints := Game.make_label("WASD — рух · ЛКМ/Пробіл — удар · Shift/ПКМ — ривок · Q/F/V/G — навички · R — зілля · 2 — ефір · E — дія · Esc — пауза", 15, Color(1, 1, 1, 0.75), 4)
+	var hints := Game.make_label("WASD — рух · ЛКМ/Пробіл — удар · Shift — ривок · Q/F/V/G/ПКМ — навички · R — зілля · 2 — ефір · E — дія · Esc — пауза", 15, Color(1, 1, 1, 0.75), 4)
 	hints.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
 	hints.position = Vector2(18, -34)
 	root.add_child(hints)
@@ -1273,7 +1290,7 @@ func _update_ui() -> void:
 	_mp_bar.value = float(p.mp)
 	_xp_bar.max_value = Player.xp_need(int(p.lvl))
 	_xp_bar.value = int(p.xp)
-	_stat.text = "Рів. %d · ❤ %d/%d · ✦ %d/%d · 💰 %d · 🧪 %d · 💧 %d" % [int(p.lvl), int(p.hp), int(Player.max_hp(p)), int(p.mp), int(Player.max_mp(p)), int(p.gold), int(p.potions), int(p.ethers)]
+	_stat.text = "Рів. %d · ❤ %d/%d · ✦ %d · 🧪 %d · 💧 %d" % [int(p.lvl), int(p.hp), int(Player.max_hp(p)), int(p.mp), int(p.potions), int(p.ethers)]
 	var alive := enemies.filter(func(e): return float(e.hp) > 0).size()
 	var parts: Array = ["Ворогів: %d" % alive, "Ривок %s" % ("✔" if dash_cd <= 0 else "%.1f" % dash_cd)]
 	var sl: Array = Classes.slots(p)

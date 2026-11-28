@@ -3,7 +3,7 @@ extends Node
 
 signal update_available(version: String, url: String)
 
-const VERSION := "0.23.0"
+const VERSION := "0.24.0"
 const SAVE_VERSION := 1
 const SAVE_PATH := "user://saves/slot1.json"
 const SETTINGS_PATH := "user://settings.cfg"
@@ -11,7 +11,7 @@ const CREDIT := "Розробник: Mi-Miracle · Twitch: mi_miracle"
 const REPO_RELEASES := "https://api.github.com/repos/Mi-Miracle/Isekay/releases?per_page=20"
 const TAG_PREFIX := "godot-v"
 
-var settings := {"weather_fx": true, "fullscreen": false, "vsync": true, "show_fps": false, "auto_save": true, "music_vol": 0.55, "sfx_vol": 0.8, "voice_mode": "neural", "voice_vol": 0.8,
+var settings := {"difficulty": "normal", "weather_fx": true, "fullscreen": false, "vsync": true, "show_fps": false, "auto_save": true, "music_vol": 0.55, "sfx_vol": 0.8, "voice_mode": "neural", "voice_vol": 0.8,
 		"twitch_on": false, "twitch_channel": "mi_miracle", "twitch_cmds": true, "twitch_chaos": true, "twitch_vote": true, "twitch_vote_secs": 25, "twitch_cooldown": 30.0,
 		"events_freq": 0.5, "events_town": true}
 

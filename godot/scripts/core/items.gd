@@ -2,8 +2,14 @@
 class_name Items
 extends RefCounted
 
-const SLOTS := ["weapon", "armor", "trinket"]
-const SLOT_NAME := {"weapon": "Зброя", "armor": "Броня", "trinket": "Прикраса"}
+const SLOTS := ["weapon", "helmet", "armor", "gloves", "boots", "cloak", "trinket", "amulet"]
+const SLOT_NAME := {"weapon": "Зброя", "helmet": "Шолом", "armor": "Броня", "gloves": "Рукавиці", "boots": "Чоботи", "cloak": "Плащ", "trinket": "Перстень", "amulet": "Амулет"}
+const SLOT_ICON := {"weapon": "⚔️", "helmet": "🪖", "armor": "🛡️", "gloves": "🧤", "boots": "👢", "cloak": "🧣", "trinket": "💍", "amulet": "📿"}
+const HELMETS := ["Шолом", "Капюшон", "Шапка-вушанка", "Корона (картонна)", "Бацинет", "Тюрбан мудреця"]
+const GLOVES := ["Рукавиці", "Латні рукавиці", "Мітенки", "Кастети-рукавички", "Рукавички чарівника"]
+const BOOTS := ["Чоботи", "Черевики", "Сандалі", "Чоботи-скороходи", "Капці (бойові)"]
+const CLOAKS := ["Плащ", "Мантія-накидка", "Пелерина", "Плащ-невидимка (майже)", "Ковдра героя"]
+const AMULETS := ["Амулет", "Кулон", "Оберіг", "Намисто", "Медальйон"]
 const RARITY := [
 	{"name": "Звичайна", "col": Color("#e6e1ea"), "mul": 1.0},
 	{"name": "Незвичайна", "col": Color("#7dff9a"), "mul": 1.25},
@@ -52,7 +58,7 @@ static func make(cls: String, lvl: int, rarity: int = -1, slot: String = "") -> 
 		slot = SLOTS.pick_random()
 	var mul: float = RARITY[rarity].mul
 	var base := 1.0 + (lvl - 1) * 0.14
-	var it := {"slot": slot, "rarity": rarity, "lvl": lvl, "atk": 0.0, "def": 0.0, "hp": 0.0, "mp": 0.0, "crit": 0.0}
+	var it := {"slot": slot, "rarity": rarity, "lvl": lvl, "atk": 0.0, "def": 0.0, "hp": 0.0, "mp": 0.0, "crit": 0.0, "speed": 0.0}
 	var noun := ""
 	match slot:
 		"weapon":
@@ -64,6 +70,29 @@ static func make(cls: String, lvl: int, rarity: int = -1, slot: String = "") -> 
 			it.def = roundf((2.0 + lvl * 0.8) * mul * randf_range(0.9, 1.1))
 			it.hp = roundf((10 + lvl * 4) * mul * randf_range(0.8, 1.1)) if rarity >= 1 else 0.0
 			noun = ARMORS.pick_random()
+		"helmet":
+			it.def = roundf((1.0 + lvl * 0.45) * mul * randf_range(0.9, 1.1))
+			it.hp = roundf((8 + lvl * 3) * mul * randf_range(0.8, 1.1))
+			noun = HELMETS.pick_random()
+		"gloves":
+			it.atk = roundf((1.5 + lvl * 0.7) * mul * randf_range(0.9, 1.1))
+			if rarity >= 1:
+				it.crit = snappedf(0.015 * (rarity + 1) * randf_range(0.8, 1.2), 0.01)
+			noun = GLOVES.pick_random()
+		"boots":
+			it.def = roundf((1.0 + lvl * 0.35) * mul * randf_range(0.9, 1.1))
+			it.speed = snappedf(0.02 + 0.015 * rarity, 0.01)
+			noun = BOOTS.pick_random()
+		"cloak":
+			it.def = roundf((1.0 + lvl * 0.4) * mul * randf_range(0.9, 1.1))
+			it.mp = roundf((6 + lvl * 2.0) * mul * randf_range(0.8, 1.1))
+			noun = CLOAKS.pick_random()
+		"amulet":
+			it.hp = roundf((6 + lvl * 2.5) * mul * randf_range(0.8, 1.1))
+			it.mp = roundf((5 + lvl * 1.5) * mul * randf_range(0.8, 1.1))
+			if rarity >= 2:
+				it.crit = snappedf(0.02 * rarity * 0.6, 0.01)
+			noun = AMULETS.pick_random()
 		_:
 			it.mp = roundf((8 + lvl * 2.5) * mul * randf_range(0.8, 1.1))
 			match randi() % 3:
@@ -84,7 +113,7 @@ static func make(cls: String, lvl: int, rarity: int = -1, slot: String = "") -> 
 static func power(it) -> float:
 	if it == null or not (it is Dictionary):
 		return 0.0
-	return float(it.atk) * 2.0 + float(it.def) * 2.2 + float(it.hp) * 0.25 + float(it.mp) * 0.15 + float(it.crit) * 300.0
+	return float(it.get("atk", 0.0)) * 2.0 + float(it.get("def", 0.0)) * 2.2 + float(it.get("hp", 0.0)) * 0.25 + float(it.get("mp", 0.0)) * 0.15 + float(it.get("crit", 0.0)) * 300.0 + float(it.get("speed", 0.0)) * 400.0
 
 
 static func describe(it: Dictionary) -> String:
@@ -99,4 +128,6 @@ static func describe(it: Dictionary) -> String:
 		parts.append("✦ +%d" % int(it.mp))
 	if float(it.crit) > 0:
 		parts.append("крит +%d%%" % int(round(float(it.crit) * 100)))
+	if float(it.get("speed", 0.0)) > 0:
+		parts.append("швидкість +%d%%" % int(round(float(it.speed) * 100)))
 	return "%s · рів. %d · %s" % [RARITY[int(it.rarity)].name, int(it.lvl), ", ".join(PackedStringArray(parts))]

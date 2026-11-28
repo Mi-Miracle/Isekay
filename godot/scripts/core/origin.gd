@@ -51,7 +51,7 @@ static func blessing(p: Dictionary) -> Dictionary:
 
 ## Сумарний бонус раси й благословення за ключем (hp, mp, atk, def, crit, xp, speed, cdr).
 static func mul(p: Dictionary, key: String) -> float:
-	return float(race(p).bonus.get(key, 0.0)) + float(blessing(p).get("bonus", {}).get(key, 0.0)) + Artifacts.bonus(p, key) + Pets.bonus(p, key) + Weather.bonus(p, key) + Crafts.bonus(p, key)
+	return float(race(p).bonus.get(key, 0.0)) + float(blessing(p).get("bonus", {}).get(key, 0.0)) + Artifacts.bonus(p, key) + Pets.bonus(p, key) + Weather.bonus(p, key) + Crafts.bonus(p, key) + (Player.gear_sum(p, "speed") if key == "speed" else 0.0)
 
 
 static func female(p: Dictionary) -> bool:
@@ -59,7 +59,14 @@ static func female(p: Dictionary) -> bool:
 
 
 ## Арт героя з урахуванням статі: big = для меню/діалогів.
-static func hero_art(female_: bool, big := false) -> String:
+## Арт героя з урахуванням статі й раси: assets/art/races/<раса>_<m|f>[_big].png (генерує tools/gen_races.py).
+static func hero_art(female_: bool, big := false, race_key := "") -> String:
+	if race_key == "god":
+		race_key = "goblin"
+	if race_key != "" and race_key != "human":
+		var rp := "res://assets/art/races/%s_%s%s.png" % [race_key, "f" if female_ else "m", "_big" if big else ""]
+		if ResourceLoader.exists(rp):
+			return rp
 	return "res://assets/art/hero%s%s.png" % ["_f" if female_ else "", "_big" if big else ""]
 
 

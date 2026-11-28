@@ -15,7 +15,7 @@ const ORES := {
 
 static func fresh() -> Dictionary:
 	return {"cls": "swordsman", "lvl": 1, "xp": 0, "hp": 100.0, "mp": 40.0, "gold": 50, "potions": 3, "ethers": 1, "ore": {}, "kills": 0, "deaths": 0, "best": {}, "cleared": [],
-		"gear": {"weapon": null, "armor": null, "trinket": null}, "bag": [], "race": "human", "gender": "m", "bless": ""}
+		"gear": {}, "bag": [], "race": "human", "gender": "m", "bless": ""}
 
 
 const BAG_MAX := 24
@@ -34,8 +34,8 @@ static func ensure(state: Dictionary) -> Dictionary:
 	p.potions = int(p.potions)
 	p.ethers = int(p.ethers)
 	if not (p.gear is Dictionary):
-		p.gear = {"weapon": null, "armor": null, "trinket": null}
-	for k in ["weapon", "armor", "trinket"]:
+		p.gear = {}
+	for k in Items.SLOTS:
 		if not p.gear.has(k):
 			p.gear[k] = null
 	return p

@@ -11,7 +11,7 @@ const CONTROLS := [
 	["K", "королівства"], ["J", "хроніка"], ["I", "спорядження"], ["H", "мій дім"], ["L", "мої землі"], ["U", "серця: легенди-супутники й загін"], ["T", "почекати день"],
 	["F5", "зберегти"], ["F11", "повний екран"], ["Esc", "пауза / скасувати шлях"],
 	["Підземелля", ""],
-	["ЛКМ / Пробіл", "удар"], ["Shift / ПКМ", "ривок"], ["Q / F / V", "навички класу"], ["R / 1", "зілля"], ["2", "ефір"],
+	["ЛКМ / Пробіл", "удар"], ["Shift", "ривок"], ["Q / F / V / G / ПКМ", "навички (книга навичок B)"], ["R / 1", "зілля"], ["2", "ефір"],
 	["E", "скриня, сходи, вихід, жила"],
 	["Місто", ""],
 	["E", "увійти в заклад / поговорити"], ["Esc або брама", "вийти"],
@@ -39,6 +39,32 @@ func _ready() -> void:
 	v.add_child(tabs)
 
 	var g := _page(tabs, "Загальне")
+	var dl := Label.new()
+	dl.text = "Складність (діє на поточну гру):"
+	dl.add_theme_font_size_override("font_size", 20)
+	g.add_child(dl)
+	var drow := HBoxContainer.new()
+	drow.add_theme_constant_override("separation", 6)
+	g.add_child(drow)
+	var dnote := Label.new()
+	dnote.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	dnote.text = Difficulty.cur().desc
+	dnote.add_theme_font_size_override("font_size", 16)
+	for dk in Difficulty.ORDER:
+		var D0: Dictionary = Difficulty.LEVELS[dk]
+		var db := Button.new()
+		db.toggle_mode = true
+		db.button_pressed = Difficulty.key() == dk
+		db.text = "%s %s" % [D0.icon, D0.name]
+		db.add_theme_font_size_override("font_size", 18)
+		db.pressed.connect(func():
+			Difficulty.set_key(dk)
+			Game.save_settings()
+			dnote.text = D0.desc
+			for c in drow.get_children():
+				c.button_pressed = c == db)
+		drow.add_child(db)
+	g.add_child(dnote)
 	_toggle(g, "Повноекранний режим (F11)", "fullscreen")
 	_toggle(g, "Вертикальна синхронізація", "vsync")
 	_toggle(g, "Показувати FPS", "show_fps")
@@ -91,7 +117,25 @@ func _ready() -> void:
 	vrow.add_child(vins)
 	var vtest := Button.new()
 	vtest.text = "▶ Почути Люмі"
-	vtest.pressed.connect(func(): Voice.say("Богиня Люмі", ["Привіт! Це я, Люмі! Тепер мене чути на весь Дивосвіт!", "Тестую голос. Раз, два, три. Вантажівка-кун, чуєш мене?", "Не забувай пити воду і рятувати світ. Воду — першою!"].pick_random()))
+	vtest.pressed.connect(func():
+		if not Voice.installed():
+			vst.text = "Спершу натисни «Завантажити нейроголос» — без нього звучить лише бурмотіння."
+			return
+		if str(Game.settings.get("voice_mode", "neural")) != "neural":
+			Game.settings.voice_mode = "neural"
+		vst.text = "🔊 Синтезую… (перший раз до 5–10 секунд)"
+		Voice.say("Богиня Люмі", ["Привіт! Це я, Люмі! Тепер мене чути на весь Дивосвіт!", "Тестую голос. Раз, два, три. Вантажівка-кун, чуєш мене?", "Не забувай пити воду і рятувати світ. Воду — першою!"].pick_random())
+		var t0 := Time.get_ticks_msec()
+		while not Voice.is_playing() and Time.get_ticks_msec() - t0 < 15000 and Voice.last_error == "":
+			await get_tree().create_timer(0.25).timeout
+		if not is_instance_valid(vst):
+			return
+		if Voice.last_error != "":
+			vst.text = "❌ %s · лог: %s" % [Voice.last_error, Voice.dir().path_join("voice.log")]
+		elif Voice.is_playing():
+			vst.text = "✅ Нейроголос працює — Люмі говорить уголос."
+		else:
+			vst.text = "❓ Тиша. Перевір гучність голосу вище й лог: %s" % Voice.dir().path_join("voice.log"))
 	vrow.add_child(vtest)
 	var vupd := func():
 		vst.text = "✅ Нейроголос встановлено — Люмі говорить уголос." if Voice.installed() else "Нейроголос ще не завантажено — поки звучить аніме-бурмотіння."

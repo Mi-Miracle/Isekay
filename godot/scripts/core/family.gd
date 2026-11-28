@@ -220,6 +220,7 @@ static func take_heir(i: int) -> Array:
 	var old_name := str(Game.state.hero_name)
 	s.dynasty.append({"name": old_name, "lvl": int(p.lvl), "until": today(), "spouse": str(s.spouse.get("name", ""))})
 	Game.state.hero_name = kid.name
+	p.gender = "f" if kid.female else "m"
 	Bonds.st().gender = "f" if kid.female else "m"
 	p.lvl = maxi(1, int(int(p.lvl) * 0.7))
 	p.xp = 0

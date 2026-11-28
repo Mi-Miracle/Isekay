@@ -171,7 +171,7 @@ static func party_bonus() -> int:
 static func scale_gold(g: int) -> int:
 	var p = Game.state.get("player")
 	var om := 1.0 + (Origin.mul(p, "gold") if p is Dictionary else 0.0)
-	return int(round(g * gold_mul() * Family.gold_mul() * om))
+	return int(round(g * gold_mul() * Family.gold_mul() * om * Difficulty.mul("reward")))
 
 
 static func scale_xp(x: int) -> int:
