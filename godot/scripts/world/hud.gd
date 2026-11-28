@@ -443,6 +443,8 @@ func open_settlement(b: Dictionary) -> void:
 	_button(h, "Про державу", func(): open_kingdoms(R.id))
 	if b.type != "hellfort":
 		_button(h, "📜 Землі", func(): open_land_office(b))
+	if b.type in ["capital", "city", "town", "fortress"]:
+		_button(h, "⚔️ Казарма", func(): open_barracks(b))
 	_button(h, "Зберегти", func():
 		world.save()
 		toast("Гру збережено ✨", Game.C_GOLD))
@@ -889,6 +891,7 @@ func open_inventory(town: Dictionary = {}) -> void:
 	left.add_child(rr)
 	_small_btn(rr, "🔮 Артефакти", open_artifacts)
 	_small_btn(rr, "🐾 Пітомці", open_pets)
+	_small_btn(rr, "⚔️ Військо (%d)" % Army.count(), func(): open_barracks({}))
 	var sc := ScrollContainer.new()
 	sc.custom_minimum_size = Vector2(640, 480)
 	sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
@@ -1243,6 +1246,7 @@ func open_market(b: Dictionary) -> void:
 	h.alignment = BoxContainer.ALIGNMENT_CENTER
 	h.add_theme_constant_override("separation", 10)
 	v.add_child(h)
+	_button(h, "🐫 Каравани (%d/%d)" % [Caravans.st().list.size(), Caravans.MAX_ACTIVE], func(): open_caravans(b))
 	_button(h, "⛏️ Продати руду (%d 💰)" % Player.ore_value(p), func():
 		var got := Player.sell_ore(p)
 		toast("Руду продано за %d 💰." % got if got > 0 else "Руди немає.", Game.C_GOLD)
@@ -2702,6 +2706,99 @@ func open_artifacts() -> void:
 				Artifacts.wear(p, "" if cur else str(A.id))
 				Audio.sfx("click")
 				open_artifacts())
+	var c := _button(v, "Закрити", close_overlay)
+	_show_overlay(pv[0], 0.45)
+	c.grab_focus.call_deferred()
+
+
+## Казарма: найняти й розпустити військо. b = {} — лише перегляд (з інвентаря).
+func open_barracks(b: Dictionary) -> void:
+	var p := Player.ensure(Game.state)
+	var A := Army.st()
+	var pv := _vbox_panel("⚔️ Казарма%s" % (" · %s" % b.name if not b.is_empty() else ""), 1000)
+	var v: VBoxContainer = pv[1]
+	_info(v, "Військо: %d/%d · сила %d (+ твоя %d) · утримання %d 💰/день · перемог %d, поразок %d · 💰 %d" % [Army.count(), Army.cap(p), int(Army.power(p)), int(Army.hero_power(p)), Army.upkeep(), int(A.wins), int(A.losses), int(p.gold)], 17, Game.C_GOLD)
+	_info(v, "На мапі підійди до ворожої армії (демони, орди або вороги держави, де ти лицар) — «E — атакувати». Чим більше війська, тим менше ліміт… тобто тим більше слави.", 15, Color(1, 1, 1, 0.7))
+	if b.is_empty():
+		_info(v, "Наймати можна в казармі міст і фортець (Двір / Ратуша).", 15, Color("#ffd6ec"))
+	for id in Army.TROOPS:
+		var T: Dictionary = Army.TROOPS[id]
+		var have := int(A.troops.get(id, 0))
+		var r := _row(v)
+		var l := Game.make_label("%s %s ×%d — сила %.1f · %d 💰 · утримання %.1f/день%s\n%s" % [T.icon, T.name, have, float(T.power), int(T.cost), float(T.upkeep), "" if int(p.lvl) >= int(T.lvl) else " · 🔒 з %d рівня" % int(T.lvl), T.desc], 16, Color.WHITE if int(p.lvl) >= int(T.lvl) else Color(1, 1, 1, 0.5), 3)
+		l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		l.custom_minimum_size.x = 600
+		r.add_child(l)
+		if not b.is_empty():
+			for n in [1, 10]:
+				_small_btn(r, "+%d" % n, func():
+					if not _err(Army.hire(p, id, n)):
+						Audio.sfx("buy")
+						open_barracks(b), int(p.lvl) < int(T.lvl) or int(p.gold) < int(T.cost) * n)
+		if have > 0:
+			_small_btn(r, "−10", func():
+				Army.dismiss(id, 10)
+				Audio.sfx("click")
+				open_barracks(b))
+	var c := _button(v, "Закрити", close_overlay)
+	_show_overlay(pv[0], 0.45)
+	c.grab_focus.call_deferred()
+
+
+## Битва з армією на мапі: шанси й рішення.
+func open_army_battle(a: Dictionary) -> void:
+	var p := Player.ensure(Game.state)
+	var pol: Politics = world.pol
+	var demon := pol.is_demon(int(a.realm))
+	var pv := _vbox_panel("⚔️ %s" % a.name, 900)
+	var v: VBoxContainer = pv[1]
+	var od := Army.odds(p, pol, a)
+	var verdict := "Люмі: «Легкотня!»" if od > 1.6 else ("Люмі: «Шанси є. Тримай кулачки!»" if od > 1.0 else ("Люмі: «Ризиковано… дуже ризиковано»" if od > 0.7 else "Люмі: «Це самогубство. Я не дивлюся!» 🙈"))
+	_info(v, "%s %s · воїнів: %s · %s" % ["😈" if demon else "🛡️", "Сили Темряви" if demon else pol.rname(int(a.realm)), Politics.fmt(int(a.size)), "орда" if a.get("horde", false) else "армія"], 18)
+	_info(v, "Твоя сила: %d (військо %d + ти %d) проти %d · співвідношення ×%.2f" % [int(Army.power(p) + Army.hero_power(p)), int(Army.power(p)), int(Army.hero_power(p)), int(Army.enemy_power(pol, a)), od], 17, Game.C_GOLD)
+	_info(v, verdict, 17, Color("#ffd6ec"))
+	var h := _row(v)
+	_small_btn(h, "⚔️ До бою!", func():
+		var res := Army.attack(p, pol, a)
+		Audio.sfx("cannon" if res.win else "hurt")
+		close_overlay()
+		if res.win:
+			banner("Перемога!", "Полягло %s ворогів%s · +%d 💰 · +%d ⭐ · твої втрати: %d" % [Politics.fmt(res.killed), " — армію розбито вщент!" if res.destroyed else "", res.gold, res.fame, res.lost])
+		else:
+			banner("Поразка…", "Ти відступаєш з половиною ❤. Ворогів полягло %s, твоїх — %d. Люмі мовчки подає хустинку." % [Politics.fmt(res.killed), res.lost])
+		world._update_near()
+		world.armies_layer.queue_redraw())
+	var c := _button(v, "Відступити", close_overlay)
+	_show_overlay(pv[0], 0.45)
+	c.grab_focus.call_deferred()
+
+
+## Каравани: вкласти золото й відправити в інше місто.
+func open_caravans(b: Dictionary) -> void:
+	var p := Player.ensure(Game.state)
+	var pol: Politics = world.pol
+	var S := Caravans.st()
+	var pv := _vbox_panel("🐫 Каравани · %s" % b.name, 1000)
+	var v: VBoxContainer = pv[1]
+	_info(v, "Купець із верблюдом: «Товар туди — золото назад. Чим далі місто, тим більший прибуток. І тим більше розбійників.» · 💰 %d" % int(p.gold), 16, Color("#ffe6b3"))
+	_info(v, "В дорозі: %d/%d · повернулося: %d · чистий прибуток: %d 💰. Охорона з твого війська зменшує ризик." % [S.list.size(), Caravans.MAX_ACTIVE, int(S.done), int(S.profit)], 16, Game.C_GOLD)
+	var day := int(world.pol.P.day)
+	for c in S.list:
+		var to: Dictionary = world.wd.baronies[int(c.to)]
+		_info(v, "🐫 %s → %s · %d 💰 · повернеться через %d дн." % [c.goods, to.name, int(c.gold), maxi(0, int(c.day0) + int(c.days) - day)], 15, Color(1, 1, 1, 0.75))
+	for d in Caravans.destinations(world.wd, b):
+		var to: Dictionary = d.b
+		var r := _row(v)
+		var rk := Caravans.risk(pol, b, to)
+		var l := Game.make_label("%s (%s) · %d дн. туди й назад · прибуток ~%d%% · ризик %d%%" % [to.name, Defs.SETTLEMENT[to.type].name, Caravans.days_for(float(d.dist)) * 2, int(Caravans.margin(float(d.dist), to) * 100), int(rk * 100)], 16, Color.WHITE if rk < 0.25 else Color("#ffb3b3"), 3)
+		l.custom_minimum_size.x = 560
+		r.add_child(l)
+		for g in Caravans.INVEST:
+			_small_btn(r, "%d 💰" % g, func():
+				if not _err(Caravans.send(pol, b, to, g, day)):
+					Audio.sfx("coin")
+					toast("🐫 Караван вирушив до %s з товаром на %d 💰!" % [to.name, g], Game.C_GOLD, 5.0)
+					open_caravans(b), int(p.gold) < g or S.list.size() >= Caravans.MAX_ACTIVE)
 	var c := _button(v, "Закрити", close_overlay)
 	_show_overlay(pv[0], 0.45)
 	c.grab_focus.call_deferred()

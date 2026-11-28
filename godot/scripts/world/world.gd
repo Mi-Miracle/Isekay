@@ -28,6 +28,7 @@ var _realm_img_tex: ImageTexture
 var _seen_seq := 0
 var dungeon: Dungeon = null
 var town: Town = null
+var _near_army: Dictionary = {}
 var last_dungeon: Dictionary = {}
 var _lab_cl: CanvasLayer
 
@@ -409,6 +410,11 @@ func _tick_days() -> void:
 			hud.toast(msg, Color("#ffc6e6"), 7.0)
 		for msg in Clan.daily(int(Game.state.day_ticked)):
 			hud.toast("🏯 " + msg, Color("#ffd27a"), 6.0)
+		var amsg := Army.daily(Player.ensure(Game.state))
+		if amsg != "":
+			hud.toast(amsg, Color("#ffb3b3"), 6.0)
+		for cm in Caravans.daily(wd, int(Game.state.day_ticked)):
+			hud.toast(cm, Game.C_GOLD, 6.0)
 		var wmsg := Weather.roll(int(Game.state.day_ticked))
 		if wmsg != "" and int(Game.state.day_ticked) == today:
 			hud.toast(wmsg, Color("#cfe6ff"), 6.0)
@@ -1044,8 +1050,19 @@ func _update_near() -> void:
 			best = d
 			_near = dg
 			_near_kind = "d"
+	_near_army = {}
+	for a in pol.P.armies:
+		var ap: Vector2 = pol.moving_pos(int(a.node), a.path, float(a.prog))
+		var d := hc.distance_to(ap)
+		if d < 2.2 and d < best + 1.0 and Army.hostile(pol, a):
+			best = d
+			_near_army = a
+	if not _near_army.is_empty():
+		_near_kind = "a"
 	markers.highlight = _near.id if _near_kind == "b" else -1
-	if _near_kind == "b":
+	if _near_kind == "a":
+		hud.set_prompt("E — атакувати: %s (⚔ %s) · твоя сила ×%.1f" % [_near_army.name, Politics.fmt(int(_near_army.size)), Army.odds(Player.ensure(Game.state), pol, _near_army)])
+	elif _near_kind == "b":
 		hud.set_prompt("E — увійти: %s (%s)" % [_near.name, Defs.SETTLEMENT[_near.type].name])
 	elif _near_kind == "d":
 		hud.set_prompt("E — оглянути: %s (рів. %d)" % [_near.name, _near.level])
@@ -1081,7 +1098,9 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_TAB:
 				toggle_realms()
 			KEY_E, KEY_ENTER:
-				if _near_kind == "b":
+				if _near_kind == "a" and not _near_army.is_empty():
+					hud.open_army_battle(_near_army)
+				elif _near_kind == "b":
 					if _near.type == "hellfort" or Defs.SETTLEMENT[_near.type].services.is_empty():
 						hud.open_settlement(_near)
 					else:
@@ -1436,6 +1455,37 @@ func _selftest() -> void:
 	await tree.create_timer(0.4).timeout
 	Selftest.shot(self, "21h_inventory_pet")
 	hud.close_overlay()
+	# v0.21: військо, битва з армією, каравани
+	pl2.gold = int(pl2.gold) + 6000
+	var v21_herr := Army.hire(pl2, "militia", 30)
+	var v21_herr2 := Army.hire(pl2, "archers" if int(pl2.lvl) >= 5 else "militia", 10)
+	hud.open_barracks(wd.baronies[0])
+	await tree.create_timer(0.4).timeout
+	Selftest.shot(self, "21i_barracks")
+	var v21_foe: Dictionary = pol._new_army(int(wd.baronies[0].owner), 300.0, int(wd.baronies[0].id), "Тестова орда", {"horde": true})
+	var v21_hostile_ok := Army.hostile(pol, v21_foe)
+	hud.open_army_battle(v21_foe)
+	await tree.create_timer(0.4).timeout
+	Selftest.shot(self, "21j_army_battle")
+	hud.close_overlay()
+	var v21_arng := RandomNumberGenerator.new()
+	v21_arng.seed = 3
+	var v21_ares := Army.attack(pl2, pol, v21_foe, v21_arng)
+	var v21_gone: bool = not pol.P.armies.has(v21_foe) or float(v21_foe.size) < 300.0
+	pol.P.armies.erase(v21_foe)
+	var v21_day0 := int(pol.P.day)
+	var v21_dests := Caravans.destinations(wd, wd.baronies[0])
+	var v21_cerr: String = Caravans.send(pol, wd.baronies[0], v21_dests[0].b, 500, v21_day0) if not v21_dests.is_empty() else "немає міст"
+	hud.open_caravans(wd.baronies[0])
+	await tree.create_timer(0.4).timeout
+	Selftest.shot(self, "21k_caravans")
+	hud.close_overlay()
+	var v21_g_before := int(pl2.gold)
+	var v21_crng := RandomNumberGenerator.new()
+	v21_crng.seed = 11
+	var v21_cmsgs := Caravans.daily(wd, v21_day0 + 99, v21_crng)
+	Selftest.step("army_caravans", v21_herr == "" and v21_herr2 == "" and Army.count() > 0 and v21_hostile_ok and v21_gone and v21_cerr == "" and v21_cmsgs.size() == 1 and Caravans.st().list.is_empty(),
+		"військо %d (сила %d), бій: %s, вбито %d, каравани: %s, золото %d → %d" % [Army.count(), int(Army.power(pl2)), "перемога" if v21_ares.win else "поразка", int(v21_ares.killed), v21_cmsgs, v21_g_before, int(pl2.gold)])
 	# v0.17: дзвінок богині
 	var call := Goddess.make_call(pl2)
 	hud.open_goddess_call(call)

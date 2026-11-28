@@ -99,6 +99,19 @@ func _draw() -> void:
 		_star(p, u, col)
 		if z >= 1.6:
 			labels.append([p + Vector2(0, u * 1.2), "%s (рів. %d)" % [h.name, h.lvl], 12, col, false])
+	# каравани героя (туди й назад)
+	var day_f := float(Game.state.minutes) / 1440.0
+	for cv in Caravans.st().list:
+		var pc := Caravans.pos(world.wd, cv, day_f)
+		var p := pc * cell
+		if not vr.has_point(p):
+			continue
+		var u := cell * 0.5 * k
+		draw_circle(p, u * 1.3, Color(1, 0.85, 0.4, 0.3))
+		draw_rect(Rect2(p - Vector2(u, u * 0.5), Vector2(u * 2.0, u)), Color("#c8955a"))
+		draw_circle(p + Vector2(u * 1.1, -u * 0.5), u * 0.45, Color("#c8955a"))
+		if z >= 1.0:
+			labels.append([p + Vector2(0, u * 1.4), "🐫 караван", 12, Game.C_GOLD, false])
 	world.markers.label_layer.queue_redraw()
 
 
