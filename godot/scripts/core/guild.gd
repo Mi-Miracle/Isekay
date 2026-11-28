@@ -139,10 +139,13 @@ static func turn_in(i: int) -> String:
 	var r0 := rank_i(g)
 	p.gold = int(p.gold) + int(q.gold)
 	var ups := Player.add_xp(p, int(q.xp))
-	g.points = int(g.points) + int(q.pts)
+	var pts := int(round(int(q.pts) * Clan.fame_mul()))
+	g.points = int(g.points) + pts
 	g.done = int(g.done) + 1
 	g.active.remove_at(i)
-	var txt := "+%d 💰 · +%d досвіду · +%d очок гільдії" % [int(q.gold), int(q.xp), int(q.pts)]
+	var txt := "+%d 💰 · +%d досвіду · +%d очок гільдії" % [int(q.gold), int(q.xp), pts]
+	for t in Clan.add_xp(15 + int(q.pts)):
+		txt += " · " + t
 	if ups > 0:
 		txt += " · новий рівень %d!" % int(p.lvl)
 	if rank_i(g) > r0:

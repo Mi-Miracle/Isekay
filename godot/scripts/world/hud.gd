@@ -156,7 +156,7 @@ func _build_hud() -> void:
 	_prompt.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_root.add_child(_prompt)
 
-	_hints = Game.make_label("WASD — рух · Shift — біг · ЛКМ — іти сюди · E — дія · I — спорядження · H — дім · L — землі · U — серця · M — мапа · Tab — держави · K — королівства · J — хроніка · X — верхи · T — чекати день · F5 — зберегти · Esc — меню", 15, Color(1, 1, 1, 0.75), 4)
+	_hints = Game.make_label("WASD — рух · Shift — біг · ЛКМ — іти сюди · E — дія · I — спорядження · H — дім · L — землі · U — серця · C — клан · M — мапа · Tab — держави · K — королівства · J — хроніка · X — верхи · T — чекати день · F5 — зберегти · Esc — меню", 15, Color(1, 1, 1, 0.75), 4)
 	_hints.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
 	_hints.position = Vector2(18, -34)
 	_root.add_child(_hints)
@@ -224,7 +224,7 @@ func set_location(title: String, sub: String, info: String) -> void:
 func set_town_mode(on: bool) -> void:
 	_town_mode = on
 	_news.visible = not on and _news_box.get_child_count() > 0
-	_hints.text = "WASD — рух · ЛКМ — іти сюди · E — увійти / поговорити · I — спорядження · H — дім · L — землі · U — серця · Esc або брама — вийти" if on else "WASD — рух · Shift — біг · ЛКМ — іти сюди · E — дія · I — спорядження · H — дім · L — землі · U — серця · M — мапа · Tab — держави · K — королівства · J — хроніка · T — чекати день · F5 — зберегти · Esc — меню"
+	_hints.text = "WASD — рух · ЛКМ — іти сюди · E — увійти / поговорити · I — спорядження · H — дім · L — землі · U — серця · C — клан · Esc або брама — вийти" if on else "WASD — рух · Shift — біг · ЛКМ — іти сюди · E — дія · I — спорядження · H — дім · L — землі · U — серця · C — клан · M — мапа · Tab — держави · K — королівства · J — хроніка · T — чекати день · F5 — зберегти · Esc — меню"
 
 
 func update_news(entries: Array) -> void:
@@ -1095,6 +1095,8 @@ func open_guild(b: Dictionary) -> void:
 				toast("📋 Нове завдання: %s" % q.name, Game.C_ACCENT2)
 			open_guild(b))
 		row.add_child(bt)
+	var gb := _row(v)
+	_small_btn(gb, ("🏯 Клан «%s»" % Clan.st().name) if Clan.has() else "🏯 Заснувати клан (%d 💰)" % Clan.COST, func(): open_clan(b))
 	var c := _button(v, "Вийти", close_overlay)
 	_show_overlay(pv[0], 0.35)
 	c.grab_focus.call_deferred()
@@ -1904,3 +1906,285 @@ func open_land(b: Dictionary) -> void:
 	var c := _button(v, "Вийти", close_overlay)
 	_show_overlay(pv[0], 0.4)
 	c.grab_focus.call_deferred()
+
+
+# ---------------------------------------------------------------- клан (C)
+
+var _clan_pick: Dictionary = {}
+
+
+func _scroll_list(v: Control, h: float) -> VBoxContainer:
+	var sc := ScrollContainer.new()
+	sc.custom_minimum_size = Vector2(980, h)
+	sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	var list := VBoxContainer.new()
+	list.add_theme_constant_override("separation", 6)
+	list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	sc.add_child(list)
+	v.add_child(sc)
+	return list
+
+
+func _left(list: Control, text: String, size := 17, col := Color.WHITE) -> Label:
+	var l := Game.make_label(text, size, col, 3)
+	l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	l.custom_minimum_size.x = 940
+	list.add_child(l)
+	return l
+
+
+func _clan_finish(v: VBoxContainer, pv: Array) -> void:
+	var c := _button(v, "Вийти", close_overlay)
+	_show_overlay(pv[0], 0.4)
+	c.grab_focus.call_deferred()
+
+
+## Вікно клану. b — місто, де гравець зараз (для заснування), tab — вкладка.
+func open_clan(b: Dictionary = {}, tab: String = "main") -> void:
+	if not Clan.has():
+		_open_clan_found(b)
+		return
+	var c := Clan.st()
+	var pv := _vbox_panel("%s Клан «%s»" % [c.icon, c.name], 1040)
+	var v: VBoxContainer = pv[1]
+	var need := Clan.xp_need(int(c.lvl))
+	_info(v, "«%s» · рівень %d%s · 💰 у скарбниці %d · членів %d/%d · зала: %s" % [c.motto, int(c.lvl),
+		" (%d/%d досв.)" % [int(c.xp), need] if int(c.lvl) < Clan.MAX_LVL else " (макс.)", int(c.bank), c.members.size(), Clan.member_cap(), world.wd.baronies[int(c.seat)].name], 17, Game.C_GOLD)
+	var tabs := _row(v)
+	for t in [["main", "🏯 Огляд"], ["hall", "🏛️ Зала"], ["members", "👥 Члени"], ["contracts", "📜 Контракти"], ["war", "⚔️ Війни"]]:
+		var bt := _small_btn(tabs, t[1], func(): open_clan(b, t[0]))
+		bt.disabled = t[0] == tab
+	match tab:
+		"hall":
+			_clan_hall(v, b)
+		"members":
+			_clan_members(v, b)
+		"contracts":
+			_clan_contracts(v, b)
+		"war":
+			_clan_war(v, b)
+		_:
+			_clan_main(v, b)
+	_clan_finish(v, pv)
+
+
+func _open_clan_found(b: Dictionary) -> void:
+	var pv := _vbox_panel("🏯 Заснувати клан", 900)
+	var v: VBoxContainer = pv[1]
+	var err := Clan.can_found()
+	var in_guild: bool = not b.is_empty() and Defs.SETTLEMENT.get(b.get("type", ""), {}).get("services", []).has("Гільдія")
+	_info(v, "Реєстраторка дістає товстезну книгу: «Клан — це скарбниця, зала, свої люди й вічні суперечки, хто миє посуд. Внесок — %d 💰. Потрібні %d рівень і ранг гільдії %s.»" % [Clan.COST, Clan.MIN_LVL, Guild.RANKS[Clan.MIN_RANK]], 17, Color("#ffd6ec"))
+	for pk in Clan.PERKS:
+		_info(v, "%s Рівень %d: %s" % [pk[1], pk[0], pk[2]], 15, Color(1, 1, 1, 0.75))
+	if not in_guild:
+		_info(v, "Заснувати клан можна в гільдії авантюристів будь-якого міста — там і буде зала клану.", 17, Color("#ffb3b3"))
+	elif err != "":
+		_info(v, err, 17, Color("#ffb3b3"))
+	else:
+		var name_e := LineEdit.new()
+		name_e.placeholder_text = "Назва клану (2–28 літер)"
+		name_e.max_length = 28
+		name_e.custom_minimum_size = Vector2(520, 0)
+		var motto_e := LineEdit.new()
+		motto_e.placeholder_text = "Девіз (необов'язково): Разом — до кінця!"
+		motto_e.max_length = 60
+		motto_e.custom_minimum_size = Vector2(520, 0)
+		var r0 := _row(v)
+		r0.add_child(name_e)
+		var r1 := _row(v)
+		r1.add_child(motto_e)
+		var icon_l := _info(v, "Герб: %s" % Clan.ICONS[0], 20, Game.C_GOLD)
+		var pick := [Clan.ICONS[0]]
+		var ri := _row(v)
+		for ic in Clan.ICONS:
+			_small_btn(ri, ic, func():
+				pick[0] = ic
+				icon_l.text = "Герб: %s" % ic)
+		var r2 := _row(v)
+		_small_btn(r2, "🏯 Заснувати (%d 💰)" % Clan.COST, func():
+			if not _err(Clan.found(name_e.text, pick[0], motto_e.text, int(b.id))):
+				Audio.sfx("levelup")
+				banner("Засновано клан «%s» %s" % [Clan.st().name, Clan.st().icon], "Гільдії-суперниці нервово перевіряють свої рейтинги. C — вікно клану.")
+				open_clan(b))
+		name_e.grab_focus.call_deferred()
+	var c := _button(v, "Назад", func(): open_guild(b) if in_guild else close_overlay())
+	_show_overlay(pv[0], 0.4)
+	if err != "" or not in_guild:
+		c.grab_focus.call_deferred()
+
+
+func _clan_main(v: VBoxContainer, b: Dictionary) -> void:
+	var c := Clan.st()
+	var l := int(c.lvl)
+	var bon: Array = []
+	if Clan.xp_mul() > 1.0:
+		bon.append("+%d%% досвіду" % int(round((Clan.xp_mul() - 1.0) * 100)))
+	if Clan.gold_mul() > 1.0:
+		bon.append("+%d%% золота" % int(round((Clan.gold_mul() - 1.0) * 100)))
+	bon.append("+5% слави")
+	if Clan.party_bonus() > 0:
+		bon.append("+%d до загону" % Clan.party_bonus())
+	_info(v, "Діють бонуси: " + ", ".join(PackedStringArray(bon)), 17, Color("#a8f0c0"))
+	var pl := ""
+	for pk in Clan.PERKS:
+		pl += "%s %s %d: %s\n" % ["✅" if l >= int(pk[0]) else "🔒", pk[1], pk[0], pk[2]]
+	var list := _scroll_list(v, 190)
+	_left(list, pl.strip_edges(), 15, Color(1, 1, 1, 0.85))
+	var p := Player.ensure(Game.state)
+	var r := _row(v)
+	for n in [100, 500, 2000]:
+		_small_btn(r, "➕ Покласти %d" % n, func():
+			if not _err(Clan.deposit(n)):
+				open_clan(b), int(p.gold) < n)
+	_small_btn(r, "➕ Усе (%d)" % int(p.gold), func():
+		if not _err(Clan.deposit(int(p.gold))):
+			open_clan(b), int(p.gold) <= 0)
+	for n in [100, 500]:
+		_small_btn(r, "➖ Взяти %d" % n, func():
+			if not _err(Clan.withdraw(n)):
+				open_clan(b), int(c.bank) < n)
+	if l >= 5:
+		var pr := _row(v)
+		var perr := Clan.portal_ready()
+		_small_btn(pr, "🌀 Портал до зали клану" + ("" if perr == "" else " (завтра)"), func():
+			_err(world.clan_portal()), perr != "")
+	_info(v, "Хроніка клану:", 16, Color(1, 1, 1, 0.6))
+	var lg := _scroll_list(v, 150)
+	for e in c.log.slice(0, 14):
+		_left(lg, "День %d · %s" % [int(e.d) + 1, e.t], 15, Color(1, 1, 1, 0.8))
+
+
+func _clan_hall(v: VBoxContainer, b: Dictionary) -> void:
+	var c := Clan.st()
+	_info(v, "Будівлі розбудовуються за золото скарбниці. Рівень будівлі — не вищий за рівень клану.", 15, Color(1, 1, 1, 0.65))
+	for k in Clan.HALL_ORDER:
+		var H: Dictionary = Clan.HALL[k]
+		var hl := Clan.hall_lvl(k)
+		var cost := Clan.hall_cost(k)
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 10)
+		v.add_child(row)
+		var lab := Game.make_label("%s %s — рів. %d/%d · %s" % [H.icon, H.name, hl, int(H.max), H.desc], 17, Color.WHITE, 3)
+		lab.custom_minimum_size.x = 720
+		lab.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		row.add_child(lab)
+		var bt := _small_btn(row, "Макс." if cost < 0 else "⬆️ %d 💰" % cost, func():
+			if not _err(Clan.upgrade(k)):
+				Audio.sfx("quest")
+				toast("%s %s → рівень %d" % [H.icon, H.name, Clan.hall_lvl(k)], Game.C_GOLD)
+				open_clan(b, "hall"), cost < 0 or cost > int(c.bank) or hl >= int(c.lvl))
+
+
+func _member_line(m: Dictionary) -> String:
+	var R: Array = Clan.ROLES[m.role]
+	return "%s %s — %s, рів. %d · %s" % [R[0], m.name, R[1], int(m.lvl), m.quirk]
+
+
+func _clan_members(v: VBoxContainer, b: Dictionary) -> void:
+	var c := Clan.st()
+	var list := _scroll_list(v, 470)
+	_left(list, "Члени клану (%d/%d):" % [c.members.size(), Clan.member_cap()], 18, Game.C_GOLD)
+	if c.members.is_empty():
+		_left(list, "Поки що тут тільки ти і відлуння. Найми когось нижче!", 16, Color(1, 1, 1, 0.7))
+	for m in c.members:
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 10)
+		list.add_child(row)
+		var busy := Clan.is_busy(m)
+		var lab := Game.make_label(_member_line(m) + (" · 📜 на контракті до дня %d" % (int(m.busy) + 1) if busy else ""), 16, Color(1, 1, 1, 0.6) if busy else Color.WHITE, 3)
+		lab.custom_minimum_size.x = 780
+		lab.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		row.add_child(lab)
+		_small_btn(row, "Вигнати", func():
+			if not _err(Clan.dismiss(m.id)):
+				open_clan(b, "members"), busy)
+	_left(list, "Кандидати цього тижня (оновлюються щотижня, найм — зі скарбниці або з гаманця):", 18, Game.C_GOLD)
+	var cands := Clan.candidates()
+	if cands.is_empty():
+		_left(list, "Усіх розібрали. Нові прийдуть наступного тижня.", 16, Color(1, 1, 1, 0.7))
+	for x in cands:
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 10)
+		list.add_child(row)
+		var lab := Game.make_label(_member_line(x), 16, Color.WHITE, 3)
+		lab.custom_minimum_size.x = 780
+		lab.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		row.add_child(lab)
+		_small_btn(row, "🤝 %d 💰" % int(x.fee), func():
+			if not _err(Clan.recruit(x.id)):
+				Audio.sfx("coin")
+				toast("🤝 %s вступає до клану!" % x.name, Game.C_GOLD)
+				open_clan(b, "members"), c.members.size() >= Clan.member_cap())
+
+
+func _clan_contracts(v: VBoxContainer, b: Dictionary) -> void:
+	var c := Clan.st()
+	var list := _scroll_list(v, 470)
+	if not c.missions.is_empty():
+		_left(list, "Загони в дорозі:", 18, Game.C_GOLD)
+		for ms in c.missions:
+			var names: Array = Clan.members_by_ids(ms.members).map(func(m): return m.name)
+			_left(list, "%s «%s» — повернуться на день %d · шанс %d%% · %s" % [ms.icon, ms.name, int(ms.until) + 1, int(float(ms.chance) * 100), ", ".join(PackedStringArray(names))], 16, Color(1, 1, 1, 0.8))
+	var free: Array = c.members.filter(func(m): return not Clan.is_busy(m))
+	_left(list, "Вільні члени (обери, кого відправити):", 18, Game.C_GOLD)
+	if free.is_empty():
+		_left(list, "Вільних немає. Найми людей у вкладці «Члени» або дочекайся повернення загонів.", 16, Color(1, 1, 1, 0.7))
+	var fr := HFlowContainer.new()
+	fr.add_theme_constant_override("h_separation", 8)
+	list.add_child(fr)
+	for m in free:
+		var cb := CheckBox.new()
+		cb.text = "%s %s (%d)" % [Clan.ROLES[m.role][0], m.name, int(m.lvl)]
+		cb.add_theme_font_size_override("font_size", 16)
+		cb.button_pressed = _clan_pick.get(m.id, false)
+		cb.toggled.connect(func(on):
+			_clan_pick[m.id] = on
+			open_clan(b, "contracts"))
+		fr.add_child(cb)
+	var ids: Array = free.filter(func(m): return _clan_pick.get(m.id, false)).map(func(m): return m.id)
+	var team := Clan.members_by_ids(ids)
+	_left(list, "Контракти тижня:", 18, Game.C_GOLD)
+	for k in Clan.contracts():
+		var taken := false
+		for ms in c.missions:
+			if ms.uid == k.uid:
+				taken = true
+		var fin := Clan.done(k.uid)
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 10)
+		list.add_child(row)
+		var rew := "%d 💰, %d досв. клану" % [int(k.gold), int(k.xp)]
+		if k.has("item"):
+			rew += ", " + ("🧪" if k.item[0] == "potions" else "ефір" if k.item[0] == "ethers" else Player.ORES[k.item[0]].name) + " ×%d" % int(k.item[1])
+		if k.has("fame"):
+			rew += ", +%d ⭐" % int(k.fame)
+		var ch := Clan.chance(k, team)
+		var lab := Game.make_label("%s %s — складність %s · %d дн. · %s%s" % [k.icon, k.name, "★".repeat(int(k.diff)), int(k.days), rew,
+			("" if team.is_empty() else " · шанс %d%%" % int(ch * 100))], 16, Color(1, 1, 1, 0.55) if taken or fin else Color.WHITE, 3)
+		lab.custom_minimum_size.x = 780
+		lab.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		row.add_child(lab)
+		_small_btn(row, "✅ Виконано" if fin else "Виконується" if taken else "📜 Відправити", func():
+			if not _err(Clan.send(k.uid, ids)):
+				_clan_pick.clear()
+				Audio.sfx("quest")
+				toast("%s Загін вирушив: «%s»" % [k.icon, k.name], Game.C_ACCENT2)
+				open_clan(b, "contracts"), taken or fin or team.is_empty())
+
+
+func _clan_war(v: VBoxContainer, b: Dictionary) -> void:
+	var c := Clan.st()
+	var left := Clan.war_left()
+	_info(v, "Виклич чемпіона гільдії-суперниці на «дружній» поєдинок. Перемога — золото в скарбницю, слава й досвід клану. Що більше перемог над гільдією, то сильніші її бійці. Перемог усього: %d." % int(c.wars), 16, Color("#ffd6ec"))
+	if left > 0:
+		_info(v, "Наступний виклик — через %d дн." % left, 17, Color("#ffb3b3"))
+	for R in Clan.RIVALS:
+		var rep := int(c.rep.get(R.id, 0))
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 10)
+		v.add_child(row)
+		var lab := Game.make_label("%s %s — перемог над ними: %d · «%s»" % [R.icon, R.name, rep, R.line], 17, Color.WHITE, 3)
+		lab.custom_minimum_size.x = 780
+		lab.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		row.add_child(lab)
+		_small_btn(row, "⚔️ Виклик", func(): _err(world.start_clan_war(R.id)), left > 0)

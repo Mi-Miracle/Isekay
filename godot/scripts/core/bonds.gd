@@ -54,7 +54,7 @@ static func in_party(id: String) -> bool:
 ## Розмір загону: 1 на старті, +1 на рангах гільдії D і B.
 static func party_cap() -> int:
 	var r := Guild.rank_i(Guild.state())
-	return 1 + (1 if r >= 2 else 0) + (1 if r >= 4 else 0)
+	return 1 + (1 if r >= 2 else 0) + (1 if r >= 4 else 0) + Clan.party_bonus()
 
 
 static func tier(bond: float) -> int:
@@ -127,7 +127,7 @@ static func join(id: String) -> String:
 	if s.party.has(id):
 		return "Вже в загоні."
 	if s.party.size() >= party_cap():
-		return "Загін повний (до %d). Більше місць — з рангом гільдії D і B." % party_cap()
+		return "Загін повний (до %d). Більше місць — з рангом гільдії D і B та з рівнями клану." % party_cap()
 	s.party.append(id)
 	return ""
 

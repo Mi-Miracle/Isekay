@@ -488,7 +488,7 @@ func interact() -> void:
 		if not c.open and Vector2(ht).distance_to(Vector2(c.pos)) < 1.6:
 			c.open = true
 			Audio.sfx("chest")
-			var g: int = c.gold
+			var g: int = Clan.scale_gold(int(c.gold))
 			p.gold = int(p.gold) + g
 			stats.gold += g
 			var txt := "+%d 💰" % g
@@ -627,7 +627,7 @@ func _kill(e: Dictionary) -> void:
 	if e.boss:
 		Audio.sfx("roar", 2.0, 0.0)
 	p.kills = int(p.kills) + 1
-	var xp: int = int(e.xp * (1.2 if p.get("rested", false) else 1.0))
+	var xp: int = Clan.scale_xp(int(e.xp * (1.2 if p.get("rested", false) else 1.0)))
 	stats.xp += xp
 	for q in Guild.event("kill", e.kind):
 		_say("📋 Завдання «%s» виконано! Здай у гільдії." % q.name, 2.5)
@@ -846,9 +846,10 @@ func _pickup() -> void:
 			d.pos += dv.normalized() * minf(dv.length(), 6.0)
 		if dv.length() < 16:
 			if d.kind == "gold":
-				p.gold = int(p.gold) + int(d.n)
-				stats.gold += int(d.n)
-				_float_text(hero.position + Vector2(0, -36), "+%d 💰" % int(d.n), Game.C_GOLD)
+				var gn := Clan.scale_gold(int(d.n))
+				p.gold = int(p.gold) + gn
+				stats.gold += gn
+				_float_text(hero.position + Vector2(0, -36), "+%d 💰" % gn, Game.C_GOLD)
 			elif d.kind == "item":
 				if Player.give_item(p, d.item):
 					stats.items.append(d.item.name)

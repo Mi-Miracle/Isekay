@@ -400,6 +400,8 @@ func _tick_days() -> void:
 		pol.tick(int(Game.state.day_ticked))
 		for msg in Estate.land_daily(pol):
 			hud.toast(msg, Color("#ffb37a"), 5.0)
+		for msg in Clan.daily(int(Game.state.day_ticked)):
+			hud.toast("🏯 " + msg, Color("#ffd27a"), 6.0)
 		n += 1
 	if n > 0:
 		if pol.owner_dirty:
@@ -531,6 +533,19 @@ func _on_dungeon_done(st: Dictionary, dinfo: Dictionary) -> void:
 		_on_colos_done(st)
 		save()
 		return
+	if dinfo.has("clanwar"):
+		var R := Clan.rival(str(dinfo.clanwar))
+		var won: bool = st.cleared and not st.died
+		var lines := Clan.war_result(str(dinfo.clanwar), won)
+		if won:
+			Bonds.on_win(2.0)
+			Audio.sfx("levelup")
+			hud.banner("%s «%s» розбиті!" % [R.icon, R.name], " · ".join(PackedStringArray(lines)))
+		else:
+			p.hp = maxf(float(p.hp), Player.max_hp(p) * 0.5)
+			hud.banner("Поразка від «%s»" % R.name, "Їхній чемпіон показав язика. Реванш — через %d дн. Ніхто не помер: це ж «дружній» поєдинок." % Clan.WAR_COOL)
+		save()
+		return
 	if st.died:
 		var lost := int(int(p.gold) * 0.25)
 		p.gold = int(p.gold) - lost
@@ -558,6 +573,8 @@ func _on_dungeon_done(st: Dictionary, dinfo: Dictionary) -> void:
 		hud.banner("Підземелля зачищено!", "%s: ворогів %d, золота %d, досвіду %d." % [dinfo.name, st.kills, st.gold, st.xp])
 	if not st.died and (st.cleared or st.kills > 0):
 		Bonds.on_win(2.0 if st.cleared else 0.5)
+		for t in Clan.on_win(2.0 if st.cleared else 0.5):
+			hud.toast(t, Game.C_GOLD, 5.0)
 		if not Game.selftest and not hud.is_modal():
 			var lid := Bonds.roll_meet("res" if dinfo.kind == "mine" else "win")
 			if lid != "":
@@ -623,6 +640,47 @@ func sail_to(from: Dictionary, to: Dictionary) -> String:
 	hud.toast(res.text, Color("#bfe6ff"), 6.0)
 	hud.banner("⛵ %s" % to.name, "Пливли %.1f дн. за %d 💰 · %s" % [res.days, res.fare, wd.realms[to.owner].full_name])
 	enter_town.call_deferred(to)
+	return ""
+
+
+## Клан: виклик гільдії-суперниці на бій.
+func start_clan_war(id: String) -> String:
+	if not Clan.has():
+		return "Немає клану."
+	if Clan.war_left() > 0:
+		return "Суперники ще зализують рани. Реванш — через %d дн." % Clan.war_left()
+	var p := Player.ensure(Game.state)
+	p.hp = maxf(float(p.hp), Player.max_hp(p) * 0.5)
+	Audio.sfx("roar", -4.0, 0.0)
+	enter_dungeon(Clan.war_info(id, wd.world_seed))
+	return ""
+
+
+## Клановий портал (з 5 рівня клану): раз на день — у місто, де зала клану.
+func clan_portal() -> String:
+	var err := Clan.portal_ready()
+	if err != "":
+		return err
+	if dungeon != null:
+		return "З підземелля портал не дістає."
+	var b: Dictionary = wd.baronies[int(Clan.st().seat)]
+	Clan.st().portal_day = Clan.today()
+	_path.clear()
+	if town != null:
+		town.leave()
+	hud.close_overlay()
+	var start := Vector2(b.x + 0.5, b.y + 2.6)
+	if not wd.walkable(Vector2i(start)):
+		start = Vector2(b.x + 0.5, b.y + 0.5)
+	hero.position = start * CELL
+	cam.position = hero.position
+	cam.reset_smoothing()
+	_last_cell = Vector2i(-1, -1)
+	_reveal(true)
+	_update_location(true)
+	Audio.sfx("quest")
+	hud.toast("🌀 Клановий портал: %s. Пахне озоном і пиріжками." % b.name, Color("#c9a7ff"), 5.0)
+	enter_town.call_deferred(b)
 	return ""
 
 
@@ -987,6 +1045,8 @@ func _unhandled_input(event: InputEvent) -> void:
 				hud.open_kingdoms()
 			KEY_U:
 				hud.open_hearts()
+			KEY_C:
+				hud.open_clan()
 			KEY_F10:
 				reveal_all()
 				hud.toast("Чіт: Люмі показала всю мапу 👀", Game.C_ACCENT)
@@ -1513,6 +1573,66 @@ func _selftest() -> void:
 	Selftest.step("ambush", n_en >= 2 and n_en <= 4 and int(last_dungeon.kills) > 0, "ворогів %d, переможено %d, перемога: %s" % [n_en, int(last_dungeon.kills), str(last_dungeon.cleared)])
 	await tree.create_timer(0.8).timeout
 	Selftest.shot(self, "29_after_ambush")
+	# клан
+	var plc := Player.ensure(Game.state)
+	plc.lvl = maxi(int(plc.lvl), 12)
+	plc.gold = int(plc.gold) + 9000
+	var gsc := Guild.state()
+	gsc.points = maxi(int(gsc.points), 40)
+	var cap_b: Dictionary = {}
+	for bb in wd.baronies:
+		if bb.type == "capital":
+			cap_b = bb
+			break
+	hud.open_clan(cap_b)
+	await tree.create_timer(0.5).timeout
+	Selftest.shot(self, "42_clan_found")
+	hud.close_overlay()
+	var pc0 := Bonds.party_cap()
+	var ferr := Clan.found("Котячі Лапки", "🐱", "Мяу — до кінця!", int(cap_b.id))
+	Clan.deposit(4000)
+	var cands := Clan.candidates()
+	var rerr := Clan.recruit(cands[0].id)
+	Clan.recruit(cands[1].id)
+	var ids: Array = Clan.st().members.map(func(m): return m.id)
+	var con0: Dictionary = Clan.contracts()[0]
+	var serr := Clan.send(con0.uid, ids)
+	var bank0 := int(Clan.st().bank)
+	var crng := RandomNumberGenerator.new()
+	crng.seed = 7
+	Clan.st().missions[0].chance = 1.0
+	var res_lines := Clan.resolve(Clan.today() + 30, crng)
+	Clan.add_xp(Clan.xp_need(1) + Clan.xp_need(2) + 5)
+	var again_err := Clan.send(con0.uid, ids)
+	var uerr := Clan.upgrade("barracks")
+	var lvl_c := Clan.lvl()
+	hud.open_clan(cap_b, "contracts")
+	await tree.create_timer(0.5).timeout
+	Selftest.shot(self, "43_clan_contracts")
+	hud.open_clan(cap_b, "main")
+	await tree.create_timer(0.4).timeout
+	Selftest.shot(self, "44_clan_main")
+	hud.close_overlay()
+	plc.hp = Player.max_hp(plc)
+	var werr := start_clan_war("boars")
+	await tree.create_timer(1.0).timeout
+	if dungeon != null:
+		Selftest.shot(dungeon, "45_clan_war")
+	var t_war := Time.get_ticks_msec() + 60000
+	while dungeon != null and Time.get_ticks_msec() < t_war:
+		dungeon.invuln = 9999.0
+		dungeon.shield_t = 9999.0
+		await tree.process_frame
+	if dungeon != null:
+		dungeon.leave(false)
+		while dungeon != null:
+			await tree.process_frame
+	hud.close_overlay()
+	var won_war := int(Clan.st().rep.get("boars", 0)) == 1
+	Selftest.step("clan", ferr == "" and rerr == "" and serr == "" and int(Clan.st().bank) > bank0 and not res_lines.is_empty() and again_err != "" and uerr == "" and lvl_c >= 3 and Bonds.party_cap() == pc0 + 1 and werr == "" and won_war and Clan.war_left() > 0,
+		"%s · рівень %d · загін %d → %d · %s · війна: %s" % [ferr, lvl_c, pc0, Bonds.party_cap(), res_lines, "перемога" if won_war else "поразка/ні"])
+	await tree.create_timer(0.6).timeout
+	Selftest.shot(self, "46_after_clan_war")
 	if OS.get_environment("ISEKAY_REVEALALL") == "1":
 		reveal_all()
 		var busiest: Dictionary = {}
