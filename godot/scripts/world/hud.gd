@@ -959,6 +959,7 @@ func open_smith(b: Dictionary) -> void:
 	joke.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	v.add_child(joke)
 	v.add_child(Game.make_label("💰 %d" % int(p.gold), 18, Game.C_GOLD, 3))
+	_small_btn(_row(v), "💍 Ювелірний стіл (прикраси з руди)", func(): open_jeweler(b))
 	if stock.is_empty():
 		v.add_child(Game.make_label("Усе розкупили. Приходь завтра.", 17, Color(1, 1, 1, 0.6)))
 	for i in stock.size():
@@ -1168,6 +1169,7 @@ func open_tavern(b: Dictionary) -> void:
 	h.alignment = BoxContainer.ALIGNMENT_CENTER
 	h.add_theme_constant_override("separation", 10)
 	v.add_child(h)
+	_button(h, "🍳 Кухня", func(): open_kitchen(b))
 	_button(h, "🛏️ Переночувати — 10 💰", func():
 		if int(p.gold) < 10:
 			toast("Грошей нема. Корчмар пропонує стайню. Безкоштовно. З конем.", Color("#ffb3b3"))
@@ -1247,6 +1249,11 @@ func open_market(b: Dictionary) -> void:
 	h.add_theme_constant_override("separation", 10)
 	v.add_child(h)
 	_button(h, "🐫 Каравани (%d/%d)" % [Caravans.st().list.size(), Caravans.MAX_ACTIVE], func(): open_caravans(b))
+	_button(h, "🐟 Продати рибу (%d 💰)" % Crafts.fish_value(p), func():
+		var fv := Crafts.sell_fish(p)
+		Audio.sfx("coin")
+		toast("🐟 Риба продана за %d 💰. Торговка понюхала й кивнула." % fv, Game.C_GOLD)
+		open_market(b))
 	_button(h, "⛏️ Продати руду (%d 💰)" % Player.ore_value(p), func():
 		var got := Player.sell_ore(p)
 		toast("Руду продано за %d 💰." % got if got > 0 else "Руди немає.", Game.C_GOLD)
@@ -1770,6 +1777,8 @@ func open_house(b: Dictionary) -> void:
 		var r := _row(v)
 		for k in Estate.CROPS:
 			var C: Dictionary = Estate.CROPS[k]
+			if C.get("wild", false):
+				continue
 			_small_btn(r, "Посадити %s %s (%d💰)" % [C.icon, C.name, int(C.seed)], func():
 				if not _err(Estate.plant(k)):
 					open_house(b))
@@ -1797,8 +1806,10 @@ func open_house(b: Dictionary) -> void:
 			toast(Estate.sleep_home(), Game.C_GOLD, 5.0)
 			close_overlay())
 		_small_btn(r3, "📦 Скриня (%d/%d)" % [h.stash.size(), Estate.stash_cap()], func(): open_stash(b))
+		_small_btn(r3, "🍳 Кухня", func(): open_kitchen(b))
 		if h.annex.has("workshop"):
 			_small_btn(r3, "🔨 Майстерня", func(): open_workshop(b))
+			_small_btn(r3, "💍 Ювелірний стіл", func(): open_jeweler(b))
 		if h.annex.has("lab"):
 			_small_btn(r3, "⚗️ Лабораторія", func(): open_lab(b))
 		if int(h.lvl) < Estate.HOUSE_LEVELS.size() - 1:
@@ -2799,6 +2810,117 @@ func open_caravans(b: Dictionary) -> void:
 					Audio.sfx("coin")
 					toast("🐫 Караван вирушив до %s з товаром на %d 💰!" % [to.name, g], Game.C_GOLD, 5.0)
 					open_caravans(b), int(p.gold) < g or S.list.size() >= Caravans.MAX_ACTIVE)
+	var c := _button(v, "Закрити", close_overlay)
+	_show_overlay(pv[0], 0.45)
+	c.grab_focus.call_deferred()
+
+
+## Запустити мініігру й дочекатися результату (0..1). В автотесті — одразу 0.75.
+func play_minigame(kind: String, opts: Dictionary) -> float:
+	if Game.selftest:
+		return 0.75
+	var mg := MiniGame.new()
+	mg.setup(kind, opts)
+	_show_overlay(mg, 0.55)
+	var score: float = await mg.finished
+	await get_tree().create_timer(0.35).timeout
+	close_overlay()
+	return score
+
+
+## Рибалка або збір трав на мапі (клавіша G).
+func gather(kind: String, c: Vector2i) -> void:
+	var p := Player.ensure(Game.state)
+	var day := int(Game.state.get("day_ticked", 0))
+	if Crafts.tries_left(c, day) <= 0:
+		toast("Тут на сьогодні все: %s. Спробуй далі або завтра." % ("риба ображена" if kind == "fish" else "трави вищипані"), Color("#ffb3b3"))
+		return
+	Crafts.use_try(c, day)
+	var rng := RandomNumberGenerator.new()
+	rng.randomize()
+	if kind == "fish":
+		var fid := Crafts.roll_fish(Crafts.sea_near(world.wd, c), rng)
+		var F: Dictionary = Crafts.FISH[fid]
+		var lvl := Estate.prof_lvl("fishing")
+		var sc := await play_minigame("timing", {"title": "Клює!", "icon": "🎣", "hint": "Щось велике… чи то чобіт? Тисни, коли поплавок у зеленій зоні. Рибальство %d" % lvl,
+			"zone": float(F.zone) + 0.01 * lvl, "speed": float(F.speed), "need": 3, "col": Color("#6ab8ff")})
+		toast(Crafts.catch_fish(p, fid, sc), Color("#bfe6ff"), 5.0)
+	else:
+		var hid := Crafts.roll_herb(world.wd.terrain_at(c), rng)
+		var lvl := Estate.prof_lvl("herbalism")
+		var sc := await play_minigame("timing", {"title": "Тягни обережно!", "icon": "🌿", "hint": "Корінець не любить поспіху. Травництво %d" % lvl,
+			"zone": 0.24 + 0.01 * lvl, "speed": 0.9 + (0.5 if hid == "moonflower" else 0.0), "need": 2, "col": Color("#7dff9a")})
+		toast(Crafts.pick_herb(p, hid, sc), Color("#c8ffb0"), 5.0)
+	Game.state.minutes = float(Game.state.minutes) + 45.0
+
+
+## Кухня (таверна чи дім): готувати страви й обрати, що з'їсти перед походом.
+func open_kitchen(b: Dictionary) -> void:
+	var p := Player.ensure(Game.state)
+	var pv := _vbox_panel("🍳 Кухня · кулінарія %d" % Estate.prof_lvl("cooking"), 1000)
+	var v: VBoxContainer = pv[1]
+	_info(v, "Кухар позичає тобі фартух: «Страва дає бонус на наступний похід у підземелля. Чим краще приготуєш — тим сильніше.»", 16, Color("#ffe6b3"))
+	var fishes: Array = []
+	for k in Crafts.bag(p, "fish"):
+		fishes.append("%s×%d" % [Crafts.item_name(k), int(p.fish[k])])
+	_info(v, "Риба: %s" % (", ".join(PackedStringArray(fishes)) if not fishes.is_empty() else "немає (G біля води)"), 15, Color(1, 1, 1, 0.75))
+	var cur := Crafts.meal_info(str(p.get("meal", "")))
+	if not cur.is_empty():
+		_info(v, "Зараз у животі: %s %s %s — діє до кінця наступного походу." % [cur.icon, cur.name, "★".repeat(int(cur.stars))], 16, Game.C_GOLD)
+	for id in Crafts.MEALS:
+		var M: Dictionary = Crafts.MEALS[id]
+		var e := Crafts.can_cook(p, id)
+		var r := _row(v)
+		var l := Game.make_label("%s %s (кулінарія %d) — %s\nПотрібно: %s" % [M.icon, M.name, int(M.lvl), M.desc, Crafts.need_text(M.need)], 15, Color.WHITE if e == "" else Color(1, 1, 1, 0.5), 3)
+		l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		l.custom_minimum_size.x = 760
+		r.add_child(l)
+		_small_btn(r, "Готувати", func():
+			var sc := await play_minigame("keys", {"title": M.name, "icon": M.icon, "hint": "Нарізати, посолити, перевернути, не спалити!", "n": 5 + int(M.lvl) / 3, "window": 1.5 + Estate.prof_lvl("cooking") * 0.02, "col": Color("#ffb36e")})
+			toast(Crafts.cook(p, id, sc), Game.C_GOLD, 5.0)
+			open_kitchen(b), e != "")
+	var food := Crafts.bag(p, "food")
+	if not food.is_empty():
+		_info(v, "🍽️ Твої страви (з'їсти перед походом):", 17, Game.C_GOLD)
+		var rf := _row(v)
+		for key in food:
+			var M2 := Crafts.meal_info(key)
+			if M2.is_empty():
+				continue
+			_small_btn(rf, "%s %s %s ×%d" % [M2.icon, M2.name, "★".repeat(int(M2.stars)), int(food[key])], func():
+				Crafts.eat(p, key)
+				Audio.sfx("potion")
+				toast("😋 Смакота! Бонус діє до кінця наступного походу.", Game.C_GOLD)
+				open_kitchen(b))
+	var c := _button(v, "Закрити", close_overlay)
+	_show_overlay(pv[0], 0.45)
+	c.grab_focus.call_deferred()
+
+
+## Ювелірний стіл: прикраси з руди й самоцвітів, огранювання — мінігра.
+func open_jeweler(b: Dictionary) -> void:
+	var p := Player.ensure(Game.state)
+	var pv := _vbox_panel("💍 Ювелірний стіл · ювелірство %d" % Estate.prof_lvl("jewel"), 1000)
+	var v: VBoxContainer = pv[1]
+	var ores: Array = []
+	for k in p.ore:
+		ores.append("%s×%d" % [Player.ORES[k].name, int(p.ore[k])])
+	_info(v, "Руда: %s. Точніше огранювання — рідкісніша прикраса." % (", ".join(PackedStringArray(ores)) if not ores.is_empty() else "немає (шахти, підземелля)"), 15, Color(1, 1, 1, 0.75))
+	for id in Crafts.JEWELS:
+		var J: Dictionary = Crafts.JEWELS[id]
+		var e := Crafts.can_jewel(p, id)
+		var st: Array = []
+		for k in J.stats:
+			st.append("%s +%s" % [{"atk": "атака", "def": "захист", "hp": "❤", "mp": "✦", "crit": "крит"}[k], ("%d%%" % int(float(J.stats[k]) * 100)) if k == "crit" else str(int(J.stats[k]))])
+		var r := _row(v)
+		var l := Game.make_label("💍 %s (ювелірство %d) — %s\nПотрібно: %s" % [J.name, int(J.lvl), ", ".join(PackedStringArray(st)), Crafts.need_text(J.need)], 15, Color.WHITE if e == "" else Color(1, 1, 1, 0.5), 3)
+		l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		l.custom_minimum_size.x = 760
+		r.add_child(l)
+		_small_btn(r, "Виготовити", func():
+			var sc := await play_minigame("timing", {"title": "Огранювання", "icon": "💎", "hint": "Один невірний рух — і це вже не діамант, а галька.", "zone": 0.12 + 0.006 * Estate.prof_lvl("jewel"), "speed": 1.5, "need": 3, "col": Color("#c98cff")})
+			toast(Crafts.craft_jewel(p, id, sc), Game.C_GOLD, 5.0)
+			open_jeweler(b), e != "")
 	var c := _button(v, "Закрити", close_overlay)
 	_show_overlay(pv[0], 0.45)
 	c.grab_focus.call_deferred()

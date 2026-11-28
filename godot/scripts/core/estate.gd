@@ -24,6 +24,7 @@ const CROPS := {
 	"starroot": {"name": "Зоряний корінь", "icon": "✨", "days": 5, "seed": 10, "yield": [1, 3], "lvl": 1, "price": 14},
 	"pumpkin": {"name": "Гарбуз-велетень", "icon": "🎃", "days": 4, "seed": 8, "yield": [1, 2], "lvl": 2, "price": 35},
 	"fireleaf": {"name": "Вогнелист", "icon": "🔥", "days": 6, "seed": 18, "yield": [1, 2], "lvl": 3, "price": 30},
+	"moonflower": {"name": "Місячна квітка", "icon": "🌙", "days": 99, "seed": 0, "yield": [1, 1], "lvl": 99, "price": 45, "wild": true},
 }
 
 const RECIPES := {
@@ -39,7 +40,8 @@ const FORGE := {
 	"gold": {"lvl": 20, "need": 3}, "mithril": {"lvl": 30, "need": 3}, "crystal": {"lvl": 16, "need": 3},
 }
 
-const PROFS := {"smith": "Ковальство", "alchemy": "Алхімія", "farming": "Фермерство", "mining": "Гірництво"}
+const PROFS := {"smith": "Ковальство", "alchemy": "Алхімія", "farming": "Фермерство", "mining": "Гірництво",
+	"fishing": "Рибальство", "herbalism": "Травництво", "cooking": "Кулінарія", "jewel": "Ювелірство"}
 
 const LAND_TIERS := [
 	{"name": "Хутір", "lots": 3, "cap": 25, "cost": 1500, "rank": 2, "desc": "Кілька хат, курка й мрія."},

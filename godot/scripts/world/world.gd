@@ -543,6 +543,7 @@ func _on_dungeon_done(st: Dictionary, dinfo: Dictionary) -> void:
 	var p := Player.ensure(Game.state)
 	p.blessed = false
 	p.elixir = false
+	p.meal = ""
 	p.rested = false
 	Game.state.minutes = float(Game.state.minutes) + (30.0 if dinfo.has("colos") else 120.0 + 60.0 * st.kills / 4.0)
 	if dinfo.has("colos"):
@@ -1067,7 +1068,8 @@ func _update_near() -> void:
 	elif _near_kind == "d":
 		hud.set_prompt("E — оглянути: %s (рів. %d)" % [_near.name, _near.level])
 	else:
-		hud.set_prompt("")
+		var sp := Crafts.spot(wd, Vector2i(hc))
+		hud.set_prompt("G — порибалити 🎣" if sp == "fish" else ("G — пошукати трави 🌿" if sp == "herb" else ""))
 
 
 func _update_daynight() -> void:
@@ -1111,6 +1113,10 @@ func _unhandled_input(event: InputEvent) -> void:
 				save()
 			KEY_T:
 				wait_day()
+			KEY_G:
+				var gs := Crafts.spot(wd, Vector2i(hero_cell()))
+				if gs != "" and _near_kind == "":
+					hud.gather(gs, Vector2i(hero_cell()))
 			KEY_X:
 				hud.toast(Travel.toggle_ride(), Color("#ffe6b3"))
 				if Travel.riding():
@@ -1486,6 +1492,48 @@ func _selftest() -> void:
 	var v21_cmsgs := Caravans.daily(wd, v21_day0 + 99, v21_crng)
 	Selftest.step("army_caravans", v21_herr == "" and v21_herr2 == "" and Army.count() > 0 and v21_hostile_ok and v21_gone and v21_cerr == "" and v21_cmsgs.size() == 1 and Caravans.st().list.is_empty(),
 		"військо %d (сила %d), бій: %s, вбито %d, каравани: %s, золото %d → %d" % [Army.count(), int(Army.power(pl2)), "перемога" if v21_ares.win else "поразка", int(v21_ares.killed), v21_cmsgs, v21_g_before, int(pl2.gold)])
+	# v0.22: професії — рибалка, трави, кулінарія, ювелірство
+	var fsp := ""
+	var fcell := Vector2i(-1, -1)
+	for yy in range(5, Defs.H - 5, 3):
+		for xx in range(5, Defs.W - 5, 3):
+			if Crafts.spot(wd, Vector2i(xx, yy)) == "fish" and wd.walkable(Vector2i(xx, yy)):
+				fcell = Vector2i(xx, yy)
+				break
+		if fcell.x >= 0:
+			break
+	if fcell.x >= 0:
+		await hud.gather("fish", fcell)
+		await hud.gather("herb", fcell + Vector2i(40, 40))
+	var fish_n := 0
+	for fk in Crafts.bag(pl2, "fish"):
+		fish_n += int(pl2.fish[fk])
+	Crafts.bag(pl2, "fish")["crucian"] = int(Crafts.bag(pl2, "fish").get("crucian", 0)) + 2
+	Estate.herbs(pl2)["healroot"] = int(Estate.herbs(pl2).get("healroot", 0)) + 1
+	var cook_txt := Crafts.cook(pl2, "fish_soup", 0.75)
+	var fkey: String = Crafts.bag(pl2, "food").keys()[0] if not Crafts.bag(pl2, "food").is_empty() else ""
+	Crafts.eat(pl2, fkey)
+	var hp_meal := Crafts.bonus(pl2, "hp")
+	Player.add_ore(pl2, "silver", 3)
+	var bag0: int = pl2.bag.size()
+	var jew_txt := Crafts.craft_jewel(pl2, "silver_ring", 0.9)
+	var mg := MiniGame.new()
+	mg.setup("keys", {"title": "Юшка з карася", "icon": "🍲", "hint": "Тест", "n": 6})
+	hud._show_overlay(mg, 0.55)
+	await tree.create_timer(0.5).timeout
+	Selftest.shot(self, "21l_minigame_cook")
+	var mg2 := MiniGame.new()
+	mg2.setup("timing", {"title": "Клює!", "icon": "🎣", "hint": "Тест", "zone": 0.2})
+	hud._show_overlay(mg2, 0.55)
+	await tree.create_timer(0.5).timeout
+	Selftest.shot(self, "21m_minigame_fish")
+	hud.open_kitchen(wd.baronies[0])
+	await tree.create_timer(0.4).timeout
+	Selftest.shot(self, "21n_kitchen")
+	hud.close_overlay()
+	pl2.meal = ""
+	Selftest.step("professions", fcell.x >= 0 and fish_n > 0 and hp_meal > 0.0 and pl2.bag.size() == bag0 + 1 and Estate.prof_lvl("fishing") >= 1,
+		"клітинка %s, риби %d, трави %s, страва: %s (❤ +%d%%), прикраса: %s" % [fcell, fish_n, Estate.herbs(pl2), cook_txt, int(hp_meal * 100), jew_txt])
 	# v0.17: дзвінок богині
 	var call := Goddess.make_call(pl2)
 	hud.open_goddess_call(call)
