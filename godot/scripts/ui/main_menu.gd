@@ -15,6 +15,21 @@ func _ready() -> void:
 	_bg.set_anchors_preset(Control.PRESET_FULL_RECT)
 	add_child(_bg)
 
+	var hero := TextureRect.new()
+	hero.texture = load("res://assets/art/hero_big.png")
+	hero.name = "HeroArt"
+	hero.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hero.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	hero.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	hero.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
+	hero.anchor_left = 1.0
+	hero.anchor_top = 1.0
+	hero.offset_left = -470
+	hero.offset_top = -640
+	hero.offset_right = -110
+	hero.offset_bottom = -40
+	add_child(hero)
+
 	var title := Game.make_label("Хроніки Дивосвіту", 86, Color("#fff3fa"), 22, Game.title_font)
 	title.add_theme_color_override("font_outline_color", Color("#7a1e5c"))
 	title.add_theme_color_override("font_shadow_color", Color(1, 0.4, 0.75, 0.55))
@@ -116,6 +131,10 @@ func _process(_delta: float) -> void:
 	var title: Control = get_node_or_null("Title")
 	if title:
 		title.position.y = 70 + sin(t * 1.3) * 6
+	var hero: Control = get_node_or_null("HeroArt")
+	if hero:
+		hero.offset_top = -640 + sin(t * 1.1) * 8
+		hero.offset_bottom = -40 + sin(t * 1.1) * 8
 
 
 func _show_overlay(panel: Control) -> void:

@@ -103,7 +103,7 @@ ISEKAY_SHOTS=/tmp/shots timeout 590 xvfb-run -a -s "-screen 0 1600x900x24" npx e
 - Godot у сесії: завантажити `Godot_v4.7.2-stable_linux.x86_64.zip` з GitHub releases; шаблони експорту (1.2 ГБ) — лише для локальної збірки .exe.
 - Автотест: `ISEKAY_SHOTS=/tmp/shots xvfb-run -a -s "-screen 0 1600x900x24" godot --path godot --rendering-driver opengl3 -- --selftest` (друкує `SELFTEST REPORT`), `ISEKAY_REVEALALL=1` — ще скріншоти всієї мапи.
 - Реліз: `config/version` у `godot/project.godot` + `VERSION` у `godot/scripts/core/game.gd` + `godot/RELEASE_NOTES.md` → push у `main`. CI `.github/workflows/godot.yml` публікує **prerelease** з тегом `godot-v<версія>` (prerelease — щоб старий electron-updater їх ігнорував). `build.yml` не запускається на зміни в `godot/**`.
-- Арт від SpriteCook у сесії не завантажити: `api.spritecook.ai` не в списку дозволених доменів.
+- Арт: SpriteCook (`api.spritecook.ai` тепер доступний), файли в `godot/assets/art/`, id ассетів — `spritecook-assets.json`. Герой: `hero.png` (мапа, mip-рівні генеруються в `hero.gd`), `hero_big.png` (меню). На безкоштовному тарифі ~12 кредитів за картинку.
 
 ## Ідеї на майбутнє
 Таверна з картковою мініграмою; сюжетні змови лордів; власне королівство зі столицею; бестіарій з трофеями; голосування глядачів за події; нова гра+ з переродженням; сезонні фестивалі з мініграмами; щоденник героя.
