@@ -29,6 +29,7 @@ var _seen_seq := 0
 var dungeon: Dungeon = null
 var town: Town = null
 var _near_army: Dictionary = {}
+var _track_t := 0.0
 var last_dungeon: Dictionary = {}
 var _lab_cl: CanvasLayer
 
@@ -348,6 +349,51 @@ func rest_until_morning() -> void:
 	hud.toast("Ти добре виспався (❤ і ✦ відновлено). Люмі снилася тричі.", Game.C_GOLD)
 
 
+## Відкрити клітинки туману до рівня v (150 — «з мапи», 255 — бачив сам).
+func reveal_cells(cells: Array, v: int) -> void:
+	for i in cells:
+		if fog[i] < v:
+			fog[i] = v
+			_fog_img.set_pixel(int(i) % Defs.W, int(i) / Defs.W, Color8(v, v, v))
+	_fog_tex.update(_fog_img)
+	markers.fog = fog
+	markers.queue_redraw()
+
+
+## Карета: швидко доїхати до іншого міста на тому ж материку.
+func coach_to(from: Dictionary, to: Dictionary) -> String:
+	var r: Dictionary = {}
+	for rr in Nav.coach_routes(self, from):
+		if int(rr.b.id) == int(to.id):
+			r = rr
+	if r.is_empty():
+		return "Карета туди не їде."
+	var p := Player.ensure(Game.state)
+	if int(p.gold) < int(r.cost):
+		return "Візник хоче %d 💰. «Коні не їдять обіцянки.»" % int(r.cost)
+	p.gold = int(p.gold) - int(r.cost)
+	_path.clear()
+	if town != null:
+		town.leave()
+	hud.close_overlay()
+	hero.position = Vector2(to.x + 0.5, to.y + 0.5) * CELL
+	cam.position = hero.position
+	cam.reset_smoothing()
+	Game.state.minutes = float(Game.state.minutes) + float(r.days) * 1440.0
+	_last_cell = Vector2i(-1, -1)
+	_reveal(true)
+	_update_location(true)
+	_tick_days()
+	Audio.sfx("horse")
+	hud.banner("🐎 %s" % to.name, "Карета довезла за %.1f дн. і %d 💰. Візник співав усю дорогу. Фальшиво." % [float(r.days), int(r.cost)])
+	enter_town.call_deferred(to)
+	return ""
+
+
+func open_world_map_for_test() -> void:
+	hud.open_world_map()
+
+
 func reveal_all() -> void:
 	fog.fill(255)
 	_fog_img = Image.create_from_data(Defs.W, Defs.H, false, Image.FORMAT_L8, fog)
@@ -387,6 +433,10 @@ func _process(delta: float) -> void:
 	hud.set_clock(Game.time_text(Game.state.minutes))
 	hud.set_player(Player.short(Player.ensure(Game.state)) + ((" · " + str(Travel.mount().icon)) if Travel.riding() else ""))
 	_update_near()
+	_track_t -= delta
+	if _track_t <= 0.0:
+		_track_t = 0.5
+		hud.set_tracker(Nav.tracker_text(wd, hero_cell()))
 	_mood_t += delta
 	if _mood_t > 1.0:
 		_mood_t = 0.0
@@ -691,7 +741,8 @@ func sail_to(from: Dictionary, to: Dictionary) -> String:
 		hud.banner("🏴‍☠️ Абордаж!", "%s іде на твій корабель! Захищай палубу." % res.fight.name)
 		get_tree().create_timer(0.1 if Game.selftest else 1.6).timeout.connect(func(): start_ambush(res.fight, res.fx))
 	hud.banner("⛵ %s" % to.name, "Пливли %.1f дн. за %d 💰 · %s" % [res.days, res.fare, wd.realms[to.owner].full_name])
-	enter_town.call_deferred(to)
+	if not res.has("fight"):
+		enter_town.call_deferred(to)
 	return ""
 
 
@@ -1113,6 +1164,15 @@ func _unhandled_input(event: InputEvent) -> void:
 				save()
 			KEY_T:
 				wait_day()
+			KEY_N:
+				var tg := Nav.tracked(wd)
+				if not tg.is_empty() and Vector2i(tg.cell).x >= 0:
+					if go_to_cell(Vector2i(tg.cell)) or go_to_cell(Vector2i(tg.cell) + Vector2i(0, 1)):
+						hud.toast("🎯 Шлях до цілі прокладено.", Game.C_ACCENT2)
+					else:
+						hud.toast("Туди пішки не дійти — може, кораблем?", Color("#ffb3b3"))
+			KEY_V:
+				Nav.cycle()
 			KEY_G:
 				var gs := Crafts.spot(wd, Vector2i(hero_cell()))
 				if gs != "" and _near_kind == "":
@@ -1534,6 +1594,37 @@ func _selftest() -> void:
 	pl2.meal = ""
 	Selftest.step("professions", fcell.x >= 0 and fish_n > 0 and hp_meal > 0.0 and pl2.bag.size() == bag0 + 1 and Estate.prof_lvl("fishing") >= 1,
 		"клітинка %s, риби %d, трави %s, страва: %s (❤ +%d%%), прикраса: %s" % [fcell, fish_n, Estate.herbs(pl2), cook_txt, int(hp_meal * 100), jew_txt])
+	# v0.23: навігація — мітки, трекер, вежа, картограф, карета
+	var v23_hc0 := Vector2i(hero_cell())
+	var v23_pin_txt := Nav.toggle_pin(v23_hc0 + Vector2i(10, 4))
+	var v23_trk := Nav.tracker_text(wd, hero_cell())
+	var v23_fog0 := 0
+	for v23_fv in fog:
+		if v23_fv > 0:
+			v23_fog0 += 1
+	var v23_nb: Dictionary = {}
+	for v23_bb in wd.baronies:
+		if v23_bb.type in ["city", "capital", "fortress"] and Vector2(v23_bb.x, v23_bb.y).distance_to(Vector2(v23_hc0)) < 80:
+			v23_nb = v23_bb
+			break
+	var v23_tw_err := Nav.climb_tower(self, v23_nb) if not v23_nb.is_empty() else "немає міста"
+	pl2.gold = int(pl2.gold) + 3000
+	var v23_map_err := Nav.buy_map(self, int(wd.baronies[0].owner))
+	var v23_fog1 := 0
+	for v23_fv in fog:
+		if v23_fv > 0:
+			v23_fog1 += 1
+	open_world_map_for_test()
+	await tree.create_timer(0.6).timeout
+	Selftest.shot(self, "21o_worldmap_pins")
+	hud.close_overlay()
+	var v23_croutes := Nav.coach_routes(self, wd.baronies[0])
+	hud.open_coach(wd.baronies[0])
+	await tree.create_timer(0.4).timeout
+	Selftest.shot(self, "21p_coach")
+	hud.close_overlay()
+	Selftest.step("navigation", v23_pin_txt.begins_with("📍 Мітку поставлено") and v23_trk != "" and v23_tw_err == "" and v23_map_err == "" and v23_fog1 > v23_fog0 + 200,
+		"%s · трекер: «%s» · туман %d → %d · карета: %d маршрутів" % [v23_pin_txt, v23_trk, v23_fog0, v23_fog1, v23_croutes.size()])
 	# v0.17: дзвінок богині
 	var call := Goddess.make_call(pl2)
 	hud.open_goddess_call(call)
@@ -1650,6 +1741,10 @@ func _selftest() -> void:
 	pl.hp = Player.max_hp(pl)
 	enter_dungeon(dungeon_info(dsel))
 	await tree.create_timer(2.0).timeout
+	var modal_al := hud.is_modal()
+	if modal_al:
+		print("SELFTEST: legends — у підземеллі відкрите вікно, закриваю")
+		hud.close_overlay()
 	var t_al := Time.get_ticks_msec() + 15000
 	while dungeon != null and dungeon.ally_hits == 0 and Time.get_ticks_msec() < t_al:
 		await tree.process_frame

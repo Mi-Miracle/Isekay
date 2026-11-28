@@ -14,6 +14,7 @@ var _loc_info: Label
 var _clock: Label
 var _fps: Label
 var _prompt: Label
+var _tracker: Label
 var _banner: VBoxContainer
 var _banner_title: Label
 var _banner_sub: Label
@@ -149,6 +150,11 @@ func _build_hud() -> void:
 	_mini_marks.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	minimap.add_child(_mini_marks)
 
+	_tracker = Game.make_label("", 17, Color("#ffe27a"), 4)
+	_tracker.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	_root.add_child(_tracker)
+	_place(_tracker, 1.0, 0.0, Vector2(-16 - 900, 104), Vector2(900, 28))
+
 	_prompt = Game.make_label("", 24, Color.WHITE, 8)
 	_prompt.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
 	_prompt.position = Vector2(-500, -150)
@@ -156,7 +162,7 @@ func _build_hud() -> void:
 	_prompt.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_root.add_child(_prompt)
 
-	_hints = Game.make_label("WASD — рух · Shift — біг · ЛКМ — іти сюди · E — дія · I — спорядження · B — навички · H — дім · L — землі · U — серця · F — родина · C — клан · M — мапа · Tab — держави · K — королівства · J — хроніка · X — верхи · T — чекати день · F5 — зберегти · Esc — меню", 15, Color(1, 1, 1, 0.75), 4)
+	_hints = Game.make_label("WASD — рух · Shift — біг · ЛКМ — іти сюди · E — дія · I — спорядження · B — навички · H — дім · L — землі · U — серця · F — родина · C — клан · M — мапа (ПКМ — мітка) · N — до цілі · V — інша ціль · G — рибалка/трави · Tab — держави · K — королівства · J — хроніка · X — верхи · T — чекати день · F5 — зберегти · Esc — меню", 15, Color(1, 1, 1, 0.75), 4)
 	_hints.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
 	_hints.position = Vector2(18, -34)
 	_root.add_child(_hints)
@@ -249,6 +255,11 @@ func set_clock(text: String) -> void:
 	_clock.text = text + Weather.tag()
 
 
+func set_tracker(text: String) -> void:
+	if _tracker != null:
+		_tracker.text = text
+
+
 func set_prompt(text: String) -> void:
 	_prompt.text = text
 
@@ -302,6 +313,11 @@ func _unhandled_input(event: InputEvent) -> void:
 # ---------------------------------------------------------------- overlays
 
 func _show_overlay(content: Control, dim: float = 0.55, center: bool = true) -> void:
+	# під час підземелля HUD прихований: вікно заморозило б гру невидимою паузою
+	if world != null and world.dungeon != null:
+		print("HUD: вікно під час підземелля пропущено — ", get_stack())
+		content.queue_free()
+		return
 	close_overlay()
 	_overlay = ColorRect.new()
 	(_overlay as ColorRect).color = Color(0.04, 0.02, 0.08, dim)
@@ -445,6 +461,22 @@ func open_settlement(b: Dictionary) -> void:
 		_button(h, "📜 Землі", func(): open_land_office(b))
 	if b.type in ["capital", "city", "town", "fortress"]:
 		_button(h, "⚔️ Казарма", func(): open_barracks(b))
+	if b.type in ["capital", "city", "town", "fortress", "port"]:
+		var hn := _row(v)
+		if b.type in ["capital", "city", "fortress"]:
+			_small_btn(hn, "🗼 Сторожова вежа%s" % (" ✅" if int(b.id) in Nav.st().towers else ""), func():
+				var te := Nav.climb_tower(world, b)
+				if not _err(te):
+					Audio.sfx("door")
+					toast("🗼 З вежі видно все на %d клітинок довкола! Вітер, голуби й трохи страху висоти." % Nav.TOWER_R, Game.C_GOLD, 5.0)
+					open_settlement(b))
+		var rid := int(b.owner)
+		_small_btn(hn, "🗺️ Картограф: мапа «%s» — %d 💰%s" % [wd.realms[rid].name, Nav.map_cost(wd, rid), " ✅" if rid in Nav.st().maps else ""], func():
+			if not _err(Nav.buy_map(world, rid)):
+				Audio.sfx("buy")
+				toast("🗺️ Мапа держави відкрита! Картограф чесно попередив: «Дракони не намальовані — вони рухаються».", Game.C_GOLD, 6.0)
+				open_settlement(b))
+		_small_btn(hn, "🐎 Карета", func(): open_coach(b))
 	_button(h, "Зберегти", func():
 		world.save()
 		toast("Гру збережено ✨", Game.C_GOLD))
@@ -566,7 +598,7 @@ class WorldMapView extends Control:
 		_marks.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		_marks.draw.connect(_draw_marks)
 		_tex.add_child(_marks)
-		_info = Game.make_label("ЛКМ — прокласти шлях · Tab — держави · M / Esc — закрити", 17, Color(1, 1, 1, 0.8), 4)
+		_info = Game.make_label("ЛКМ — прокласти шлях · ПКМ — мітка 📍 · Tab — держави · M / Esc — закрити", 17, Color(1, 1, 1, 0.8), 4)
 		_info.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		v.add_child(_info)
 
@@ -578,6 +610,9 @@ class WorldMapView extends Control:
 		if e is InputEventMouseMotion:
 			var c := Vector2i(e.position / k)
 			_info.text = hud.world.describe_cell(c)
+		if e is InputEventMouseButton and e.pressed and e.button_index == MOUSE_BUTTON_RIGHT:
+			hud.toast(Nav.toggle_pin(Vector2i(e.position / k)), Game.C_ACCENT2)
+			return
 		if e is InputEventMouseButton and e.pressed and e.button_index == MOUSE_BUTTON_LEFT:
 			var c := Vector2i(e.position / k)
 			if hud.world.go_to_cell(c):
@@ -621,6 +656,16 @@ class WorldMapView extends Control:
 		var tgt = hud.world.path_target()
 		if tgt != null:
 			_marks.draw_circle(tgt * k, 4, Color(1, 0.85, 0.4))
+		for pin in Nav.st().pins:
+			var pp := (Vector2(float(pin[0]), float(pin[1])) + Vector2(0.5, 0.5)) * k
+			_marks.draw_line(pp, pp + Vector2(0, -16), Color.WHITE, 2.0)
+			_marks.draw_colored_polygon(PackedVector2Array([pp + Vector2(0, -16), pp + Vector2(11, -12), pp + Vector2(0, -8)]), Color("#ff6a9a"))
+			_marks.draw_string_outline(font, pp + Vector2(6, 4), str(pin[2]), HORIZONTAL_ALIGNMENT_LEFT, -1, 13, 3, Color(0.1, 0.03, 0.15))
+			_marks.draw_string(font, pp + Vector2(6, 4), str(pin[2]), HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color("#ffd6ec"))
+		var tg := Nav.tracked(wd)
+		if not tg.is_empty() and Vector2i(tg.cell).x >= 0:
+			var gp := (Vector2(tg.cell) + Vector2(0.5, 0.5)) * k
+			_marks.draw_arc(gp, 9 + 2 * sin(t * 5.0), 0, TAU, 24, Color("#ffe27a"), 2.5)
 
 
 # ---------------------------------------------------------------- chronicle & kingdoms
@@ -2923,6 +2968,25 @@ func open_jeweler(b: Dictionary) -> void:
 			open_jeweler(b), e != "")
 	var c := _button(v, "Закрити", close_overlay)
 	_show_overlay(pv[0], 0.45)
+	c.grab_focus.call_deferred()
+
+
+## Карета: швидка поїздка до відомих міст на тому ж материку.
+func open_coach(b: Dictionary) -> void:
+	var p := Player.ensure(Game.state)
+	var pv := _vbox_panel("🐎 Карета · %s" % b.name, 900)
+	var v: VBoxContainer = pv[1]
+	_info(v, "Візник смокче люльку: «Куди скажеш — туди й поїдемо. Якщо знаєш дорогу. Я — ні.» · 💰 %d" % int(p.gold), 16, Color("#ffe6b3"))
+	var routes := Nav.coach_routes(world, b)
+	if routes.is_empty():
+		_info(v, "Відомих міст поруч немає. Спершу розвідай світ (або купи мапу в картографа).", 16, Color("#ffb3b3"))
+	for r in routes:
+		var to: Dictionary = r.b
+		var row := _row(v)
+		_small_btn(row, "%s (%s) — %.1f дн. · %d 💰" % [to.name, Defs.SETTLEMENT[to.type].name, float(r.days), int(r.cost)], func():
+			_err(world.coach_to(b, to)), int(p.gold) < int(r.cost))
+	var c := _button(v, "Закрити", close_overlay)
+	_show_overlay(pv[0], 0.4)
 	c.grab_focus.call_deferred()
 
 

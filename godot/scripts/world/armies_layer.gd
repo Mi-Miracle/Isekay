@@ -99,6 +99,16 @@ func _draw() -> void:
 		_star(p, u, col)
 		if z >= 1.6:
 			labels.append([p + Vector2(0, u * 1.2), "%s (рів. %d)" % [h.name, h.lvl], 12, col, false])
+	# мітки гравця
+	for pin in Nav.st().pins:
+		var pp := (Vector2(float(pin[0]), float(pin[1])) + Vector2(0.5, 0.5)) * cell
+		if not vr.has_point(pp):
+			continue
+		var u2 := cell * 0.6 * k
+		draw_line(pp, pp + Vector2(0, -u2 * 2.0), Color.WHITE, u2 * 0.15, true)
+		draw_colored_polygon(PackedVector2Array([pp + Vector2(0, -u2 * 2.0), pp + Vector2(u2 * 1.3, -u2 * 1.6), pp + Vector2(0, -u2 * 1.2)]), Color("#ff6a9a"))
+		if z >= 0.8:
+			labels.append([pp + Vector2(0, u2 * 0.8), "📍 " + str(pin[2]), 12, Color("#ffd6ec"), false])
 	# каравани героя (туди й назад)
 	var day_f := float(Game.state.minutes) / 1440.0
 	for cv in Caravans.st().list:
