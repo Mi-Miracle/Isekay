@@ -471,7 +471,7 @@ func enter_town(b: Dictionary) -> void:
 	get_tree().root.add_child(town)
 	var done := Guild.event("visit", int(b.id))
 	for q in done:
-		hud.toast("📋 Завдання виконано: %s — здай у гільдії." % q.name, Game.C_GOLD, 5.0)
+		hud.toast("📋 Завдання виконано: %s — %s." % [q.name, "повернись до двору: %s" % q.lord_name if q.has("lord") else "здай у гільдії"], Game.C_GOLD, 5.0)
 	hud.banner(b.name, "%s · %s" % [Defs.SETTLEMENT[b.type].name, wd.realms[b.owner].full_name])
 	if not Game.selftest:
 		var lid := Bonds.roll_meet("arrive", str(b.type))
@@ -531,6 +531,21 @@ func _on_dungeon_done(st: Dictionary, dinfo: Dictionary) -> void:
 	Game.state.minutes = float(Game.state.minutes) + (30.0 if dinfo.has("colos") else 120.0 + 60.0 * st.kills / 4.0)
 	if dinfo.has("colos"):
 		_on_colos_done(st)
+		save()
+		return
+	if dinfo.has("lordduel"):
+		if st.cleared and not st.died:
+			Lords.duel_won(str(dinfo.lordduel))
+			Bonds.on_win(2.0)
+			Audio.sfx("levelup")
+			hud.banner("Поєдинок виграно!", "Чемпіон чемно вклоняється (і шукає свій зуб). Повертайся до двору по нагороду.")
+		else:
+			p.hp = maxf(float(p.hp), Player.max_hp(p) * 0.5)
+			hud.banner("Поєдинок програно", "Чемпіон великодушно подає руку. Можна спробувати ще раз — дуель нікуди не втече.")
+		if not _duel_town.is_empty():
+			var bt := _duel_town
+			_duel_town = {}
+			enter_town.call_deferred(bt)
 		save()
 		return
 	if dinfo.has("clanwar"):
@@ -641,6 +656,18 @@ func sail_to(from: Dictionary, to: Dictionary) -> String:
 	hud.banner("⛵ %s" % to.name, "Пливли %.1f дн. за %d 💰 · %s" % [res.days, res.fare, wd.realms[to.owner].full_name])
 	enter_town.call_deferred(to)
 	return ""
+
+
+var _duel_town: Dictionary = {}
+
+
+## Лорди: поєдинок із чемпіоном для доручення «Честь роду», після бою — назад у місто.
+func start_lord_duel(q: Dictionary, b: Dictionary) -> void:
+	var p := Player.ensure(Game.state)
+	p.hp = maxf(float(p.hp), Player.max_hp(p) * 0.5)
+	_duel_town = b
+	Audio.sfx("roar", -4.0, 0.0)
+	enter_dungeon(Lords.duel_info(q, wd.world_seed))
 
 
 ## Клан: виклик гільдії-суперниці на бій.
@@ -1633,6 +1660,52 @@ func _selftest() -> void:
 		"%s · рівень %d · загін %d → %d · %s · війна: %s" % [ferr, lvl_c, pc0, Bonds.party_cap(), res_lines, "перемога" if won_war else "поразка/ні"])
 	await tree.create_timer(0.6).timeout
 	Selftest.shot(self, "46_after_clan_war")
+	# лорди
+	var lds := Lords.at(wd, pol, cap_b)
+	var king: Dictionary = lds[0]
+	var baron: Dictionary = lds[lds.size() - 1]
+	hud.open_settlement(cap_b)
+	await tree.create_timer(0.4).timeout
+	Selftest.shot(self, "47_court")
+	var talk_l := Lords.talk(baron, wd)
+	var gres := Lords.gift(baron, 200)
+	var hq := Lords.make_quest(baron, wd, pol)
+	var aerr := Lords.accept(baron, hq)
+	var lq: Dictionary = Lords.active()[0] if not Lords.active().is_empty() else {}
+	lq.type = "hunt"
+	lq.target = "slime"
+	lq.need = 2
+	Guild.event("kill", "slime")
+	Guild.event("kill", "slime")
+	var tl := Lords.turn_in(baron)
+	Lords.add_rel(king.key, 80)
+	var dq := Lords.make_quest(king, wd, pol)
+	dq.merge({"type": "duel", "target": "Сер Ягідка", "name": "👑 Честь роду: поєдинок — Сер Ягідка", "desc": "Мій чемпіон Сер Ягідка нудьгує.", "lvl": int(plc.lvl)}, true)
+	Lords.st().q.erase(king.key)
+	var derr := Lords.accept(king, dq)
+	hud.open_lord(cap_b, king.key, "Тестова репліка короля.")
+	await tree.create_timer(0.5).timeout
+	Selftest.shot(self, "48_lord")
+	hud.close_overlay()
+	plc.hp = Player.max_hp(plc)
+	start_lord_duel(Lords.active()[0], cap_b)
+	await tree.create_timer(1.0).timeout
+	var t_du := Time.get_ticks_msec() + 60000
+	while dungeon != null and Time.get_ticks_msec() < t_du:
+		dungeon.invuln = 9999.0
+		dungeon.shield_t = 9999.0
+		await tree.process_frame
+	await tree.create_timer(1.0).timeout
+	hud.close_overlay()
+	var duel_ok := Lords.ready(Lords.active()[0])
+	var tl2 := Lords.turn_in(king)
+	Lords.st().done = maxi(int(Lords.st().done), 3)
+	var kres := Lords.knight(king)
+	Selftest.step("lords", lds.size() >= 2 and king.kind == "king" and talk_l != "" and not gres.has("err") and aerr == "" and not tl.is_empty() and derr == "" and duel_ok and not tl2.is_empty() and not kres.is_empty(),
+		"двір: %s · доручення: %s · поєдинок: %s · лицарство: %s" % [lds.map(func(x): return Lords.full(x)), tl, str(duel_ok), kres])
+	if town != null:
+		town.leave()
+		await tree.process_frame
 	if OS.get_environment("ISEKAY_REVEALALL") == "1":
 		reveal_all()
 		var busiest: Dictionary = {}

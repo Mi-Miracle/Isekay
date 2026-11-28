@@ -420,23 +420,19 @@ func open_settlement(b: Dictionary) -> void:
 		hl.custom_minimum_size.x = 580
 		v.add_child(hl)
 	var services: Array = Defs.SETTLEMENT[b.type].services
-	if not services.is_empty():
-		var flow := HFlowContainer.new()
-		flow.add_theme_constant_override("h_separation", 8)
-		flow.add_theme_constant_override("v_separation", 8)
-		for s in services:
-			var chip := Button.new()
-			chip.text = s
-			chip.disabled = true
-			chip.tooltip_text = "Відкриється в етапі 4: міста й заклади"
-			chip.add_theme_font_size_override("font_size", 16)
-			flow.add_child(chip)
-		v.add_child(flow)
 	_trade_row(v, b, services)
-	var soon := Game.make_label("Заклади, торгівля й квести переїдуть сюди в наступних етапах.", 15, Color(1, 1, 1, 0.55))
-	soon.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	soon.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	v.add_child(soon)
+	var lords := Lords.at(wd, pol, b)
+	if not lords.is_empty():
+		var lt := Game.make_label("👑 При дворі:", 18, Game.C_GOLD, 4)
+		lt.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		v.add_child(lt)
+		var lf := _row(v)
+		for ld in lords:
+			var mark := ""
+			for q in Lords.active():
+				if q.lord == ld.key:
+					mark = " ✅" if Lords.ready(q) else " 📜"
+			_small_btn(lf, "%s · %d%s" % [Lords.full(ld), Lords.rel(ld), mark], func(): open_lord(b, ld.key))
 	var h := HBoxContainer.new()
 	h.add_theme_constant_override("separation", 10)
 	h.alignment = BoxContainer.ALIGNMENT_CENTER
@@ -2188,3 +2184,81 @@ func _clan_war(v: VBoxContainer, b: Dictionary) -> void:
 		lab.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		row.add_child(lab)
 		_small_btn(row, "⚔️ Виклик", func(): _err(world.start_clan_war(R.id)), left > 0)
+
+
+# ---------------------------------------------------------------- лорди (Двір)
+
+func open_lord(b: Dictionary, key: String, said: String = "") -> void:
+	var l: Dictionary = {}
+	for x in Lords.at(world.wd, world.pol, b):
+		if x.key == key:
+			l = x
+	if l.is_empty():
+		open_settlement(b)
+		return
+	var T: Array = Lords.trait_of(l)
+	var r := Lords.rel(l)
+	var pv := _vbox_panel(Lords.full(l), 960)
+	var v: VBoxContainer = pv[1]
+	_info(v, "%s · риса: %s — %s" % [l.domain, T[1], T[2]], 16, Color("#ffd6ec"))
+	_info(v, "Ставлення: %d (%s)" % [r, Lords.rel_name(r)], 19, Game.C_GOLD)
+	if said != "":
+		_info(v, "«%s»" % said, 18, Color.WHITE)
+	var p := Player.ensure(Game.state)
+	var r1 := _row(v)
+	_small_btn(r1, "💬 Поговорити", func(): open_lord(b, key, Lords.talk(l, world.wd)))
+	for gold in [50, 200, 1000]:
+		_small_btn(r1, "🎁 Подарунок %d 💰" % gold, func():
+			var res := Lords.gift(l, gold)
+			if not _err(res.get("err", "")):
+				Audio.sfx("coin")
+				open_lord(b, key, "Ох, яка щедрість! (ставлення +%d)" % int(res.gain) if Lords.trait_of(l)[0] != "greedy" else "*кусає монету* Справжнє! Ти мені подобаєшся. (ставлення +%d)" % int(res.gain)), int(p.gold) < gold)
+	# доручення
+	var mine: Dictionary = {}
+	for q in Lords.active():
+		if q.lord == key:
+			mine = q
+	if not mine.is_empty():
+		var have := int(p.ore.get(mine.target, 0)) if mine.type == "ore" else int(mine.have)
+		_info(v, "Твоє доручення: %s (%d/%d)\n%s" % [mine.name, mini(have, int(mine.need)), int(mine.need), mine.desc], 17, Color("#7dff9a") if Lords.ready(mine) else Color.WHITE)
+		var r2 := _row(v)
+		if Lords.ready(mine):
+			_small_btn(r2, "✅ Доповісти", func():
+				var lines := Lords.turn_in(l)
+				Audio.sfx("quest")
+				banner("Доручення виконано!", " · ".join(PackedStringArray(lines)))
+				open_lord(b, key, "Чудова робота! Я знав, що на тебе можна покластися. Ну, майже знав."))
+		elif mine.type == "duel":
+			_small_btn(r2, "⚔️ На поєдинок!", func():
+				close_overlay()
+				world.start_lord_duel(mine, b))
+		_small_btn(r2, "Відмовитись (−5 ставлення)", func():
+			Lords.drop(Lords.active().find(mine))
+			open_lord(b, key, "Хм. Розчарування — теж досвід. Для тебе."))
+	else:
+		var blk := Lords.quest_block(l)
+		if blk != "":
+			_info(v, blk, 16, Color(1, 1, 1, 0.65))
+		else:
+			var q := Lords.make_quest(l, world.wd, world.pol)
+			if not q.is_empty():
+				_info(v, "%s\n«%s»\nНагорода: %d 💰 · %d досв. · %d ⭐ · ставлення +%d" % [q.name, q.desc, int(q.gold), int(q.xp), int(q.pts), int(q.rel)], 17, Color.WHITE)
+				var r3 := _row(v)
+				_small_btn(r3, "📜 Взятися", func():
+					if not _err(Lords.accept(l, q)):
+						toast("👑 Нове доручення: %s" % q.name, Game.C_ACCENT2)
+						open_lord(b, key, "Чудово. І пам'ятай: ти працюєш на мене, а не на того графа через дорогу."))
+	if l.kind == "king":
+		var kn := Lords.can_knight(l)
+		if Lords.st().knight.has(int(l.realm)):
+			_info(v, "🗡️ Ти — лицар цього королівства.", 17, Game.C_GOLD)
+		else:
+			var r4 := _row(v)
+			_small_btn(r4, "🗡️ Просити лицарства" + ("" if kn == "" else " (%s)" % kn.trim_suffix(".")), func():
+				var lines := Lords.knight(l)
+				Audio.sfx("levelup")
+				banner("Встань, лицарю!", " · ".join(PackedStringArray(lines)))
+				open_lord(b, key, "Меч на плече, клятва на вустах... Тепер ти — наш лицар! Не загуби меч."), kn != "")
+	var c := _button(v, "Назад", func(): open_settlement(b))
+	_show_overlay(pv[0], 0.4)
+	c.grab_focus.call_deferred()

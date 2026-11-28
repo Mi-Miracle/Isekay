@@ -105,7 +105,7 @@ static func accept(q: Dictionary) -> bool:
 static func event(kind: String, target) -> Array:
 	var g := state()
 	var done: Array = []
-	for q in g.active:
+	for q in g.active + Lords.active():
 		var match_it := false
 		match kind:
 			"kill":
@@ -155,10 +155,16 @@ static func turn_in(i: int) -> String:
 
 static func tracker_text() -> String:
 	var g := state()
-	if g.active.is_empty():
+	var lq := Lords.tracker_lines()
+	if g.active.is_empty() and lq.is_empty():
 		return ""
-	var lines: Array = ["📋 Гільдія · ранг %s" % rank_name(g)]
+	var lines: Array = []
+	if not g.active.is_empty():
+		lines.append("📋 Гільдія · ранг %s" % rank_name(g))
 	for q in g.active:
 		var have := int(Player.ensure(Game.state).ore.get(q.target, 0)) if q.type == "ore" else int(q.have)
 		lines.append("%s %s (%d/%d)" % ["✅" if ready(q) else "•", q.name, mini(have, int(q.need)), int(q.need)])
+	if not lq.is_empty():
+		lines.append("👑 Доручення лордів")
+		lines.append_array(lq)
 	return "\n".join(PackedStringArray(lines))
