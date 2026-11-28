@@ -234,6 +234,19 @@
         ISK.panels2.mapContext({ clientX: 500, clientY: 400, preventDefault() {} }, g.player.location); await UI.sleep(200); await shot('52_context_menu'); document.querySelectorAll('.ctx-menu').forEach((e) => e.remove());
         g.life.call = { ctx: 'random', text: 'Привіт, герою! Я тут подумала… може, вже час помитися?', gift: 'potion_s' }; ISK.panels2.goddessPopup(); await UI.sleep(800); await shot('53_goddess_call');
       });
+      await step('v51_wasd', async () => {
+        const g = G4(); const from = g.player.location; UI.fastTravel = true; const sp0 = UI.timeSpeed;
+        const ev = (type, code) => window.dispatchEvent(new KeyboardEvent(type, { code, key: code.slice(3).toLowerCase() }));
+        let moved = false;
+        for (const code of ['KeyD', 'KeyA', 'KeyS', 'KeyW']) {
+          ev('keydown', code); for (let i = 0; i < 6 && !UI.travelling; i++) await UI.sleep(50); ev('keyup', code);
+          for (let i = 0; i < 200 && (UI.travelling || UI.walking); i++) { document.querySelector('.modal .btn.primary')?.click(); await UI.sleep(100); }
+          if (g.player.location !== from) { moved = true; break; }
+        }
+        UI.fastTravel = false; UI.setSpeed(sp0); UI.closeAll(); if (UI.inCombat) { const c = document.querySelector('.acombat,.combat'); if (c) c.remove(); UI.inCombat = false; }
+        if (!moved) errors.push('wasd: hero did not move from ' + from);
+        console.log('WASD moved', from, '->', g.player.location); await shot('56_wasd_walk');
+      });
       await step('v4_combat', async () => {
         const pr = ISK.combatUI.run([ISK.combat.makeEnemy('orc', 14), ISK.combat.makeEnemy('skeleton', 14)], { biome: 'plains', turnBased: true }); await UI.sleep(2000); await shot('54_combat_v4');
         globalThis.ISK_AUTOFIGHT = true; globalThis.ISK_AUTOPLAY = 1;

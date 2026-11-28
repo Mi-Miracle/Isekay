@@ -190,11 +190,11 @@
   function draw() {
     const g = R.ctx, G = R.G; if (!g || !R.base) return; const w = G.world;
     R.t++;
-    // WASD / arrows pan
+    // стрілки — камера (WASD тепер водить героя, див. ui.js walkDir)
     if (R.keys.size) {
       const sp = 14 / R.cam.z;
-      if (R.keys.has('KeyW') || R.keys.has('ArrowUp')) R.cam.y -= sp; if (R.keys.has('KeyS') || R.keys.has('ArrowDown')) R.cam.y += sp;
-      if (R.keys.has('KeyA') || R.keys.has('ArrowLeft')) R.cam.x -= sp; if (R.keys.has('KeyD') || R.keys.has('ArrowRight')) R.cam.x += sp;
+      if (R.keys.has('ArrowUp')) R.cam.y -= sp; if (R.keys.has('ArrowDown')) R.cam.y += sp;
+      if (R.keys.has('ArrowLeft')) R.cam.x -= sp; if (R.keys.has('ArrowRight')) R.cam.x += sp;
       if (R.keys.has('KeyQ')) R.cam.z = Math.max(0.22, R.cam.z * 0.98); if (R.keys.has('KeyE')) R.cam.z = Math.min(4, R.cam.z * 1.02);
       clampCam();
     }

@@ -54,12 +54,22 @@
     whiteCache.set(cv, w); return w;
   }
 
+  // hp — множник здоров'я ворогів, dmg — їхньої шкоди, aggr — агресії (швидкість, частота атак, коротший замах)
+  const ARENA_DIFF = {
+    easy: { hp: 1.4, dmg: 1.0, aggr: 0.9 },
+    normal: { hp: 1.9, dmg: 1.4, aggr: 1.25 },
+    hard: { hp: 2.2, dmg: 1.7, aggr: 1.45 },
+    hell: { hp: 2.6, dmg: 2.0, aggr: 1.7 },
+  };
+
   function run(enemies, opts = {}) {
     return new Promise((resolve) => {
       const G = UI().G; const p = G.player;
       UI().inCombat = true; A().setMood(enemies.some((e) => e.boss) ? 'boss' : 'battle'); p.stat.battles++;
       // у реальному часі б'єш частіше, ніж у покроковому бою, тож на арені вороги міцніші
-      for (const e of enemies) if (!e._arena) { e._arena = true; const k = e.boss ? 1.4 : 1.6; e.hp = Math.round(e.hp * k); e.maxHp = Math.round(e.maxHp * k); }
+      // v5.1: окреме налаштування арени за складністю — вороги міцніші, б'ють сильніше й частіше
+      const AR = ARENA_DIFF[ISK.difficulty] || ARENA_DIFF.normal;
+      for (const e of enemies) if (!e._arena) { e._arena = true; const k = AR.hp * (e.boss ? 0.85 : 1); e.hp = Math.round(e.hp * k); e.maxHp = Math.round(e.maxHp * k); }
       const b = C().startBattle(p, enemies, opts);
       let d = PL().derived(p);
       const bot = !!globalThis.ISK_ACTIONBOT;
@@ -202,8 +212,8 @@
           if (P.st === 'roll' && P.t > 0.16 && !P.perfect) { P.perfect = true; slow = 0.55; P.sta = Math.min(100, P.sta + 30); b.limit = Math.min(100, b.limit + 10); floater(P.x, P.y - 40, DODGE_LINES[Math.floor(Math.random() * 4)], '#7cf0ff', 18, 0.9); A().play('magic'); }
           return 'dodge';
         }
-        let dmg = Math.max(1, Math.round(C().mitig(raw, d.def, false) * rnd(0.9, 1.1)));
-        p.hp = Math.max(0, p.hp - dmg); P.inv = 0.55; P.flash = 0.15; P.hurtT = 0.22; flashScr = 0.18; flashCol = '#ff3040';
+        let dmg = Math.max(1, Math.round(C().mitig(raw * AR.dmg, d.def, false) * rnd(0.9, 1.1)));
+        p.hp = Math.max(0, p.hp - dmg); P.inv = 0.38; P.flash = 0.15; P.hurtT = 0.22; flashScr = 0.18; flashCol = '#ff3040';
         if (src) { const a = Math.atan2(P.y - src.y, P.x - src.x); P.kx = Math.cos(a) * 260; P.ky = Math.sin(a) * 260; }
         if (P.st !== 'roll') { P.st = 'idle'; P.t = 0; }
         floater(P.x, P.y - 42, '-' + dmg, '#ff5a6a', 22); burst(P.x, P.y, '#ff4050', 10, 220); kick(0.07, 8); A().play('hurt');
@@ -304,7 +314,7 @@
         if (potionCd > 0) return;
         const id = ['potion_l', 'potion_m', 'potion_s', 'elixir'].find((k) => PL().hasItem(p, k) && PL().item(k) && PL().item(k).use && PL().item(k).use.hp);
         if (!id) { floater(P.x, P.y - 40, 'Нема зілля 😭', '#aaa', 14, 0.7); A().play('error'); return; }
-        PL().removeItem(p, id); const before = p.hp; p.hp = Math.min(d.maxHp, p.hp + PL().item(id).use.hp); potionCd = 4;
+        PL().removeItem(p, id); const before = p.hp; p.hp = Math.min(d.maxHp, p.hp + PL().item(id).use.hp); potionCd = 7;
         floater(P.x, P.y - 44, `${PL().item(id).icon} +${p.hp - before}`, '#6af0a0', 20); burst(P.x, P.y, '#6af0a0', 14); A().play('heal');
       }
       function moveVec() {
@@ -323,7 +333,7 @@
           const pat = pats[x.pat++ % pats.length];
           if (pat === 'summon' && E.filter((q) => q.mini && q.e.hp > 0).length >= 2) return startAttack(x);
           x.kind = pat;
-          x.t = x.tw = (pat === 'ring' ? 0.8 : pat === 'charge' ? 0.75 : pat === 'summon' ? 0.9 : 0.85) * pm;
+          x.t = x.tw = (pat === 'ring' ? 0.8 : pat === 'charge' ? 0.75 : pat === 'summon' ? 0.9 : 0.85) * pm / Math.sqrt(AR.aggr);
           if (pat === 'cone') x.tele = { type: 'cone', r: 170, half: 1.05 };
           else if (pat === 'slam' || pat === 'slam3') { x.tele = { type: 'circle', cx: P.x, cy: P.y, r: 95 }; x.slams = pat === 'slam3' ? 2 : 0; }
           else if (pat === 'charge') x.tele = { type: 'line', len: 380, w: 56 };
@@ -331,7 +341,7 @@
           else x.tele = { type: 'circle', cx: x.x, cy: x.y, r: 50, ring: true };
           return;
         }
-        x.kind = x.arch; x.t = x.tw = A0.wind * (x.e.elite ? 0.85 : 1);
+        x.kind = x.arch; x.t = x.tw = A0.wind * (x.e.elite ? 0.85 : 1) / Math.sqrt(AR.aggr) * (x.enraged ? 0.85 : 1);
         if (x.arch === 'melee') x.tele = { type: 'cone', r: 82, half: 0.75 };
         else if (x.arch === 'brute') x.tele = { type: 'circle', cx: x.x, cy: x.y, r: 105 };
         else if (x.arch === 'charger') x.tele = { type: 'line', len: 260, w: 40 };
@@ -343,14 +353,19 @@
         x.st = 'active'; x.t = x.kind === 'charge' || x.kind === 'charger' ? 0.38 : A0.act; x.didHit = false;
         const T = x.tele;
         const tryHit = (inside, o) => { if (!inside) return; const r = hurtPlayer(raw * (o || 1), x); if (r === 'parry') parried(x); };
-        if (T && T.type === 'cone') { tryHit(dist(P, x) < T.r + P.r && angDiff(Math.atan2(P.y - x.y, P.x - x.x), x.aim) < T.half); rings.push({ x: x.x, y: x.y, a: x.aim, half: T.half, r: T.r, life: 0.15, max: 0.15, col: '#ff5060' }); A().play('miss'); }
+        if (T && T.type === 'cone') {
+          tryHit(dist(P, x) < T.r + P.r && angDiff(Math.atan2(P.y - x.y, P.x - x.x), x.aim) < T.half); rings.push({ x: x.x, y: x.y, a: x.aim, half: T.half, r: T.r, life: 0.15, max: 0.15, col: '#ff5060' }); A().play('miss');
+          // еліта й розлючені б'ють подвійним замахом — не розслабляйся після першого
+          if (x.arch === 'melee' && !x.followUp && (x.e.elite || x.enraged || Math.random() < 0.3 * AR.aggr)) { x.followUp = true; x.st = 'windup'; x.t = x.tw = 0.32; x.aim = Math.atan2(P.y - x.y, P.x - x.x); x.tele = { type: 'cone', r: 92, half: 0.8 }; return; }
+          x.followUp = false;
+        }
         else if (T && T.type === 'circle' && !T.ring) {
           if (x.kind === 'slime') { x.x = T.cx; x.y = T.cy; }
           tryHit(Math.hypot(P.x - T.cx, P.y - T.cy) < T.r + P.r * 0.5); rings.push({ x: T.cx, y: T.cy, a: 0, half: Math.PI, r: T.r, life: 0.25, max: 0.25, col: '#ff8060', fill: true }); burst(T.cx, T.cy, '#c8a070', 16, 260); kick(0.03, x.e.boss ? 10 : 6); A().play('hurt');
           if (x.slams > 0) { x.slams--; x.st = 'windup'; x.t = x.tw = 0.45; x.tele = { type: 'circle', cx: P.x, cy: P.y, r: 95 }; return; }
         }
         else if (T && T.type === 'line' && !T.thin) { x.dash = { vx: Math.cos(x.aim) * (T.len / 0.38), vy: Math.sin(x.aim) * (T.len / 0.38), raw }; A().play('step'); }
-        else if (T && T.thin) { proj.push({ x: x.x, y: x.y, vx: Math.cos(x.aim) * 330, vy: Math.sin(x.aim) * 330, r: 8, side: 'enemy', dmg: raw, life: 2.2, col: '#ff6a9a', src: x }); A().play('magic'); }
+        else if (T && T.thin) { const n = x.e.elite || x.enraged ? 3 : 1; for (let i = 0; i < n; i++) { const a = x.aim + (i - (n - 1) / 2) * 0.22; proj.push({ x: x.x, y: x.y, vx: Math.cos(a) * 360, vy: Math.sin(a) * 360, r: 8, side: 'enemy', dmg: raw, life: 2.2, col: '#ff6a9a', src: x }); } A().play('magic'); }
         else if (x.kind === 'ring') { const n = x.phase > 1 ? 18 : 12; for (let i = 0; i < n; i++) { const a = (i / n) * 6.283 + rnd(0, 0.2); proj.push({ x: x.x, y: x.y, vx: Math.cos(a) * 230, vy: Math.sin(a) * 230, r: 9, side: 'enemy', dmg: raw * 0.6, life: 3, col: '#ff4070', src: x }); } A().play('magic'); kick(0.02, 6); }
         else if (x.kind === 'summon') { const key = ['goblin', 'skeleton', 'imp', 'slime'][Math.floor(Math.random() * 4)]; for (let i = 0; i < 2; i++) { const m = C().makeEnemy(key, Math.max(1, x.e.lvl - 4)); m.maxHp = Math.round(m.maxHp * 0.45); m.hp = m.maxHp; m.name = 'Прислужник'; const n = addEnemy(m, x.x + (i ? 60 : -60), x.y + 40, true); n.t = 0.6; burst(n.x, n.y, '#a070ff', 16); } floater(x.x, x.y - 70, '«Прислужники, до мене!»', '#ff9aa8', 15, 1.2); }
         x.tele = null;
@@ -364,8 +379,9 @@
           x.phase = 2; x.speedMul = 1.3; x.st = 'stun'; x.stun = 1.2; x.tele = null; x.e.broken = 0; x.e.shield = x.e.shieldMax; x.brokenT = 0;
           UI().cutin('ФАЗА 2', BOSS_LINES[Math.floor(Math.random() * BOSS_LINES.length)], '#ff3050'); flashScr = 0.4; flashCol = '#ff2040'; kick(0.2, 14); A().play('war');
         }
+        if (!x.enraged && !x.mini && !x.e.boss && enemies.length > 1 && !E.some((q) => q !== x && q.e.hp > 0)) { x.enraged = true; floater(x.x, x.y - x.size * 0.7, '😡 ЛЮТЬ!', '#ff5050', 16, 1); flashScr = 0.12; flashCol = '#ff2020'; }
         if (x.st === 'stun') { if ((x.stun -= dt) <= 0) { x.st = 'idle'; x.t = 0.4; } return; }
-        const dx = P.x - x.x, dy = P.y - x.y, dd = Math.hypot(dx, dy) || 1; const A0 = x.A; const spd = A0.spd * x.speedMul;
+        const dx = P.x - x.x, dy = P.y - x.y, dd = Math.hypot(dx, dy) || 1; const A0 = x.A; const spd = A0.spd * x.speedMul * (0.8 + 0.2 * AR.aggr) * (x.enraged ? 1.25 : 1);
         if (x.st === 'idle' || x.st === 'chase') {
           x.st = 'chase'; x.t -= dt;
           if (x.arch === 'ranged') { const want = dd < 200 ? -1 : dd > 300 ? 1 : 0; const side = Math.sin(time * 1.3 + x.r) * 0.6; x.x += (dx / dd * want - dy / dd * side) * spd * dt; x.y += (dy / dd * want + dx / dd * side) * spd * dt; }
@@ -376,13 +392,13 @@
           if (x.t <= 0 && dd < A0.range + 20 && !over) startAttack(x);
         } else if (x.st === 'windup') {
           x.t -= dt;
-          if (x.tele && (x.tele.type === 'cone' || x.tele.type === 'line') && x.t > x.tw * 0.45) x.aim = Math.atan2(P.y - x.y, P.x - x.x); // доводка прицілу на початку замаху
+          if (x.tele && (x.tele.type === 'cone' || x.tele.type === 'line') && x.t > x.tw * 0.3) x.aim = Math.atan2(P.y - x.y, P.x - x.x); // доводка прицілу на початку замаху
           if (x.t <= 0) activate(x);
         } else if (x.st === 'active') {
           x.t -= dt;
           if (x.dash) { x.x += x.dash.vx * dt; x.y += x.dash.vy * dt; if (!x.didHit && dist(P, x) < x.r + P.r + 4) { x.didHit = true; const r = hurtPlayer(x.dash.raw, x); if (r === 'parry') { parried(x); x.dash = null; } } }
-          if (x.t <= 0) { x.dash = null; x.st = 'recover'; x.t = A0.rec * (x.phase > 1 ? 0.75 : 1); }
-        } else if (x.st === 'recover') { x.t -= dt; if (x.t <= 0) { x.st = 'chase'; x.t = A0.cd * rnd(0.7, 1.3) * (x.phase > 1 ? 0.7 : 1); } }
+          if (x.t <= 0) { x.dash = null; x.st = 'recover'; x.t = A0.rec * (x.phase > 1 ? 0.75 : 1) / AR.aggr; }
+        } else if (x.st === 'recover') { x.t -= dt; if (x.t <= 0) { x.st = 'chase'; x.t = A0.cd * rnd(0.6, 1.2) * (x.phase > 1 ? 0.7 : 1) / AR.aggr * (x.enraged ? 0.7 : 1); } }
         x.x = clamp(x.x, PAD + x.r, W - PAD - x.r); x.y = clamp(x.y, PAD + x.r, H - PAD - x.r);
       }
 
@@ -547,7 +563,7 @@
         bar(hx, hy + 41, 250, 6, b.limit / 100, b.limit >= 100 ? (Math.floor(time * 6) % 2 ? '#ff7eb6' : '#fff') : '#ff7eb6');
         g.font = FONT(9, 700); g.fillStyle = '#ffb8dc'; g.fillText(b.limit >= 100 ? 'УЛЬТА ГОТОВА — тисни F!' : 'ульта', hx + 4, hy + 47);
         // навички
-        const slots = [...skills.map((s, i) => ({ key: SKEYS[i], icon: s.icon, cd: cds[s.id] || 0, max: 1.6 + (s.cd || 0) * 1.6, off: p.mp < s.mp })), { key: 'F', icon: '🌟', cd: 0, off: b.limit < 100 }, { key: 'H', icon: '🧪', cd: potionCd, max: 4, off: false }];
+        const slots = [...skills.map((s, i) => ({ key: SKEYS[i], icon: s.icon, cd: cds[s.id] || 0, max: 1.6 + (s.cd || 0) * 1.6, off: p.mp < s.mp })), { key: 'F', icon: '🌟', cd: 0, off: b.limit < 100 }, { key: 'H', icon: '🧪', cd: potionCd, max: 7, off: false }];
         slots.forEach((s, i) => {
           const x = W / 2 - slots.length * 27 + i * 54, y = H - 58;
           g.fillStyle = 'rgba(8,10,22,.8)'; g.fillRect(x, y, 46, 46); g.strokeStyle = s.off ? '#444' : '#8a7cff'; g.lineWidth = 2; g.strokeRect(x, y, 46, 46);

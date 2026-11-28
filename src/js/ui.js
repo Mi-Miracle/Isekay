@@ -274,6 +274,34 @@
     }
     checkMainQuest(); refresh();
   }
+  // ---- v5.1: WASD — герой іде до сусіднього поселення в обраному напрямку (затиснув — іде далі) ----
+  const WASD = { KeyW: [0, -1], KeyS: [0, 1], KeyA: [-1, 0], KeyD: [1, 0] };
+  function heldDir() {
+    const R = ISK.render.R; let x = 0, y = 0;
+    for (const [k, v] of Object.entries(WASD)) if (R.keys.has(k)) { x += v[0]; y += v[1]; }
+    const l = Math.hypot(x, y); return l ? { x: x / l, y: y / l } : null;
+  }
+  function neighborToward(v) {
+    const G = UI.G, w = G.world, from = G.player.location, a = ISK.world.nodeXY(w, from); let best = null, bs = 0.55;
+    for (const e of w.graph[from] || []) {
+      const b = ISK.world.nodeXY(w, e.to), dx = b.x - a.x, dy = b.y - a.y, l = Math.hypot(dx, dy) || 1;
+      const sc = (dx * v.x + dy * v.y) / l - (e.kind === 'sea' ? 0.25 : 0) - l / 400; // суша й ближчі — в пріоритеті
+      if (sc > bs) { bs = sc; best = e.to; }
+    }
+    return best;
+  }
+  async function walkDir() {
+    if (UI.travelling || UI.walking) return; UI.walking = true;
+    try {
+      for (let i = 0; i < 40; i++) {
+        const v = heldDir(); if (!v) break;
+        const to = neighborToward(v); if (!to) { if (!i) toast('🧭 У той бік доріг нема. Хіба що вплав… без корабля — ні.', ''); break; }
+        await startTravel(to); if (UI.G.player.location !== to || UI.inCombat) break;
+        await sleep(60);
+      }
+    } finally { UI.walking = false; }
+  }
+
   function endTravel() { UI.travelling = false; const R = ISK.render.R; R.travel = null; R.route = null; R.selected = null; $('#travel-bar').classList.add('hidden'); $('#location-panel').classList.remove('hidden'); refresh(); }
 
   async function handleEncounter(enc) {
@@ -364,7 +392,8 @@
     const gameActive = () => UI.G && $('#screen-game').classList.contains('active') && !UI.inCombat && !UI.inMinigame && !UI.inDungeon;
     window.addEventListener('keydown', (e) => {
       if (!gameActive() || e.target.tagName === 'INPUT') return;
-      if (['KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyQ', 'KeyE', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code) && !UI.modalStack.length) { R.keys.add(e.code); e.preventDefault(); return; }
+      if (WASD[e.code] && !UI.modalStack.length) { R.keys.add(e.code); e.preventDefault(); if (!e.repeat) walkDir(); return; }
+      if (['KeyQ', 'KeyE', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code) && !UI.modalStack.length) { R.keys.add(e.code); e.preventDefault(); return; }
       if (e.key === 'Escape') { if (!closeTop()) ISK.panels.open('system'); return; }
       if (UI.modalStack.length) return;
       const byCode = { KeyC: 'character', KeyI: 'inventory', KeyK: 'skills', KeyP: 'professions', KeyJ: 'quests', KeyR: 'realms', KeyH: 'chronicle', KeyT: 'party', KeyY: 'achievements' };
