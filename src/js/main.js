@@ -268,6 +268,30 @@
         const pr = ISK.combatUI.run(es, { biome: 'forest', noDeath: true }); await UI.sleep(2400); await shot('77_arena_roles');
         ISK.actionCombat._live && ISK.actionCombat._live.finish('flee'); await pr; UI.closeAll();
       });
+      await step('v54_depths', async () => {
+        const g = G4(); const p = g.player; UI.closeAll(); const DP = ISK.depths;
+        p.hp = ISK.player.maxHp(p); p.level = Math.max(p.level, 20);
+        const did = g.world.dungeons.findIndex((d) => !d.final); ISK.game.arrive(g, 'd' + ':' + did); UI.refresh(); await UI.sleep(300); await shot('90_dungeon_depths_btn');
+        const en = ISK.depthsUI.enter('d' + did); await UI.sleep(150); document.querySelector('.modal .btn.primary')?.click(); await en; await UI.sleep(400);
+        if (!ISK.depthsUI.isOpen()) errors.push('depths did not open');
+        const R = g.depth; for (let i = 0; i < 12; i++) await ISK.depthsUI.act(1, 0); await UI.sleep(300); await shot('91_depths_level');
+        // бій з Вартовим через бота
+        globalThis.ISK_ACTIONBOT = true; const guard = R.L.mobs.find((m) => m.mini); guard.lvl = 1; p.hp = ISK.player.maxHp(p); p.mp = 999;
+        R.L.mobs = R.L.mobs.filter((m) => m === guard); const near = [1, -1, DP.MW, -DP.MW].map((k) => guard.cell + k).find((c) => R.L.t[c] === DP.T.FLOOR && c !== R.L.stairs);
+        R.pos = near; DP.reveal(R); const d = guard.cell - near; const fp = ISK.depthsUI.act(d === 1 ? 1 : d === -1 ? -1 : 0, d === DP.MW ? 1 : d === -DP.MW ? -1 : 0);
+        let fdone = false; fp.then(() => { fdone = true; }); for (let i = 0; i < 900 && !fdone; i++) { if (!document.querySelector('.acombat')) document.querySelector('.modal .btn.primary, .modal .btn')?.click(); await UI.sleep(100); } if (!fdone) { errors.push('depths: guard fight did not finish'); UI.closeAll(); }
+        for (let i = 0; i < 20 && document.querySelector('.modal'); i++) { document.querySelector('.modal .btn.primary')?.click(); await UI.sleep(100); }
+        await shot('92_depths_after_guard'); if (g.depth && g.depth.L.sealed) errors.push('guard not defeated / still sealed');
+        if (g.depth) { DP.goDown(g, 10); ISK.depthsUI.refresh(); await UI.sleep(300); await shot('93_depths_boss_level'); }
+        ISK.depthsUI.close(); globalThis.ISK_ACTIONBOT = false;
+        const rid = g.world.rnodes.findIndex((n) => ISK.data.RESOURCE_SITES[n.key].prof === 'mining'); ISK.game.arrive(g, 'r:' + rid); UI.refresh();
+        const em = ISK.depthsUI.enter('r' + rid); await UI.sleep(150); document.querySelector('.modal .btn.primary')?.click(); await em; await UI.sleep(300);
+        const M = g.depth; const v = M.L.objs.find((o) => o.type === 'vein'); M.L.mobs = []; for (let i = 0; i < M.L.t.length; i++) M.L.seen[i] = 1;
+        const nv = [1, -1, DP.MW, -DP.MW].map((k) => v.cell + k).find((c) => M.L.t[c] === DP.T.FLOOR); M.pos = nv; DP.reveal(M); const before = p.inventory[v.ore] || 0;
+        const dv = v.cell - nv; await ISK.depthsUI.act(dv === 1 ? 1 : dv === -1 ? -1 : 0, dv === DP.MW ? 1 : dv === -DP.MW ? -1 : 0); await UI.sleep(300);
+        if ((p.inventory[v.ore] || 0) <= before) errors.push('mining gave no ore'); await shot('94_mine');
+        ISK.depthsUI.close();
+      });
       await step('v53_nav', async () => {
         const g = G4(); const p = g.player; UI.closeAll(); const home = 'b:' + g.world.startBarony; ISK.game.revealAll(g, 2);
         if (p.location !== home) { ISK.game.arrive(g, home); UI.refresh(); }

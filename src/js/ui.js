@@ -165,6 +165,7 @@
       el.appendChild(h('div', { class: 'kv' }, h('div', { class: 'k' }, 'Запас'), h('div', null, `${'🟩'.repeat(left)}${'⬛'.repeat(Math.max(0, Rn.rich - left))} ${left}/${Rn.rich}`), h('div', { class: 'k' }, 'Відновлення'), h('div', null, '+1 кожні 3 дні')));
       const acts = h('div', { class: 'svc-grid', style: { marginTop: '8px' } });
       acts.appendChild(h('div', { class: 'svc' + (left ? ' hl' : ' locked'), onclick: () => (left ? ISK.panels.gatherNode(Rn.id) : toast('Виснажено. Повертайся за кілька днів.', 'bad')) }, h('span', { class: 'i' }, S2.icon), S2.verb || 'Збирати'));
+      if (ISK.depths && ISK.depths.canMine(G, Rn.id)) { const best = (ISK.depths.progress(p)['r' + Rn.id] || { best: 0 }).best; acts.appendChild(h('div', { class: 'svc hl', title: 'Окрема мапа печер: підходь до рудних жил і копай. Глибше — краща руда. Монстри з\'являються самі.', onclick: () => ISK.depthsUI.enter('r' + Rn.id) }, h('span', { class: 'i' }, '🕳️'), `Спуститися в шахту${best ? ` (до ${best + 1})` : ''}`)); }
       acts.appendChild(h('div', { class: 'svc', onclick: () => ISK.panels.explore() }, h('span', { class: 'i' }, '🌲'), 'Полювати'));
       acts.appendChild(h('div', { class: 'svc', onclick: () => ISK.panels.campfire() }, h('span', { class: 'i' }, '🔥'), 'Табір'));
       acts.appendChild(h('div', { class: 'svc', onclick: () => startTravel('b:' + hr.B.id) }, h('span', { class: 'i' }, '🏘️'), 'Назад до ' + hr.B.name));
@@ -178,6 +179,7 @@
       if (Dg.artifact && !G.cleared[Dg.id]) el.appendChild(h('div', { class: 'quest main' }, `🏺 Кажуть, у глибині лежить артефакт: ${PL().item(Dg.artifact).name}`));
       const canEnter = (!Dg.final || p.relics >= 3) && seasonOk;
       el.appendChild(h('div', { class: 'row', style: { marginTop: '10px' } }, h('button', { class: 'btn primary', disabled: !canEnter, onclick: () => ISK.dungeonUI.enter(Dg.id) }, Dg.final ? '🌋 Увійти до Цитаделі' : '⚔️ Увійти в підземелля'), !canEnter ? h('span', { class: 'muted' }, seasonOk ? 'Печать: потрібні 3 Осколки' : 'Не сезон') : null));
+      if (ISK.depths && !Dg.final) { const best = (ISK.depths.progress(p)['d' + Dg.id] || { best: 0 }).best; el.appendChild(h('div', { class: 'card', style: { marginTop: '8px' } }, h('div', { class: 'gold' }, `🕳️ Глибини: ${ISK.depths.MAX_DEPTH} рівнів`), h('div', { class: 'muted', style: { fontSize: '13px' } }, 'Окрема мапа з туманом війни. На кожному рівні Вартовий стереже сходи, кожен 10-й — бос і контрольна точка.' + (best ? ` Твій рекорд: ${best}.` : '')), h('button', { class: 'btn', style: { marginTop: '6px', width: '100%' }, onclick: () => ISK.depthsUI.enter('d' + Dg.id) }, best ? `🕳️ У Глибини (рекорд ${best})` : '🕳️ Спуститися в Глибини'))); }
     }
   }
 

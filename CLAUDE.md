@@ -13,10 +13,10 @@
 ## Запуск і перевірка
 ```bash
 npm ci
-npm test                       # node:test, test/world.test.js — швидко, запускати завжди
+npm test                       # node:test, test/*.test.js — швидко, запускати завжди
 npm start                      # гра
 # повний автотест у headless (Linux), скріншоти в /tmp/shots, друкує "SELFTEST REPORT {...}"
-ISEKAY_SHOTS=/tmp/shots timeout 500 xvfb-run -a -s "-screen 0 1600x900x24" npx electron . --selftest --no-sandbox --disable-gpu
+ISEKAY_SHOTS=/tmp/shots timeout 590 xvfb-run -a -s "-screen 0 1600x900x24" npx electron . --selftest --no-sandbox --disable-gpu
 ```
 Кроки автотесту — у `src/js/main.js` (функція selftest, `await step('назва', ...)`). Нову велику фічу варто додати туди кроком зі скріншотом.
 
@@ -31,8 +31,8 @@ ISEKAY_SHOTS=/tmp/shots timeout 500 xvfb-run -a -s "-screen 0 1600x900x24" npx e
 
 ## Архітектура
 Чистий JS без збирача. Кожен файл — IIFE, що кладе модуль у `globalThis.ISK`. Порядок підключення важливий — див. `<script>` у `src/index.html`:
-`rng → data → content → content2 → world → politics → heroes → player → combat → game → life → twitch → audio → music → voice → sprites → render → ui → panels → panels2 → nav → estate → combatui → actioncombat → minigames → dungeonui → intro → story → main`.
-Логіка (rng, data, content*, world, politics, heroes, player, combat, game, life) працює і в Node — її тестують без Electron.
+`rng → data → content → content2 → world → politics → heroes → player → combat → game → depths → life → twitch → audio → music → voice → sprites → render → ui → panels → panels2 → nav → estate → combatui → actioncombat → minigames → dungeonui → depthsui → intro → story → main`.
+Логіка (rng, data, content*, world, politics, heroes, player, combat, game, depths, life) працює і в Node — її тестують без Electron.
 
 | Файл | Що там |
 |---|---|
@@ -63,6 +63,8 @@ ISEKAY_SHOTS=/tmp/shots timeout 500 xvfb-run -a -s "-screen 0 1600x900x24" npx e
 | `src/js/combatui.js` | інтерфейс покрокового бою; `run()` — єдина точка входу в бій (сам обирає режим), `settle()` — спільні нагороди/поразка, `mode()/setMode()` — `localStorage.dyvo_combat` = `action`/`turn` |
 | `src/js/actioncombat.js` | v5: екшен-арена на canvas у реальному часі — рух, комбо, важкий удар, перекат, парирування, навички Q/E/R, ульта F; архетипи ворогів (`archOf`), підсвічені атаки, фази боса. `opts.turnBased` примусово вмикає старий бій; `ISK_ACTIONBOT` — бот для автотесту |
 | `src/js/minigames.js`, `dungeonui.js` | мініігри професій; проходження підземель |
+| `src/js/depths.js` | v5.4 логіка Глибин (100 рівнів) і шахт (30): тайлові мапи 44×30 (`T.WALL/FLOOR/VEIN`), туман з LOS, Вартовий запечатує сходи (`L.sealed`), бос кожні 10 рівнів, контрольні точки `p.flags.depths[key].best`, жили `mineVein`, спавн мобів у шахті. Ключі: `'d<id>'` підземелля, `'r<id>'` угіддя з `prof === 'mining'`. Стан забігу `G.depth` (не зберігається) |
+| `src/js/depthsui.js` | v5.4 екран Глибин/шахт на canvas: WASD, клік-шлях, бої, скрині, жили, вихід біля 🪜 |
 | `src/js/intro.js` | анімешна заставка на canvas |
 | `src/js/story.js` | створення персонажа, рулетка благословень, сцени з богинею |
 | `src/js/main.js` | старт, титульний екран і його приколи, selftest |
