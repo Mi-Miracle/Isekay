@@ -1,0 +1,76 @@
+name: Godot-версія «Хроніки Дивосвіту»
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'godot/**'
+      - '.github/workflows/godot.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  GODOT_VERSION: 4.7.2
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Встановити Godot і шаблони експорту
+        run: |
+          cd /tmp
+          curl -sL -o godot.zip "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip"
+          unzip -q godot.zip
+          mv "Godot_v${GODOT_VERSION}-stable_linux.x86_64" /usr/local/bin/godot
+          curl -sL -o tpl.tpz "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable/Godot_v${GODOT_VERSION}-stable_export_templates.tpz"
+          T="$HOME/.local/share/godot/export_templates/${GODOT_VERSION}.stable"
+          mkdir -p "$T"
+          unzip -oj tpl.tpz 'templates/windows_release_x86_64.exe' 'templates/windows_debug_x86_64.exe' 'templates/version.txt' -d "$T"
+          rm tpl.tpz
+          godot --version
+
+      - name: Імпорт ресурсів
+        working-directory: godot
+        run: godot --headless --path . --import || true
+
+      - name: Перевірка генератора світу
+        working-directory: godot
+        run: |
+          godot --headless --path . -s tools/gen_test.gd 2>&1 | tee /tmp/gen.log
+          grep -q "баронств" /tmp/gen.log
+          ! grep -E "SCRIPT ERROR|Parse Error" /tmp/gen.log
+
+      - name: Збірка Windows .exe
+        working-directory: godot
+        run: |
+          mkdir -p ../build-godot
+          VER=$(grep '^config/version=' project.godot | sed 's/.*="\(.*\)"/\1/')
+          echo "VER=$VER" >> $GITHUB_ENV
+          godot --headless --path . --export-release "Windows Desktop" "../build-godot/Dyvosvit-Godot-${VER}.exe"
+          ls -la ../build-godot
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Dyvosvit-Godot-Windows
+          path: build-godot/*.exe
+
+      # Окремий тег godot-v<версія> і позначка «попередній випуск» — щоб стара Electron-версія
+      # не намагалася оновитися на нову гру.
+      - name: Опублікувати попередній випуск
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="godot-v${VER}"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Випуск $TAG уже є — пропускаю."
+            exit 0
+          fi
+          gh release create "$TAG" "build-godot/Dyvosvit-Godot-${VER}.exe" \
+            --prerelease \
+            --target "${GITHUB_SHA}" \
+            --title "Хроніки Дивосвіту (Godot) ${VER}" \
+            --notes-file godot/RELEASE_NOTES.md

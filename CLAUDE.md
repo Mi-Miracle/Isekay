@@ -97,6 +97,14 @@ ISEKAY_SHOTS=/tmp/shots timeout 590 xvfb-run -a -s "-screen 0 1600x900x24" npx e
 
 - v6.0: події з вибором — `rollEncounter` → `{type:'story'}` → `handleEncounter`; у містах 10% після прибуття (`townEvent`). Колізей — будівля в `townLayout` лише для `capital`. Тести — `test/extras.test.js`, крок `v60_subclass_arena_events`.
 
+## Нова версія на Godot (папка `godot/`)
+Автор попросив переробити гру на повноцінний рушій, **залишивши стару версію**. Нова гра — Godot 4.7.2 (GDScript), аніме-2D, лежить у `godot/`, деталі й структура — `godot/README.md`. Electron-версію в корені не змінювати без прохання.
+- Етапи: 1 — каркас (меню, генерація світу, мапа з шейдером, вільний рух, туман, день/ніч, міні-мапа, збереження) ✅; 2 — ядро симуляції (політика, лорди, НПС); 3 — бої, підземелля, шахти; 4 — міста, гільдія, будинок, землі, професії; 5 — арт, музика, полірування.
+- Godot у сесії: завантажити `Godot_v4.7.2-stable_linux.x86_64.zip` з GitHub releases; шаблони експорту (1.2 ГБ) — лише для локальної збірки .exe.
+- Автотест: `ISEKAY_SHOTS=/tmp/shots xvfb-run -a -s "-screen 0 1600x900x24" godot --path godot --rendering-driver opengl3 -- --selftest` (друкує `SELFTEST REPORT`), `ISEKAY_REVEALALL=1` — ще скріншоти всієї мапи.
+- Реліз: `config/version` у `godot/project.godot` + `VERSION` у `godot/scripts/core/game.gd` + `godot/RELEASE_NOTES.md` → push у `main`. CI `.github/workflows/godot.yml` публікує **prerelease** з тегом `godot-v<версія>` (prerelease — щоб старий electron-updater їх ігнорував). `build.yml` не запускається на зміни в `godot/**`.
+- Арт від SpriteCook у сесії не завантажити: `api.spritecook.ai` не в списку дозволених доменів.
+
 ## Ідеї на майбутнє
 Таверна з картковою мініграмою; сюжетні змови лордів; власне королівство зі столицею; бестіарій з трофеями; голосування глядачів за події; нова гра+ з переродженням; сезонні фестивалі з мініграмами; щоденник героя.
 

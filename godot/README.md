@@ -1,0 +1,50 @@
+# Хроніки Дивосвіту — Godot-версія
+
+Нова версія гри на рушії **Godot 4.7** (GDScript). Стара Electron-версія — у корені репозиторію, її ніхто не чіпає.
+
+## Завантажити
+Випуски з тегом `godot-vX.Y.Z` на сторінці релізів (позначені як «попередній випуск»). Один файл `Dyvosvit-Godot-X.Y.Z.exe`, встановлювати не треба.
+
+## Керування
+| Клавіша | Дія |
+|---|---|
+| WASD / стрілки / стік | рух |
+| Shift | біг |
+| ЛКМ по мапі | іти сюди (шлях прокладається сам) |
+| Коліщатко, `+` / `-` | зум |
+| E / Enter | увійти в поселення, оглянути підземелля |
+| M | мапа світу (клік — прокласти шлях) |
+| Tab | політична мапа |
+| F5 | зберегти |
+| F10 | чіт: показати всю мапу |
+| F11 | повний екран |
+| Esc | пауза |
+
+## Розробка
+```bash
+godot --path godot                                   # відкрити/запустити
+godot --headless --path godot -s tools/gen_test.gd   # швидка перевірка генератора
+# автотест зі скріншотами (Linux):
+ISEKAY_SHOTS=/tmp/shots xvfb-run -a -s "-screen 0 1600x900x24" godot --path godot --rendering-driver opengl3 -- --selftest
+# + ISEKAY_REVEALALL=1 — додаткові скріншоти всієї мапи
+godot --headless --path godot --export-release "Windows Desktop" Dyvosvit.exe
+```
+Реліз: підняти `config/version` у `project.godot` і `VERSION` у `scripts/core/game.gd`, оновити `RELEASE_NOTES.md`, push у `main` — GitHub Actions (`.github/workflows/godot.yml`) збере `.exe` і опублікує випуск `godot-v<версія>`.
+
+## Структура
+| Файл | Що там |
+|---|---|
+| `scripts/core/game.gd` | автозавантаження `Game`: налаштування, збереження (`user://saves/slot1.json`), час, тема інтерфейсу, перевірка оновлень |
+| `scripts/core/rng.gd` | детермінований RNG (mulberry32, як у старій версії) |
+| `scripts/core/defs.gd` | довідкові дані: рельєф, культури й імена, держави, поселення, пам'ятки, підземелля |
+| `scripts/core/world_gen.gd` | генерація світу 540×370 (порт `src/js/world.js`): рельєф (FastNoiseLite), річки, баронства, королівства → герцогства → графства, дороги (AStarGrid2D), пам'ятки, підземелля, небезпека |
+| `scripts/core/world_data.gd` | дані світу + пошук шляху для героя |
+| `scripts/world/world.gd` | сцена мапи: генерація у потоці, рух героя, камера, туман, день/ніч, близькість до поселень, автотест |
+| `scripts/world/hud.gd` | інтерфейс: картка місця, годинник, міні-мапа, банери, пауза, вікна поселень/підземель, мапа світу |
+| `scripts/world/markers_layer.gd` | значки поселень/підземель і чіткі написи |
+| `scripts/world/hero.gd` | аніме-чібі герой (векторний) |
+| `shaders/terrain.gdshader` | рендер рельєфу, води, річок, кордонів |
+| `shaders/fog.gdshader`, `minimap.gdshader` | туман війни, міні-мапа |
+| `scripts/ui/main_menu.gd` | головне меню |
+
+Шрифти: Nunito і Ruslan Display (SIL OFL, `assets/fonts/OFL.txt`).
