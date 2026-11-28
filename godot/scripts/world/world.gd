@@ -472,6 +472,10 @@ func enter_town(b: Dictionary) -> void:
 		hud.toast("📋 Завдання виконано: %s — здай у гільдії." % q.name, Game.C_GOLD, 5.0)
 	hud.banner(b.name, "%s · %s" % [Defs.SETTLEMENT[b.type].name, wd.realms[b.owner].full_name])
 	if not Game.selftest:
+		var lid := Bonds.roll_meet("arrive", str(b.type))
+		if lid != "":
+			get_tree().create_timer(1.2).timeout.connect(func(): if town != null and not hud.is_modal(): hud.open_legend_meet(lid))
+			return
 		var tev := Events.on_town()
 		if not tev.is_empty():
 			get_tree().create_timer(1.5).timeout.connect(func(): if town != null and not hud.is_modal(): hud.open_event(tev))
@@ -532,6 +536,15 @@ func _on_dungeon_done(st: Dictionary, dinfo: Dictionary) -> void:
 	elif dinfo.kind == "depths":
 		var dp: Dictionary = p.get("depths", {}).get(str(int(dinfo.id)), {"best": 0, "max": 0})
 		hud.banner("Глибини: рівень %d" % int(st.get("depth", dinfo.start)), "Найглибше: %d · контрольна точка: %d. Наступного разу можна почати з рівня %d." % [int(dp.max), int(dp.best), int(dp.best) + 1])
+	elif dinfo.has("ambush") and _chapter_id != "":
+		var cid := _chapter_id
+		_chapter_id = ""
+		if st.cleared:
+			var ch := Bonds.next_chapter(cid)
+			var lines := Bonds.complete_chapter(cid)
+			hud.open_chapter_done.call_deferred(cid, ch, lines)
+		else:
+			hud.toast("%s %s: «Нічого. Спробуємо ще раз, коли будемо готові.»" % [Bonds.L(cid).icon, Bonds.L(cid).name], Color("#ffd6ec"), 5.0)
 	elif dinfo.has("ambush"):
 		if st.cleared:
 			var lines := Events.apply(_ambush_fx)
@@ -539,6 +552,12 @@ func _on_dungeon_done(st: Dictionary, dinfo: Dictionary) -> void:
 		_ambush_fx = {}
 	elif st.cleared:
 		hud.banner("Підземелля зачищено!", "%s: ворогів %d, золота %d, досвіду %d." % [dinfo.name, st.kills, st.gold, st.xp])
+	if not st.died and (st.cleared or st.kills > 0):
+		Bonds.on_win(2.0 if st.cleared else 0.5)
+		if not Game.selftest and not hud.is_modal():
+			var lid := Bonds.roll_meet("res" if dinfo.kind == "mine" else "win")
+			if lid != "":
+				get_tree().create_timer(2.0).timeout.connect(func(): if town == null and dungeon == null and not hud.is_modal(): hud.open_legend_meet(lid))
 	var ore_txt := ""
 	for k in st.ore:
 		ore_txt += " · %s ×%d" % [Player.ORES[k].name, st.ore[k]]
@@ -579,6 +598,20 @@ func sail_to(from: Dictionary, to: Dictionary) -> String:
 
 
 var _ambush_fx: Dictionary = {}
+var _chapter_id := ""
+
+
+## Бій із боса розділу історії легенди (легенда точно в загоні).
+func start_chapter_fight(id: String) -> void:
+	if not Bonds.in_party(id):
+		var pt := Bonds.party()
+		if pt.size() < Bonds.party_cap():
+			pt.append(id)
+		else:
+			pt[pt.size() - 1] = id
+	_chapter_id = id
+	_ambush_fx = {}
+	enter_dungeon(Events.ambush_info(Bonds.chapter_fight(id), wd))
 
 
 ## Бій із події: арена-засідка; fx — нагорода, яка дістанеться після перемоги.
@@ -885,6 +918,8 @@ func _unhandled_input(event: InputEvent) -> void:
 				hud.open_land({})
 			KEY_K:
 				hud.open_kingdoms()
+			KEY_U:
+				hud.open_hearts()
 			KEY_F10:
 				reveal_all()
 				hud.toast("Чіт: Люмі показала всю мапу 👀", Game.C_ACCENT)
@@ -1206,6 +1241,60 @@ func _selftest() -> void:
 	while dungeon != null:
 		await tree.process_frame
 	Selftest.step("depths", gen_ok and sealed0 and not sealed1 and on10 and best == 10, "генерація %s, печатка %s→%s, рівень 10 з босом: %s, контрольна точка %d" % [str(gen_ok), str(sealed0), str(sealed1), str(on10), best])
+	# легенди-супутники
+	Bonds.st().gender = "f"
+	pl.lvl = maxi(int(pl.lvl), 10)
+	var cand_f := Bonds.candidates("arrive", "capital")
+	Guild.state().points = maxi(int(Guild.state().points), 90)
+	Bonds.meet("ariel", true)
+	Bonds.meet("theo", false)
+	var j_err := Bonds.join("theo")
+	var tk := Bonds.talk("ariel")
+	pl.gold = int(pl.gold) + 1000
+	var gf := Bonds.gift("ariel")
+	Bonds.known("ariel").bond = 100.0
+	var atk_b := Player.atk(pl)
+	var ch_lines := Bonds.complete_chapter("ariel")
+	var atk_a := Player.atk(pl)
+	hud.open_legend_meet("nyx")
+	await tree.create_timer(0.6).timeout
+	Selftest.shot(self, "34_legend_meet")
+	hud.close_overlay()
+	Bonds.st().legends.erase("nyx")
+	hud.open_hearts()
+	await tree.create_timer(0.6).timeout
+	Selftest.shot(self, "35_hearts")
+	hud.close_overlay()
+	pl.hp = Player.max_hp(pl)
+	enter_dungeon(dungeon_info(dsel))
+	await tree.create_timer(5.0).timeout
+	var n_al: int = dungeon.allies.size() if dungeon != null else 0
+	if dungeon != null:
+		Selftest.shot(dungeon, "36_allies")
+	var a_hits: int = dungeon.ally_hits if dungeon != null else 0
+	if dungeon != null:
+		dungeon.leave(false)
+	while dungeon != null:
+		await tree.process_frame
+	Selftest.step("legends", cand_f.has("kael") and j_err == "" and float(tk.gain) == 3.0 and not gf.has("err") and atk_a > atk_b and n_al == 2 and a_hits > 0, "кандидати %d, загін %s, розмова «%s», розділ: %s, атака %d → %d, атак союзників %d" % [cand_f.size(), Bonds.party(), tk.line, ch_lines, int(atk_b), int(atk_a), a_hits])
+	Bonds.known("ariel").ch = 2
+	pl.hp = Player.max_hp(pl)
+	start_chapter_fight("ariel")
+	await tree.create_timer(0.5).timeout
+	if dungeon != null:
+		dungeon.invuln = 9999.0
+		dungeon.shield_t = 9999.0
+	var t_ch := Time.get_ticks_msec() + 45000
+	while dungeon != null and Time.get_ticks_msec() < t_ch:
+		await tree.process_frame
+	if dungeon != null:
+		dungeon.leave(false)
+		while dungeon != null:
+			await tree.process_frame
+	await tree.create_timer(0.6).timeout
+	Selftest.shot(self, "37_chapter_done")
+	hud.close_overlay()
+	Selftest.step("legend_chapter", int(Bonds.known("ariel").ch) == 3 and int(Bonds.known("ariel").sig) == 2, "розділ %d, прийом %d, бій: ворогів %d" % [int(Bonds.known("ariel").ch), int(Bonds.known("ariel").sig), int(last_dungeon.kills)])
 	await tree.create_timer(0.8).timeout
 	Selftest.shot(self, "33_after_depths")
 	# стайня й гавань

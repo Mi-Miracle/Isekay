@@ -20,6 +20,7 @@
 | I | спорядження |
 | H | мій дім (город, прибудови, ремесла) |
 | L | мої землі (будівлі, поселенці, казна) |
+| U | серця: легенди-супутники, загін, розділи історії |
 | X | сісти верхи / злізти (тварину купують у «Стайні») |
 | T | почекати день |
 | F5 | зберегти |
@@ -65,6 +66,7 @@ godot --headless --path godot --export-release "Windows Desktop" Dyvosvit.exe
 | `scripts/town/town.gd` | сцена поселення: розкладка будівель за `Defs.SETTLEMENT[type].services`, мешканці, герої, взаємодія (E → `hud.open_service`) |
 | `scripts/core/audio.gd` | автозавантаження `Audio`: `music(настрій)` з плавним переходом, `sfx(назва)`, шини Music/SFX, гучність `settings.music_vol/sfx_vol`; сам озвучує кліки кнопок, зміну золота й новий рівень; `world_mood()` — настрій за місцевістю |
 | `tools/gen_audio.py` | генератор музики (.ogg, петлі) і звуків (.wav) у `assets/audio/` — порт `src/js/music.js`; запуск `python3 godot/tools/gen_audio.py` (numpy, scipy, ffmpeg) |
+| `scripts/core/bonds.gd`, `legends_data.gd` | легенди-супутники: `roll_meet` (arrive/win/res), `meet/join/leave/talk/gift`, розділи `next_chapter/complete_chapter/chapter_fight`, `party_cap` (ранг гільдії), `ally_stats`; стан `state.bonds`, бонуси розділів — `player.perks` (додаються в `Player.gear_sum`). Союзники в бою — `Dungeon._update_allies` (слід героя `_trail`) |
 | `scripts/core/twitch.gd` | автозавантаження `Twitch`: анонімний IRC через WebSocket (`wss://irc-ws.chat.twitch.tv`), `handle_line/handle_chat` (тестуються без мережі), команди → сигнал `command(user, kind, args)` (світ виконує в `world._on_viewer`), голосування `start_vote/vote_counts/end_vote` |
 | `scripts/core/events.gd`, `events_data.gd` | події з вибором: `on_walk/on_town/pick/choose/apply`, бій-засідка `ambush_info` (одноповерхова арена, `opts.ambush` у `DungeonGen.generate`); дані перенесено з `D.STORY_EVENTS` |
 | `scripts/core/travel.gd` | стайня (`MOUNTS`, `speed_mult`, X — `toggle_ride`) і гавань (`harbors`, `routes`, `sail` з морськими подіями `SEA_EVENTS`); стан `state.travel`; `world.sail_to(from, to)` переносить героя й заходить у місто |

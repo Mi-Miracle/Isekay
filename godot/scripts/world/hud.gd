@@ -156,7 +156,7 @@ func _build_hud() -> void:
 	_prompt.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_root.add_child(_prompt)
 
-	_hints = Game.make_label("WASD — рух · Shift — біг · ЛКМ — іти сюди · E — дія · I — спорядження · H — дім · L — землі · M — мапа · Tab — держави · K — королівства · J — хроніка · X — верхи · T — чекати день · F5 — зберегти · Esc — меню", 15, Color(1, 1, 1, 0.75), 4)
+	_hints = Game.make_label("WASD — рух · Shift — біг · ЛКМ — іти сюди · E — дія · I — спорядження · H — дім · L — землі · U — серця · M — мапа · Tab — держави · K — королівства · J — хроніка · X — верхи · T — чекати день · F5 — зберегти · Esc — меню", 15, Color(1, 1, 1, 0.75), 4)
 	_hints.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
 	_hints.position = Vector2(18, -34)
 	_root.add_child(_hints)
@@ -224,7 +224,7 @@ func set_location(title: String, sub: String, info: String) -> void:
 func set_town_mode(on: bool) -> void:
 	_town_mode = on
 	_news.visible = not on and _news_box.get_child_count() > 0
-	_hints.text = "WASD — рух · ЛКМ — іти сюди · E — увійти / поговорити · I — спорядження · H — дім · L — землі · Esc або брама — вийти" if on else "WASD — рух · Shift — біг · ЛКМ — іти сюди · E — дія · I — спорядження · H — дім · L — землі · M — мапа · Tab — держави · K — королівства · J — хроніка · T — чекати день · F5 — зберегти · Esc — меню"
+	_hints.text = "WASD — рух · ЛКМ — іти сюди · E — увійти / поговорити · I — спорядження · H — дім · L — землі · U — серця · Esc або брама — вийти" if on else "WASD — рух · Shift — біг · ЛКМ — іти сюди · E — дія · I — спорядження · H — дім · L — землі · U — серця · M — мапа · Tab — держави · K — королівства · J — хроніка · T — чекати день · F5 — зберегти · Esc — меню"
 
 
 func update_news(entries: Array) -> void:
@@ -1266,6 +1266,147 @@ func _err(msg: String) -> bool:
 		toast(msg, Color("#ffb3b3"))
 		return true
 	return false
+
+
+# ---------------------------------------------------------------- легенди-супутники
+
+func _legend_head(v: VBoxContainer, id: String) -> void:
+	var X := Bonds.L(id)
+	_info(v, "%s %s — %s" % [X.icon, X.name, X.title], 22, Game.C_GOLD)
+	_info(v, "%s · %s" % [X.type, Bonds.role_name(id)], 16, Color("#ffd6ec"))
+
+
+## Сцена зустрічі з легендою: вступ і вибір — піти разом чи пізніше.
+func open_legend_meet(id: String) -> void:
+	var X := Bonds.L(id)
+	var pv := _vbox_panel("✨ Нова зустріч!", 900)
+	var v: VBoxContainer = pv[1]
+	_legend_head(v, id)
+	for line in X.intro:
+		var who := str(line.who)
+		_info(v, ("%s: %s" % [who, line.text]) if who != "Оповідач" else str(line.text), 17, Color.WHITE if who != "Оповідач" else Color(1, 1, 1, 0.7))
+	_info(v, X.bio, 15, Color(1, 1, 1, 0.55))
+	var h := _row(v)
+	var b := _small_btn(h, "🤝 Іти разом", func():
+		var err := Bonds.meet(id, true)
+		if err != "":
+			toast("%s %s: «Тоді потім!» (%s) — U, щоб змінити загін." % [X.icon, X.name, err], Color("#ffd6ec"), 5.0)
+		else:
+			toast("%s %s приєдналася до загону! U — серця й загін." % [X.icon, X.name] if X.gender == "f" else "%s %s приєднався до загону! U — серця й загін." % [X.icon, X.name], Game.C_GOLD, 5.0)
+		Audio.sfx("quest")
+		close_overlay())
+	_small_btn(h, "Може, пізніше", func():
+		Bonds.meet(id, false)
+		toast("%s %s: «Знайдеш мене, коли захочеш.» (U — серця)" % [X.icon, X.name], Color("#ffd6ec"), 4.0)
+		close_overlay())
+	_show_overlay(pv[0], 0.6)
+	Audio.sfx("magic")
+	b.grab_focus.call_deferred()
+
+
+## «Серця» (U): знайомі легенди, загін, розмови, подарунки, розділи історії.
+func open_hearts() -> void:
+	var s := Bonds.st()
+	var p := Player.ensure(Game.state)
+	var pv := _vbox_panel("💞 Серця й загін", 1040)
+	var v: VBoxContainer = pv[1]
+	_info(v, "Загін: %d/%d · 💰 %d · Ти: %s" % [s.party.size(), Bonds.party_cap(), int(p.gold), "героїня" if s.gender == "f" else "герой"], 17, Game.C_GOLD)
+	var top := _row(v)
+	_small_btn(top, "⇄ Змінити на: %s" % ("герой" if s.gender == "f" else "героїня"), func():
+		s.gender = "m" if s.gender == "f" else "f"
+		open_hearts())
+	var met: Array = s.legends.keys()
+	if met.is_empty():
+		_info(v, "Ти ще ні з ким не познайомився. Легенди трапляються в містах, після перемог і в шахтах — тримай очі відкритими!", 17, Color(1, 1, 1, 0.75))
+	var sc := ScrollContainer.new()
+	sc.custom_minimum_size = Vector2(1000, mini(520, 132 * met.size()))
+	sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	var list := VBoxContainer.new()
+	list.add_theme_constant_override("separation", 8)
+	list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	sc.add_child(list)
+	v.add_child(sc)
+	for id in met:
+		var X := Bonds.L(id)
+		var k := Bonds.known(id)
+		var t := Bonds.tier(float(k.bond))
+		var hearts := "❤".repeat(t + 1) + "🤍".repeat(3 - t)
+		var head := "%s %s — %s · %s · %s %d/100 (%s) · розділ %d/%d%s" % [X.icon, X.name, X.title, Bonds.role_name(id), hearts, int(k.bond), Bonds.TIER_NAMES[t], int(k.ch), X.chapters.size(), " · ⚔️ у загоні" if Bonds.in_party(id) else ""]
+		var hl := Game.make_label(head, 17, Color.WHITE if Bonds.in_party(id) else Color(1, 1, 1, 0.8), 3)
+		hl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		hl.custom_minimum_size.x = 960
+		list.add_child(hl)
+		var sig_l := Game.make_label("Фірмовий прийом: %s %s%s · %s" % [X.sig.icon, X.sig.name, " (посилено)" if int(k.sig) >= 2 else "", X.type], 14, Color(1, 1, 1, 0.5))
+		list.add_child(sig_l)
+		var r := HFlowContainer.new()
+		r.add_theme_constant_override("h_separation", 8)
+		list.add_child(r)
+		if Bonds.in_party(id):
+			_small_btn(r, "Відпустити з загону", func():
+				Bonds.leave(id)
+				open_hearts())
+		else:
+			_small_btn(r, "У загін", func():
+				_err(Bonds.join(id))
+				open_hearts())
+		_small_btn(r, "💬 Поговорити", func():
+			var res := Bonds.talk(id)
+			toast("%s %s: «%s»%s" % [X.icon, X.name, res.line, " (+%d ❤)" % int(res.gain) if float(res.gain) > 0 else ""], Color("#ffd6ec"), 6.0)
+			if res.has("jealous"):
+				toast("😤 %s: «%s»" % [res.jealous.name, res.jealous.text], Color("#ffb3b3"), 6.0)
+			open_hearts())
+		_small_btn(r, "🎁 Подарунок (%d 💰)" % Bonds.gift_cost(id), func():
+			var g := Bonds.gift(id)
+			if not _err(str(g.get("err", ""))):
+				toast("%s %s %s (+%d ❤)" % [X.icon, X.name, "сяє від щастя: «Звідки ти знав?!»" if g.liked else "ніяково дякує.", int(g.gain)], Color("#ffd6ec"))
+			open_hearts())
+		var ch := Bonds.next_chapter(id)
+		if not ch.is_empty():
+			var rdy := Bonds.chapter_ready(id)
+			_small_btn(r, ("📖 Розділ «%s»" % ch.title) if rdy else ("📖 «%s» — з %d ❤" % [ch.title, int(ch.bond)]), func(): open_chapter(id), not rdy)
+	var c := _button(v, "Закрити", close_overlay)
+	_show_overlay(pv[0], 0.5)
+	c.grab_focus.call_deferred()
+
+
+## Розділ історії легенди. З босом — бій-засідка; без — одразу нагорода.
+func open_chapter(id: String) -> void:
+	var X := Bonds.L(id)
+	var ch := Bonds.next_chapter(id)
+	if ch.is_empty():
+		return
+	var pv := _vbox_panel("📖 %s · %s" % [X.name, ch.title], 900)
+	var v: VBoxContainer = pv[1]
+	var texts: Array = ch.text
+	var boss: bool = ch.has("boss")
+	# з босом — показуємо зав'язку, а розв'язку після перемоги
+	for i in (1 if boss else texts.size()):
+		_info(v, texts[i], 18, Color.WHITE)
+	if boss:
+		_info(v, "⚔️ %s чекає!" % ch.boss.name, 18, Color("#ffb3b3"))
+		var b := _button(v, "⚔️ До бою разом із %s" % X.name, func(): world.start_chapter_fight(id))
+		_show_overlay(pv[0], 0.55)
+		b.grab_focus.call_deferred()
+		return
+	var lines := Bonds.complete_chapter(id)
+	_info(v, "🎁 " + " · ".join(PackedStringArray(lines)), 17, Game.C_GOLD)
+	Audio.sfx("quest")
+	var c := _button(v, "❤ Далі", open_hearts)
+	_show_overlay(pv[0], 0.55)
+	c.grab_focus.call_deferred()
+
+
+## Після перемоги над босом розділу — розв'язка й нагорода.
+func open_chapter_done(id: String, ch: Dictionary, lines: Array) -> void:
+	var X := Bonds.L(id)
+	var pv := _vbox_panel("📖 %s · %s" % [X.name, ch.title], 900)
+	var v: VBoxContainer = pv[1]
+	for i in range(1, ch.text.size()):
+		_info(v, ch.text[i], 18, Color.WHITE)
+	_info(v, "🎁 " + " · ".join(PackedStringArray(lines)), 17, Game.C_GOLD)
+	var c := _button(v, "❤ Далі", close_overlay)
+	_show_overlay(pv[0], 0.55)
+	c.grab_focus.call_deferred()
 
 
 # ---------------------------------------------------------------- події з вибором

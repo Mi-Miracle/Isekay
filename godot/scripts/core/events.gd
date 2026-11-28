@@ -163,7 +163,7 @@ static func apply(fx: Dictionary, rng: RandomNumberGenerator = null) -> Array:
 ## Інформація для бою-засідки (одноповерхова арена з ватажком поруч зі входом).
 static func ambush_info(f: Dictionary, wd: WorldData) -> Dictionary:
 	var p := Player.ensure(Game.state)
-	var F: Array = FIGHTS.get(str(f.get("key", "bandit")), FIGHTS.bandit)
+	var F: Array = f.get("arena", FIGHTS.get(str(f.get("key", "bandit")), FIGHTS.bandit))
 	var elite: bool = bool(f.get("elite", false))
 	return {"name": "Засідка: %s" % str(f.get("name", "вороги")), "kind": "dungeon", "dtype": F[0], "level": maxi(1, int(p.lvl) - 1 + int(f.get("add", 0))),
 		"floors": 1, "id": -1, "seed": wd.world_seed * 31 + today() * 977 + randi() % 1000,

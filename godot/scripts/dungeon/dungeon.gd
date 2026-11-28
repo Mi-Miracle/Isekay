@@ -51,6 +51,9 @@ var boss_ref = null
 var floor_cleared := false
 var stats := {"kills": 0, "gold": 0, "xp": 0, "ore": {}, "dmg_dealt": 0.0, "cleared": false, "died": false, "items": []}
 var bot := false               # автотест: герой воює сам
+var ally_hits := 0
+var _trail: Array = []         # слід героя (для союзників, щоб обходили стіни)
+var allies: Array = []         # легенди із загону: {id, name, icon, role, atk, sig, sig_mult, pos, cd, sig_cd}
 
 # інтерфейс
 var _hp_bar: ProgressBar
@@ -113,6 +116,12 @@ func _ready() -> void:
 	add_child(cam)
 	cam.make_current()
 	_build_ui()
+	var ai := 0
+	for id in Bonds.party():
+		var a := Bonds.ally_stats(id, Player.atk(p))
+		a.merge({"pos": Vector2.ZERO, "cd": 0.0, "sig_cd": 5.0 + ai * 3.0, "heal_cd": 0.0, "i": ai, "flash": 0.0})
+		allies.append(a)
+		ai += 1
 	_load_floor(int(info.get("start", 1)))
 
 
@@ -134,6 +143,9 @@ func _load_floor(n: int) -> void:
 	visible_t = PackedByteArray()
 	visible_t.resize(L.w * L.h)
 	hero.position = (Vector2(L.start) + Vector2(0.5, 0.5)) * TILE
+	_trail.clear()
+	for a in allies:
+		a.pos = hero.position + Vector2.from_angle(PI * 0.75 + int(a.i) * 0.9) * 30.0
 	cam.position = hero.position
 	cam.reset_smoothing()
 	cam.limit_left = 0
@@ -198,6 +210,7 @@ func _process(delta: float) -> void:
 	else:
 		_hero_input(delta)
 	_update_enemies(delta)
+	_update_allies(delta)
 	_update_shots(delta)
 	_update_fx(delta)
 	_pickup()
@@ -488,6 +501,96 @@ func interact() -> void:
 	for c in _near_veins(1.4):
 		_mine_vein(c)
 		return
+
+
+# ---------------------------------------------------------------- легенди-союзники
+
+func _update_allies(delta: float) -> void:
+	if _trail.is_empty() or (hero.position - _trail[_trail.size() - 1]).length() > 10.0:
+		_trail.append(hero.position)
+		if _trail.size() > 80:
+			_trail.pop_front()
+	for a in allies:
+		a.cd = float(a.cd) - delta
+		a.sig_cd = float(a.sig_cd) - delta
+		a.heal_cd = float(a.heal_cd) - delta
+		a.flash = maxf(0.0, float(a.flash) - delta)
+		var ranged: bool = a.role in ["mage", "archer", "healer"]
+		var tgt = null
+		var bd := TILE * 7.0
+		for e in enemies:
+			if float(e.hp) <= 0:
+				continue
+			var et := _tile_of(e.pos)
+			if visible_t[et.y * L.w + et.x] == 0:
+				continue
+			var dd: float = (e.pos - a.pos).length()
+			if dd < bd:
+				bd = dd
+				tgt = e
+		# іти слідом за героєм його ж шляхом (кожен союзник — своя точка сліду)
+		var ti := maxi(0, _trail.size() - 1 - (3 + int(a.i) * 3))
+		var want: Vector2 = _trail[ti] if not _trail.is_empty() else hero.position
+		var sees_hero := _los(_tile_of(a.pos), _tile_of(hero.position))
+		var reach := TILE * 5.0 if ranged else 30.0
+		if tgt != null:
+			reach += 14.0 * float(tgt.size)
+			if bd > reach and _los(_tile_of(a.pos), _tile_of(tgt.pos)):
+				want = tgt.pos
+			elif bd <= reach:
+				want = a.pos
+		if (hero.position - a.pos).length() > TILE * (11.0 if sees_hero else 5.0):
+			a.pos = want
+		# не злипатися один з одним
+		for o in allies:
+			if o != a and (o.pos - a.pos).length() < 22.0:
+				a.pos = _slide(a.pos, (a.pos - o.pos).normalized() * 40.0 * delta + Vector2(0.01 * (int(a.i) - int(o.i)), 0), 8.0)
+		var to: Vector2 = want - a.pos
+		if to.length() > 6.0:
+			a.pos = _slide(a.pos, to.normalized() * minf(to.length(), 195.0 * delta), 8.0)
+		# лікар підлікує героя
+		if a.role == "healer" and float(a.heal_cd) <= 0.0 and float(p.hp) < Player.max_hp(p) * 0.7:
+			a.heal_cd = 4.0
+			var h := Player.max_hp(p) * 0.06
+			p.hp = minf(Player.max_hp(p), float(p.hp) + h)
+			_float_text(hero.position + Vector2(0, -50), "+%d ❤ (%s)" % [int(h), a.name], Color("#9dffb0"))
+		if tgt == null:
+			continue
+		# фірмовий прийом
+		if float(a.sig_cd) <= 0.0:
+			a.sig_cd = 14.0
+			var S: Dictionary = a.sig
+			var pw := float(S.power) * float(a.sig_mult)
+			match str(S.target):
+				"all":
+					_area_hit(tgt.pos, TILE * 2.6, float(a.atk) / maxf(1.0, hero_atk()) * pw * 0.8, 200.0)
+					fx.append({"type": "ring", "pos": tgt.pos, "t": 0.45, "r": TILE * 2.6, "col": Color("#ffd6ec")})
+				"party":
+					var h := Player.max_hp(p) * 0.25 * float(a.sig_mult)
+					p.hp = minf(Player.max_hp(p), float(p.hp) + h)
+					p.mp = minf(Player.max_mp(p), float(p.mp) + Player.max_mp(p) * 0.2)
+					fx.append({"type": "ring", "pos": hero.position, "t": 0.5, "r": TILE * 1.6, "col": Color("#9dffb0")})
+				_:
+					_damage_enemy(tgt, float(a.atk) * pw * 1.6, (tgt.pos - a.pos).normalized() * 220.0, true)
+					fx.append({"type": "ring", "pos": tgt.pos, "t": 0.35, "r": TILE * 1.2, "col": Color("#ffe27a")})
+			a.flash = 0.6
+			ally_hits += 1
+			_say("%s %s: «%s»!" % [a.icon, a.name, S.name], 1.4)
+			Audio.sfx("magic")
+			continue
+		if float(a.cd) > 0.0 or bd > reach:
+			continue
+		var dir: Vector2 = (tgt.pos - a.pos).normalized()
+		ally_hits += 1
+		if ranged:
+			a.cd = 1.3
+			var col := Color("#9dffb0") if a.role == "healer" else (Color("#c9a7ff") if a.role == "mage" else Color("#ffe6b3"))
+			shots.append({"pos": a.pos + dir * 12 + Vector2(0, -14), "vel": dir * 430.0, "dmg": float(a.atk) / maxf(1.0, hero_atk()), "from_hero": true, "r": 6.0, "t": 1.4, "col": col, "pierce": 0, "explode": 0.0})
+		else:
+			a.cd = 0.85
+			_damage_enemy(tgt, float(a.atk) * randf_range(0.9, 1.1), dir * 110.0)
+			fx.append({"type": "spark", "pos": tgt.pos, "t": 0.2, "col": Color("#ffe6b3")})
+			Audio.sfx("hit", -6.0, 0.2)
 
 
 # ---------------------------------------------------------------- combat helpers
@@ -1198,6 +1301,19 @@ class EntLayer extends Node2D:
 				draw_rect(Rect2(dr.pos - Vector2(6, 6), Vector2(12, 12)), rc)
 			else:
 				draw_circle(dr.pos, 7, Color("#7dff9a"))
+		# легенди із загону: жетон із символом і ім'ям
+		for a in d.allies:
+			var ap: Vector2 = a.pos
+			var cols := {"warrior": Color("#ff9a7a"), "mage": Color("#b48cff"), "rogue": Color("#7ad7a0"), "healer": Color("#9dffb0"), "archer": Color("#ffd36e")}
+			var c: Color = cols.get(a.role, Color.WHITE)
+			var ab := sin(t * 6.0 + float(a.i)) * 1.5
+			draw_set_transform(ap, 0, Vector2(1, 0.45))
+			draw_circle(Vector2.ZERO, 13, Color(0, 0, 0, 0.3))
+			draw_set_transform(Vector2.ZERO)
+			draw_circle(ap + Vector2(0, -16 + ab), 15, Color(c, 0.35 + 0.4 * float(a.flash)))
+			draw_arc(ap + Vector2(0, -16 + ab), 15, 0, TAU, 24, c, 2.0, true)
+			draw_string(font, ap + Vector2(-11, -8 + ab), str(a.icon), HORIZONTAL_ALIGNMENT_LEFT, -1, 20, Color.WHITE)
+			draw_string(font, ap + Vector2(-40, -38 + ab), str(a.name), HORIZONTAL_ALIGNMENT_CENTER, 80, 12, c)
 		var order: Array = d.enemies.filter(func(e): return float(e.hp) > 0)
 		order.sort_custom(func(a, b): return a.pos.y < b.pos.y)
 		for e in order:

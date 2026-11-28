@@ -47,6 +47,9 @@ static func cls(p: Dictionary) -> Dictionary:
 
 static func gear_sum(p: Dictionary, key: String) -> float:
 	var s := 0.0
+	# бонуси від розділів історії легенд
+	if p.get("perks") is Dictionary:
+		s += float(p.perks.get(key, 0.0))
 	for slot in p.gear:
 		var it = p.gear[slot]
 		if it is Dictionary:
