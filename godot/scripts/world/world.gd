@@ -447,6 +447,12 @@ func dungeon_info(d: Dictionary) -> Dictionary:
 	return {"name": d.name, "kind": "dungeon", "dtype": d.type, "level": int(d.level), "floors": int(d.floors), "id": int(d.id), "seed": wd.world_seed * 131 + int(d.id)}
 
 
+## Глибини під підземеллям: 100 рівнів, старт з рівня start (1 або контрольна точка + 1).
+func depths_info(d: Dictionary, start: int) -> Dictionary:
+	return {"name": "Глибини: %s" % d.name, "kind": "depths", "dtype": d.type, "level": int(d.level), "floors": 100, "id": int(d.id),
+		"seed": wd.world_seed * 173 + int(d.id) * 31, "start": clampi(start, 1, 100)}
+
+
 func mine_info(b: Dictionary) -> Dictionary:
 	return {"name": "Шахти %s" % b.name, "kind": "mine", "dtype": "minecave", "level": maxi(1, int(b.danger)), "floors": 3, "id": 100000 + int(b.id), "seed": wd.world_seed * 137 + int(b.id) + int(Game.state.day_ticked)}
 
@@ -523,6 +529,9 @@ func _on_dungeon_done(st: Dictionary, dinfo: Dictionary) -> void:
 		p.hp = Player.max_hp(p) * 0.5
 		p.deaths = int(p.deaths) + 1
 		hud.banner("Люмі тебе воскресила", "Ціна дива: %d 💰 і трохи гідності. «Наступного разу бери більше зілля!»" % lost)
+	elif dinfo.kind == "depths":
+		var dp: Dictionary = p.get("depths", {}).get(str(int(dinfo.id)), {"best": 0, "max": 0})
+		hud.banner("Глибини: рівень %d" % int(st.get("depth", dinfo.start)), "Найглибше: %d · контрольна точка: %d. Наступного разу можна почати з рівня %d." % [int(dp.max), int(dp.best), int(dp.best) + 1])
 	elif dinfo.has("ambush"):
 		if st.cleared:
 			var lines := Events.apply(_ambush_fx)
@@ -1151,6 +1160,54 @@ func _selftest() -> void:
 		while dungeon != null:
 			await tree.process_frame
 		Selftest.step("mining", Player.ore_value(pl) > ore0, "руда на %d 💰" % Player.ore_value(pl))
+	# Глибини
+	var g5 := DungeonGen.generate(11, {"kind": "depths", "dtype": "goblin", "floor": 5, "floors": 100, "level": 3})
+	var g10 := DungeonGen.generate(12, {"kind": "depths", "dtype": "goblin", "floor": 10, "floors": 100, "level": 3})
+	var g100 := DungeonGen.generate(13, {"kind": "depths", "dtype": "goblin", "floor": 100, "floors": 100, "level": 3})
+	var gen_ok: bool = g5.sealed and not g5.boss and g5.stairs.x >= 0 and g5.spawns.any(func(sp): return sp.get("guard", false)) and g10.boss and g10.stairs.x >= 0 and g100.boss and g100.stairs.x < 0 and g100.spawns.size() < 40
+	pl.cleared.append(int(dsel.id))
+	hud.open_dungeon(dsel)
+	await tree.create_timer(0.6).timeout
+	Selftest.shot(self, "30_depths_entry")
+	hud.close_overlay()
+	pl.hp = Player.max_hp(pl)
+	enter_dungeon(depths_info(dsel, 9))
+	await tree.create_timer(1.0).timeout
+	dungeon.bot = false
+	var guard_e: Dictionary = {}
+	for e in dungeon.enemies:
+		if e.get("guard", false):
+			guard_e = e
+	if not guard_e.is_empty():
+		dungeon.hero.position = guard_e.pos + Vector2(-Dungeon.TILE * 2.5, 0)
+		dungeon.invuln = 99.0
+		dungeon._update_vision()
+	await tree.create_timer(0.8).timeout
+	Selftest.shot(dungeon, "31_depths_guard")
+	var sealed0: bool = dungeon.L.get("sealed", false)
+	if not guard_e.is_empty():
+		dungeon._damage_enemy(guard_e, 1e9, Vector2.ZERO)
+	var sealed1: bool = dungeon.L.get("sealed", false)
+	dungeon.hero.position = (Vector2(dungeon.L.stairs) + Vector2(0.5, 0.5)) * Dungeon.TILE
+	dungeon.interact()
+	await tree.create_timer(1.0).timeout
+	var on10: bool = dungeon.floor_i == 10 and dungeon.L.boss
+	dungeon.invuln = 99.0
+	if dungeon.boss_ref != null:
+		dungeon.hero.position = dungeon.boss_ref.pos + Vector2(-Dungeon.TILE * 3, 0)
+		dungeon._update_vision()
+	await tree.create_timer(0.8).timeout
+	Selftest.shot(dungeon, "32_depths_boss")
+	if dungeon.boss_ref != null:
+		dungeon._damage_enemy(dungeon.boss_ref, 1e9, Vector2.ZERO)
+	await tree.create_timer(0.5).timeout
+	var best := int(dungeon.depths_state().best)
+	dungeon.leave(false)
+	while dungeon != null:
+		await tree.process_frame
+	Selftest.step("depths", gen_ok and sealed0 and not sealed1 and on10 and best == 10, "генерація %s, печатка %s→%s, рівень 10 з босом: %s, контрольна точка %d" % [str(gen_ok), str(sealed0), str(sealed1), str(on10), best])
+	await tree.create_timer(0.8).timeout
+	Selftest.shot(self, "33_after_depths")
 	# стайня й гавань
 	var plx := Player.ensure(Game.state)
 	plx.gold = int(plx.gold) + 6000
@@ -1234,9 +1291,10 @@ func _selftest() -> void:
 	var fxr: Dictionary = r_fight.fx.duplicate()
 	fxr.erase("fight")
 	start_ambush(r_fight.fx.fight, fxr)
-	await tree.create_timer(3.0).timeout
-	Selftest.shot(dungeon, "28_ambush")
-	var n_en: int = dungeon.enemies.size()
+	await tree.create_timer(0.7).timeout
+	var n_en: int = dungeon.enemies.size() if dungeon != null else -1
+	if dungeon != null:
+		Selftest.shot(dungeon, "28_ambush")
 	var t_amb := Time.get_ticks_msec() + 40000
 	while dungeon != null and Time.get_ticks_msec() < t_amb:
 		await tree.process_frame

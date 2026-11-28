@@ -71,6 +71,12 @@ static func generate(seed_v: int, opts: Dictionary) -> Dictionary:
 		L.boss = true
 	else:
 		L.stairs = far
+	var depths: bool = opts.get("kind", "") == "depths"
+	if depths:
+		# Глибини: 100 рівнів, кожен 10-й — бос і контрольна точка; сходи запечатані, доки живий Вартовий (або бос)
+		L.boss = floor_i % 10 == 0
+		L.stairs = far if floor_i < floors else Vector2i(-1, -1)
+		L.sealed = true
 	var lvl: int = opts.get("level", 1) + (floor_i - 1)
 	var pool: Array = POOLS.get(opts.get("dtype", "goblin"), POOLS.goblin)
 	if mine:
@@ -101,9 +107,16 @@ static func generate(seed_v: int, opts: Dictionary) -> Dictionary:
 		L.ambush = true
 		return L
 	var n_mobs := (10 if mine else 14) + floor_i * 2 + mini(8, lvl / 4)
+	if depths:
+		n_mobs = 10 + mini(12, floor_i / 6)
 	for i in mini(n_mobs, floor_cells.size()):
 		var k: String = pool[rng.rangei(0, pool.size() - 1)]
 		L.spawns.append({"pos": floor_cells[i], "kind": k, "lvl": maxi(1, lvl + rng.rangei(-1, 1)), "boss": false})
+	if depths and not L.boss:
+		var gk: String = pool[rng.rangei(0, pool.size() - 1)]
+		if gk == "bat":
+			gk = "golem"
+		L.spawns.append({"pos": far, "kind": gk, "lvl": lvl + 2, "boss": false, "guard": true, "name": "Вартовий %s" % MONSTERS[gk].name})
 	if L.boss:
 		var bk: String = pool[0] if pool[0] != "bat" else "golem"
 		L.spawns.append({"pos": far, "kind": bk, "lvl": lvl + 3, "boss": true, "name": "%s %s" % [rng.pick(BOSS_TITLES), MONSTERS[bk].name]})

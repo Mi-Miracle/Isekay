@@ -113,7 +113,7 @@ func _ready() -> void:
 	add_child(cam)
 	cam.make_current()
 	_build_ui()
-	_load_floor(1)
+	_load_floor(int(info.get("start", 1)))
 
 
 # ---------------------------------------------------------------- floors
@@ -143,6 +143,11 @@ func _load_floor(n: int) -> void:
 	_last_tile = Vector2i(-99, -99)
 	map_layer.queue_redraw()
 	var title := "%s · рівень %d" % [info.name, n] if info.kind == "mine" else "%s · поверх %d/%d" % [info.name, n, info.floors]
+	if info.kind == "depths":
+		var dp := depths_state()
+		dp.max = maxi(int(dp.max), n)
+		title = "%s · рівень %d/100%s" % [info.name, n, " · 👑 бос!" if L.boss else " · знайди Вартового"]
+		stats.depth = n
 	_say("%s%s" % [title, " — тут сидить бос!" if L.boss else ""], 3.0)
 	Audio.music("boss" if L.boss else "dark")
 	if n > 1:
@@ -154,16 +159,19 @@ func _make_enemy(sp: Dictionary) -> Dictionary:
 	var lvl: int = sp.lvl
 	var boss: bool = sp.boss
 	var amb: Dictionary = info.get("ambush", {})
-	var hp: float = M.hp * (1.0 + 0.22 * (lvl - 1)) * ((float(amb.get("boss_hp", 9.0)) if boss else 1.0))
+	var guard: bool = sp.get("guard", false)
+	var hp: float = M.hp * (1.0 + 0.22 * (lvl - 1)) * ((float(amb.get("boss_hp", 9.0)) if boss else (3.5 if guard else 1.0)))
 	var e := {
 		"kind": sp.kind, "name": sp.get("name", M.name), "lvl": lvl, "boss": boss,
 		"pos": (Vector2(sp.pos) + Vector2(0.5, 0.5)) * TILE, "vel": Vector2.ZERO, "hp": hp, "max": hp,
 		"atk": M.atk * (1.0 + 0.16 * (lvl - 1)) * (1.5 if boss else 1.0), "speed": float(M.speed) * (0.85 if boss else 1.0),
-		"ai": M.ai, "size": float(M.size) * ((float(amb.get("boss_size", 2.0))) if boss else 1.0), "xp": int(M.xp * (1.0 + 0.25 * (lvl - 1)) * ((3 if not amb.is_empty() else 8) if boss else 1)),
+		"ai": M.ai, "size": float(M.size) * ((float(amb.get("boss_size", 2.0))) if boss else (1.45 if guard else 1.0)), "guard": guard, "xp": int(M.xp * (1.0 + 0.25 * (lvl - 1)) * ((3 if not amb.is_empty() else 8) if boss else (4 if guard else 1))),
 		"state": "idle", "t": 0.0, "aggro": false, "flash": 0.0, "face": 1.0, "target": Vector2.ZERO, "phase": 1, "burst": 4.0,
 		"seed": randf() * 10.0,
 	}
-	if boss:
+	if guard:
+		e.atk = float(e.atk) * 1.25
+	if boss or (guard and boss_ref == null):
 		boss_ref = e
 	return e
 
@@ -454,6 +462,9 @@ func interact() -> void:
 	if Vector2(ht).distance_to(Vector2(L.start)) < 1.6:
 		leave(false)
 		return
+	if L.stairs.x >= 0 and Vector2(ht).distance_to(Vector2(L.stairs)) < 1.6 and L.get("sealed", false):
+		_say("🔒 Сходи запечатані. Переможи %s!" % ("боса" if L.boss else "Вартового"), 1.8)
+		return
 	if L.stairs.x >= 0 and Vector2(ht).distance_to(Vector2(L.stairs)) < 1.6:
 		if floor_i < int(info.floors) or info.kind == "mine":
 			_load_floor(floor_i + 1)
@@ -496,6 +507,14 @@ func _damage_enemy(e: Dictionary, dmg: float, knock: Vector2, crit: bool = false
 
 func _kill(e: Dictionary) -> void:
 	stats.kills += 1
+	if e.get("guard", false) and L.get("sealed", false):
+		L.sealed = false
+		var bonus := 6 * int(e.lvl)
+		p.gold = int(p.gold) + bonus
+		stats.gold += bonus
+		_say("🔓 Вартовий упав — сходи вниз відкрито! +%d 💰" % bonus, 2.5)
+		Audio.sfx("quest")
+		map_layer.queue_redraw()
 	Audio.sfx("kill", -2.0, 0.12)
 	if e.boss:
 		Audio.sfx("roar", 2.0, 0.0)
@@ -739,8 +758,24 @@ func _pickup() -> void:
 
 func _on_boss_dead() -> void:
 	floor_cleared = true
-	stats.cleared = true
 	Audio.sfx("quest")
+	if info.kind == "depths":
+		L.sealed = false
+		var dp := depths_state()
+		var first: bool = floor_i > int(dp.best)
+		dp.best = maxi(int(dp.best), floor_i)
+		var bonus := (40 if first else 10) * floor_i
+		p.gold = int(p.gold) + bonus
+		stats.gold += bonus
+		if first:
+			Player.add_xp(p, 12 * floor_i)
+		map_layer.queue_redraw()
+		if floor_i >= 100:
+			_say("🏆 ДНО ГЛИБИН! Ти пройшов усі 100 рівнів. Люмі непритомніє від гордості. +%d 💰" % bonus, 6.0)
+		else:
+			_say("🏁 Контрольна точка: рівень %d! Наступного разу можна почати звідси. +%d 💰" % [floor_i, bonus], 4.0)
+		return
+	stats.cleared = true
 	if info.has("ambush"):
 		_say("🏆 Засідку відбито! Повертаємось на дорогу…", 2.5)
 		get_tree().create_timer(2.5).timeout.connect(func(): if not done: leave(false))
@@ -846,6 +881,16 @@ func _los(a: Vector2i, b: Vector2i) -> bool:
 
 
 # ---------------------------------------------------------------- leaving
+
+## Прогрес Глибин цього підземелля: {"best": остання пройдена контрольна точка (10, 20…), "max": найглибший рівень}.
+func depths_state() -> Dictionary:
+	if not (p.get("depths") is Dictionary):
+		p.depths = {}
+	var k := str(int(info.id))
+	if not (p.depths.get(k) is Dictionary):
+		p.depths[k] = {"best": 0, "max": 0}
+	return p.depths[k]
+
 
 func leave(died: bool) -> void:
 	if done:
@@ -997,19 +1042,19 @@ func _build_ui() -> void:
 	_cd_label = Game.make_label("", 15, Color(1, 1, 1, 0.8), 3)
 	v.add_child(_cd_label)
 	_boss_name = Game.make_label("", 24, Color("#ffb0c0"), 6)
-	_boss_name.set_anchors_preset(Control.PRESET_CENTER_TOP)
-	_boss_name.position = Vector2(-400, 18)
+	_boss_name.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
+	_boss_name.position = Vector2(-400, -132)
 	_boss_name.size = Vector2(800, 30)
 	_boss_name.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	root.add_child(_boss_name)
 	_boss_bar = _bar(Color("#ff3d6a"), 600)
-	_boss_bar.set_anchors_preset(Control.PRESET_CENTER_TOP)
-	_boss_bar.position = Vector2(-300, 52)
+	_boss_bar.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
+	_boss_bar.position = Vector2(-300, -96)
 	_boss_bar.size = Vector2(600, 18)
 	root.add_child(_boss_bar)
 	_msg = Game.make_label("", 26, Color.WHITE, 8)
 	_msg.set_anchors_preset(Control.PRESET_CENTER_TOP)
-	_msg.position = Vector2(-600, 110)
+	_msg.position = Vector2(-600, 196)
 	_msg.size = Vector2(1200, 40)
 	_msg.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_msg.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -1045,6 +1090,8 @@ func _build_ui() -> void:
 
 func _update_ui() -> void:
 	_top.text = "%s · рівень %d" % [info.name, floor_i] if info.kind == "mine" else "%s · поверх %d/%d" % [info.name, floor_i, int(info.floors)]
+	if info.kind == "depths":
+		_top.text = "%s · рівень %d/100 · 🏁 %d" % [info.name, floor_i, int(depths_state().best)]
 	_hp_bar.max_value = Player.max_hp(p)
 	_hp_bar.value = float(p.hp)
 	_mp_bar.max_value = Player.max_mp(p)
@@ -1117,7 +1164,14 @@ class MapLayer extends Node2D:
 			var st: Vector2 = Vector2(L.stairs) * T
 			for k in 4:
 				draw_rect(Rect2(st + Vector2(4 + k * 3, 6 + k * 6), Vector2(T - 8 - k * 6, 5)), Color(0.75, 0.65, 0.5).darkened(k * 0.18))
-			draw_string(Game.ui_font, st + Vector2(-T * 0.2, -4), "Сходи ↓", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(1, 0.9, 0.7))
+			if L.get("sealed", false):
+				var c := st + Vector2(T, T) * 0.5
+				draw_circle(c, T * 0.62, Color(0.9, 0.15, 0.3, 0.22))
+				draw_arc(c, T * 0.58, 0, TAU, 6, Color(1, 0.35, 0.45, 0.95), 2.5, true)
+				draw_arc(c, T * 0.36, 0, TAU, 3, Color(1, 0.35, 0.45, 0.7), 2.0, true)
+				draw_string(Game.ui_font, st + Vector2(-T * 0.45, -4), "🔒 Запечатано", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(1, 0.6, 0.65))
+			else:
+				draw_string(Game.ui_font, st + Vector2(-T * 0.2, -4), "Сходи ↓", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(1, 0.9, 0.7))
 		for c in L.chests:
 			var cp: Vector2 = Vector2(c.pos) * T + Vector2(T * 0.15, T * 0.3)
 			var sz := Vector2(T * 0.7, T * 0.5)

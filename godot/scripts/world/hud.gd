@@ -485,6 +485,20 @@ func open_dungeon(d: Dictionary) -> void:
 	v.add_child(h)
 	var b := _button(h, "⚔️ Увійти", func(): world.enter_dungeon(world.dungeon_info(d)))
 	_button(h, "Не сьогодні", close_overlay)
+	# Глибини: 100 рівнів під зачищеним підземеллям
+	if not d.final and d.type != "hellgate":
+		var dp: Dictionary = p.get("depths", {}).get(str(int(d.id)), {"best": 0, "max": 0})
+		if p.cleared.has(int(d.id)):
+			_info(v, "🕳️ Під підземеллям — Глибини: 100 рівнів, туман, на кожному Вартовий запечатує сходи, кожен 10-й рівень — бос і контрольна точка. Найглибше: %d · контрольна точка: %d." % [int(dp.max), int(dp.best)], 16, Color("#c9a7ff"))
+			var h2 := HBoxContainer.new()
+			h2.alignment = BoxContainer.ALIGNMENT_CENTER
+			h2.add_theme_constant_override("separation", 10)
+			v.add_child(h2)
+			_button(h2, "🕳️ Глибини з 1 рівня", func(): world.enter_dungeon(world.depths_info(d, 1)))
+			if int(dp.best) > 0 and int(dp.best) < 100:
+				_button(h2, "🏁 З рівня %d" % (int(dp.best) + 1), func(): world.enter_dungeon(world.depths_info(d, int(dp.best) + 1)))
+		else:
+			_info(v, "🕳️ Кажуть, під цим місцем є Глибини. Зачисти підземелля — і прохід відкриється.", 15, Color(1, 1, 1, 0.55))
 	_show_overlay(pv[0], 0.35)
 	b.grab_focus.call_deferred()
 
