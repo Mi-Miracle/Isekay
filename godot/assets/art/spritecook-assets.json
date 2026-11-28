@@ -11,6 +11,16 @@
       "sha12": "e1febe717849",
       "label": "monsters_sheet_8",
       "file": "monsters/*.png (нарізано 4×2)"
+    },
+    {
+      "asset_id": "1b4fe024-36db-469c-88e5-e024bd33c2df",
+      "label": "heroine_chibi",
+      "file": "hero_f_big.png (600 px), hero_f.png (256 px)"
+    },
+    {
+      "asset_id": "9c3fadf8-dcd9-4839-a6f3-88c3140bbb89",
+      "label": "goddess_lumi",
+      "file": "goddess.png (620 px)"
     }
   ]
 }

@@ -1,5 +1,6 @@
 ## Автозавантаження Audio: музика з плавним переходом між настроями і звукові ефекти.
 ## Треки й ефекти згенеровані tools/gen_audio.py (assets/audio/music/*.ogg, assets/audio/sfx/*.wav).
+## Власна музика гравця — тека «music» поруч із .exe (track1, track2… і menu), див. scan_music().
 ## Гучність — Game.settings.music_vol / sfx_vol (0..1), шини «Music» і «SFX».
 extends Node
 
@@ -36,6 +37,7 @@ func _ready() -> void:
 		add_child(s)
 		_pool.append(s)
 	apply_volume()
+	scan_music()
 	get_tree().node_added.connect(func(n):
 		if n is BaseButton:
 			n.pressed.connect(func(): sfx("click", -4.0)))
@@ -47,6 +49,7 @@ var _lvl := -1
 
 ## Зміни золота й рівня героя озвучуються самі, хоч би де вони сталися.
 func _process(_d: float) -> void:
+	_tick_music(_d)
 	if not (Game.state.get("player") is Dictionary):
 		_gold = -1
 		_lvl = -1
@@ -90,14 +93,138 @@ func _load(path: String) -> AudioStream:
 	return st
 
 
+## Настрої, де вбудована 8-біт музика перемішується з власними треками гравця.
+const AMBIENT := ["field", "forest", "desert", "winter", "town", "tavern", "home", "sea"]
+const AUDIO_EXT := ["ogg", "mp3", "wav"]
+
+var now_playing := ""          # що звучить зараз (назва файлу/треку) — для налаштувань і тостів
+var _custom: Array = []        # власні треки гравця (шляхи)
+var _menu: Array = []          # власна музика меню (menu*.*)
+var _next_t := -1.0            # секунд до наступного треку в перемішуванні
+var _playing_custom := false
+var _ext_cache := {}
+
+
+## Тека власної музики: поруч із .exe (папка «music»), у редакторі — user://music.
+func music_dir() -> String:
+	if OS.has_feature("template"):
+		return OS.get_executable_path().get_base_dir().path_join("music")
+	return ProjectSettings.globalize_path("user://music")
+
+
+## Пересканувати теку: menu*.ogg/mp3/wav — для меню, решта (track1, track2…) — у перемішку з грою.
+func scan_music() -> int:
+	_custom.clear()
+	_menu.clear()
+	var dir := music_dir()
+	if not DirAccess.dir_exists_absolute(dir):
+		DirAccess.make_dir_recursive_absolute(dir)
+	var readme := dir.path_join("ЯК ДОДАТИ МУЗИКУ.txt")
+	if not FileAccess.file_exists(readme):
+		var fw := FileAccess.open(readme, FileAccess.WRITE)
+		if fw:
+			fw.store_string("Хроніки Дивосвіту — власна музика\n\nКладіть сюди файли .mp3, .ogg або .wav:\n  track1.mp3, track2.mp3, track3.ogg … — грають у грі впереміш із вбудованою 8-бітною музикою\n  menu.mp3 (або menu1, menu2…) — грає в головному меню\n\nБій, боси й підземелля лишаються зі своєю музикою.\nПісля додавання файлів натисніть «Оновити» в Налаштування → Звук або перезапустіть гру.\n")
+			fw.close()
+	var d := DirAccess.open(dir)
+	if d == null:
+		return 0
+	for fn in d.get_files():
+		if not (fn.get_extension().to_lower() in AUDIO_EXT):
+			continue
+		var full := dir.path_join(fn)
+		if fn.to_lower().begins_with("menu"):
+			_menu.append(full)
+		else:
+			_custom.append(full)
+	_custom.sort()
+	_menu.sort()
+	return _custom.size() + _menu.size()
+
+
+func custom_count() -> Vector2i:
+	return Vector2i(_custom.size(), _menu.size())
+
+
+## Завантажити зовнішній аудіофайл (ogg/mp3/wav) під час гри.
+func _load_ext(path: String) -> AudioStream:
+	if _ext_cache.has(path):
+		return _ext_cache[path]
+	var st: AudioStream = null
+	match path.get_extension().to_lower():
+		"ogg":
+			st = AudioStreamOggVorbis.load_from_file(path)
+		"mp3":
+			var m := AudioStreamMP3.new()
+			m.data = FileAccess.get_file_as_bytes(path)
+			st = m if m.data.size() > 0 else null
+		"wav":
+			st = AudioStreamWAV.load_from_file(path)
+	_ext_cache[path] = st
+	return st
+
+
+## Вбудовані варіанти настрою: field → field, field2, field3…
+func _variants(name: String) -> Array:
+	var out: Array = []
+	for i in range(1, 6):
+		var nm := name if i == 1 else "%s%d" % [name, i]
+		if ResourceLoader.exists(MUSIC_DIR + nm + ".ogg"):
+			out.append(nm)
+	return out
+
+
 ## Увімкнути настрій музики: title, field, forest, desert, winter, town, tavern, home, dark, battle, boss, sea, demon.
 func music(name: String) -> void:
 	if name == track:
 		return
-	var st := _load(MUSIC_DIR + name + ".ogg")
-	if st == null:
-		return
+	var was := track
 	track = name
+	# свій трек гравця не обриваємо, якщо просто змінилась місцевість
+	if _playing_custom and name in AMBIENT and was in AMBIENT:
+		return
+	_advance(true)
+
+
+## Наступний трек для поточного настрою (перемішування).
+func _advance(first := false) -> void:
+	var name := track
+	if name == "":
+		return
+	var pool: Array = []
+	if name == "title" and not _menu.is_empty():
+		pool = _menu.map(func(x): return "file:" + x)
+	else:
+		pool = _variants(name)
+		if name in AMBIENT:
+			pool += _custom.map(func(x): return "file:" + x)
+	if pool.is_empty():
+		return
+	if pool.size() > 1:
+		pool.erase(now_playing)
+	var pick: String = pool[0] if first and not (name in AMBIENT) and name != "title" else pool.pick_random()
+	var st: AudioStream
+	var custom := pick.begins_with("file:")
+	if custom:
+		st = _load_ext(pick.substr(5))
+		if st == null:
+			_custom.erase(pick.substr(5))
+			_menu.erase(pick.substr(5))
+			_advance(first)
+			return
+		var single := name == "title" and _menu.size() == 1
+		if "loop" in st:
+			st.loop = single
+		_next_t = -1.0 if single and "loop" in st else maxf(5.0, st.get_length() - (0.0 if single else FADE))
+	else:
+		st = _load(MUSIC_DIR + pick + ".ogg")
+		var many := _variants(name).size() + (_custom.size() if name in AMBIENT else 0) > 1
+		_next_t = maxf(75.0, st.get_length() * 2.0) if many else -1.0
+	_playing_custom = custom
+	now_playing = pick
+	_crossfade(st)
+
+
+func _crossfade(st: AudioStream) -> void:
 	var old := _music[_cur]
 	_cur = 1 - _cur
 	var nw := _music[_cur]
@@ -115,8 +242,19 @@ func music(name: String) -> void:
 	_tweens = [a, b]
 
 
+func _tick_music(delta: float) -> void:
+	if _next_t < 0 or track == "":
+		return
+	_next_t -= delta
+	if _next_t <= 0:
+		_advance()
+
+
 func stop_music() -> void:
 	track = ""
+	now_playing = ""
+	_playing_custom = false
+	_next_t = -1.0
 	for m in _music:
 		var t := create_tween()
 		t.tween_property(m, "volume_db", -60.0, FADE)

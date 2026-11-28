@@ -5,6 +5,7 @@
 Запуск: python3 godot/tools/gen_audio.py   (потрібні numpy, scipy, ffmpeg)
 """
 import os
+import sys
 import subprocess
 import wave
 
@@ -34,6 +35,20 @@ TRACKS = {
     "boss": dict(bpm=164, key=2, scale="harm", prog=[[0, 1, 0, 6], [0, 5, 4, 4]], lead="square", pad="saw", drums="battle", melody=1, octave=1, swing=0),
     "sea": dict(bpm=112, key=7, scale="dorian", prog=[[0, 6, 3, 0], [0, 6, 4, 4]], lead="triangle", pad="saw", drums="polka", melody=0.85, octave=1, swing=0.22),
     "demon": dict(bpm=84, key=4, scale="phrygian", prog=[[0, 1, 0, 6], [0, 1, 3, 1]], lead="saw", pad="saw", drums="slow", melody=0.5, octave=0, swing=0),
+    # v0.16: варіації настроїв — Audio.music("field") сам обирає field / field2 / field3 у перемішку
+    "title2": dict(bpm=140, key=5, scale="major", prog=[[0, 5, 3, 4], [0, 5, 1, 4]], lead="square", pad="saw", drums="rock", melody=0.9, octave=1, swing=0),
+    "field2": dict(bpm=108, key=0, scale="major", prog=[[0, 4, 5, 3], [0, 1, 3, 4]], lead="square", pad="triangle", drums="rock", melody=0.7, octave=1, swing=0),
+    "field3": dict(bpm=92, key=9, scale="dorian", prog=[[0, 3, 0, 4], [5, 3, 0, 4]], lead="triangle", pad="sine", drums="soft", melody=0.6, octave=1, swing=0.14),
+    "forest2": dict(bpm=96, key=7, scale="minor", prog=[[0, 6, 5, 6], [0, 3, 4, 4]], lead="sine", pad="triangle", drums="soft", melody=0.6, octave=1, swing=0.1),
+    "desert2": dict(bpm=112, key=2, scale="phrygian", prog=[[0, 1, 0, 6], [0, 1, 4, 4]], lead="square", pad="sine", drums="polka", melody=0.8, octave=1, swing=0.05),
+    "winter2": dict(bpm=70, key=6, scale="major", prog=[[0, 4, 5, 3], [0, 3, 4, 4]], lead="triangle", pad="sine", drums="slow", melody=0.45, octave=1, swing=0),
+    "town2": dict(bpm=124, key=7, scale="major", prog=[[0, 3, 4, 0], [5, 1, 4, 0]], lead="triangle", pad="square", drums="polka", melody=0.85, octave=1, swing=0.05),
+    "tavern2": dict(bpm=144, key=2, scale="minor", prog=[[0, 6, 5, 4], [0, 6, 5, 4]], lead="square", pad="triangle", drums="polka", melody=0.95, octave=1, swing=0.2),
+    "home2": dict(bpm=78, key=10, scale="major", prog=[[0, 3, 0, 4], [5, 3, 4, 0]], lead="sine", pad="triangle", drums="soft", melody=0.5, octave=1, swing=0.12),
+    "sea2": dict(bpm=120, key=0, scale="minor", prog=[[0, 5, 6, 0], [0, 3, 4, 4]], lead="square", pad="saw", drums="polka", melody=0.85, octave=1, swing=0.18),
+    "dark2": dict(bpm=66, key=1, scale="harm", prog=[[0, 5, 0, 4], [0, 1, 0, 4]], lead="triangle", pad="saw", drums="slow", melody=0.35, octave=0, swing=0),
+    "battle2": dict(bpm=158, key=9, scale="minor", prog=[[0, 5, 3, 4], [0, 6, 3, 4]], lead="square", pad="saw", drums="battle", melody=0.95, octave=1, swing=0),
+    "boss2": dict(bpm=172, key=11, scale="phrygian", prog=[[0, 1, 0, 1], [0, 5, 6, 4]], lead="saw", pad="square", drums="battle", melody=1, octave=1, swing=0),
 }
 DRUMS = {
     "rock": dict(k="x...x...x...x...", s="....x.......x...", h="x.x.x.x.x.x.x.x."),
@@ -287,13 +302,23 @@ def sfx():
     S["stairs"] = cat(*[tone(N(s), 0.1, "triangle", 4) * 0.4 for s in (12, 7, 4, 0)])
     S["buy"] = mix(S["coin"], cat(np.zeros(int(0.05 * SR)), tone(1568, 0.2, "sine", 6) * 0.2))
     S["horse"] = cat(*[mix(tone(140, 0.06, "triangle", 9) * 0.6, nz(0.03, 800, 3000, 12 + i) * 0.4) for i in range(4)], gap=0.07)
+    # v0.16: клаксон вантажівки-куна і дзвіночок богині
+    S["horn"] = cat(mix(tone(370, 0.32, "saw", 1.5) * 0.35, tone(466, 0.32, "saw", 1.5) * 0.3),
+                    mix(tone(370, 0.55, "saw", 2.5) * 0.35, tone(466, 0.55, "saw", 2.5) * 0.3), gap=0.06)
+    S["goddess"] = mix(*[cat(np.zeros(int(i * 0.07 * SR)), tone(N(24 + s), 0.6, "sine", 4) * 0.2) for i, s in enumerate((0, 4, 7, 11, 14, 19))],
+                       nz(0.9, 4000, 10000, 13) * dec(0.9, 3) * 0.08)
     return S
 
 
 def main():
     os.makedirs(OUT_M, exist_ok=True)
     os.makedirs(OUT_S, exist_ok=True)
+    only = sys.argv[1:]  # напр. gen_audio.py field2 town2 — лише ці треки, без звуків; «sfx» — лише звуки
+    if only == ["sfx"]:
+        TRACKS.clear()
     for name, T in TRACKS.items():
+        if only and name not in only:
+            continue
         buf = render_track(name, T)
         tmp = "/tmp/_dyvo_%s.wav" % name
         write_wav(tmp, buf)
@@ -301,6 +326,8 @@ def main():
         subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", tmp, "-c:a", "libvorbis", "-q:a", "3", dst], check=True)
         os.remove(tmp)
         print("music", name, "%.1f с" % (len(buf) / SR), os.path.getsize(dst) // 1024, "КБ")
+    if only and only != ["sfx"]:
+        return
     for name, s in sfx().items():
         s = s / max(1e-6, np.abs(s).max()) * 0.9
         fade = min(len(s), int(0.01 * SR))

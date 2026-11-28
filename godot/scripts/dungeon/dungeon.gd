@@ -1,5 +1,5 @@
 ## Підземелля й шахти: екшен-бій у реальному часі просто на рівні.
-## WASD — рух, ЛКМ/Пробіл — удар, Shift/ПКМ — ривок, Q/F/V — навички класу, R/1 — зілля, 2 — ефір,
+## WASD — рух, ЛКМ/Пробіл — удар, Q/F/V/Shift(ПКМ) — навички зі слотів (книга навичок, B), R/1 — зілля, 2 — ефір,
 ## E — скриня/сходи/вихід/жила, Esc — пауза.
 class_name Dungeon
 extends Node2D
@@ -35,9 +35,10 @@ var _tex := {}
 
 var atk_cd := 0.0
 var dash_cd := 0.0
+var _undying_used := false
 var dash_t := 0.0
 var dash_dir := Vector2.ZERO
-var skill_cd := [0.0, 0.0, 0.0]
+var skill_cd := [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
 var rage_t := 0.0
 var shield_t := 0.0
 var zones: Array = []          # відкладені удари й хмари {pos, r, dmg, t, every, next, col, kind}
@@ -198,7 +199,7 @@ func _process(delta: float) -> void:
 	delta = minf(delta, 0.05)
 	atk_cd = maxf(0, atk_cd - delta)
 	dash_cd = maxf(0, dash_cd - delta)
-	for i in 3:
+	for i in skill_cd.size():
 		skill_cd[i] = maxf(0, float(skill_cd[i]) - delta)
 	rage_t = maxf(0, rage_t - delta)
 	shield_t = maxf(0, shield_t - delta)
@@ -238,12 +239,10 @@ func _hero_input(delta: float) -> void:
 	_move_hero(dir, delta)
 	if Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) or Input.is_key_pressed(KEY_SPACE):
 		attack()
-	if Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT) or Input.is_key_pressed(KEY_SHIFT):
-		dash(dir if dir != Vector2.ZERO else facing)
 
 
 func _move_hero(dir: Vector2, delta: float) -> void:
-	var v := dir * HERO_SPEED * float(C.speed) * (1.2 if rage_t > 0 else 1.0)
+	var v := dir * HERO_SPEED * float(C.speed) * (1.0 + Origin.mul(p, "speed")) * (1.2 if rage_t > 0 else 1.0)
 	if dash_t > 0:
 		dash_t -= delta
 		v = dash_dir * 540.0
@@ -317,15 +316,16 @@ func attack() -> void:
 		get_tree().create_timer(0.06).timeout.connect(func(): if is_instance_valid(cam): cam.offset = Vector2.ZERO)
 
 
-func dash(dir: Vector2) -> void:
-	if dash_cd > 0 or dir == Vector2.ZERO:
+## Навичка з клавіші-слота (0 Q, 1 F, 2 V, 3 Shift/ПКМ).
+func cast_slot(k: int) -> void:
+	var id := str(Classes.slots(p)[k])
+	if id == "":
+		_say("На %s нічого немає. Признач навичку в книзі навичок (B на мапі)." % Classes.KEYS[k], 1.6)
 		return
-	dash_cd = 0.75
-	dash_t = 0.17
-	Audio.sfx("dash", -3.0)
-	dash_dir = dir.normalized()
-	invuln = 0.3
-	fx.append({"type": "dust", "pos": hero.position, "t": 0.35})
+	for i in C.skills.size():
+		if C.skills[i].id == id:
+			cast_skill(i)
+			return
 
 
 func cast_skill(i: int) -> void:
@@ -342,7 +342,7 @@ func cast_skill(i: int) -> void:
 		_say("Мана скінчилась. Люмі радить ефір (2).", 1.4)
 		return
 	p.mp = float(p.mp) - float(S.mp)
-	skill_cd[i] = float(S.cd)
+	skill_cd[i] = float(S.cd) * (1.0 - Origin.mul(p, "cdr"))
 	Audio.sfx("magic")
 	var col := Color(S.get("col", "#ffffff"))
 	var mouse := get_global_mouse_position() if not bot else hero.position + facing * 140.0
@@ -451,13 +451,16 @@ func _unhandled_input(event: InputEvent) -> void:
 				_toggle_pause()
 			KEY_Q:
 				if not paused:
-					cast_skill(0)
+					cast_slot(0)
 			KEY_F:
 				if not paused:
-					cast_skill(1)
+					cast_slot(1)
 			KEY_V:
 				if not paused:
-					cast_skill(2)
+					cast_slot(2)
+			KEY_SHIFT:
+				if not paused:
+					cast_slot(3)
 			KEY_R, KEY_1:
 				if not paused:
 					drink_potion()
@@ -468,8 +471,11 @@ func _unhandled_input(event: InputEvent) -> void:
 				if not paused:
 					interact()
 		get_viewport().set_input_as_handled()
-	elif event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_MIDDLE:
-		cast_skill(0)
+	elif event is InputEventMouseButton and event.pressed and not paused:
+		if event.button_index == MOUSE_BUTTON_MIDDLE:
+			cast_slot(0)
+		elif event.button_index == MOUSE_BUTTON_RIGHT:
+			cast_slot(3)
 
 
 func interact() -> void:
@@ -657,6 +663,12 @@ func _hurt_hero(dmg: float) -> void:
 	_float_text(hero.position + Vector2(0, -44), "-%d" % int(real), Color("#ff7a7a"))
 	cam.offset = Vector2(randf_range(-5, 5), randf_range(-5, 5))
 	get_tree().create_timer(0.08).timeout.connect(func(): if is_instance_valid(cam): cam.offset = Vector2.ZERO)
+	if float(p.hp) <= 0 and str(p.get("bless", "")) == "undying" and not _undying_used:
+		_undying_used = true
+		p.hp = 1.0
+		invuln = 1.5
+		_say("💀 Безсмертний (майже)! Люмі: «Цього разу пронесло. Наступного — не обіцяю.»", 2.5)
+		return
 	if float(p.hp) <= 0:
 		p.hp = 0.0
 		stats.died = true
@@ -1084,7 +1096,7 @@ func _bot(delta: float) -> void:
 		else:
 			attack()
 		if bd < 160:
-			cast_skill(randi() % 3)
+			cast_slot(randi() % Classes.SLOTS)
 	if float(p.hp) < Player.max_hp(p) * 0.35:
 		drink_potion()
 	_move_hero(dir, delta)
@@ -1168,7 +1180,7 @@ func _build_ui() -> void:
 	_msg.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_msg.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	root.add_child(_msg)
-	var hints := Game.make_label("WASD — рух · ЛКМ/Пробіл — удар · Shift/ПКМ — ривок · Q/F/V — навички · R — зілля · 2 — ефір · E — дія · Esc — пауза", 15, Color(1, 1, 1, 0.75), 4)
+	var hints := Game.make_label("WASD — рух · ЛКМ/Пробіл — удар · Q/F/V/Shift(ПКМ) — навички · R — зілля · 2 — ефір · E — дія · Esc — пауза", 15, Color(1, 1, 1, 0.75), 4)
 	hints.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
 	hints.position = Vector2(18, -34)
 	root.add_child(hints)
@@ -1211,8 +1223,16 @@ func _update_ui() -> void:
 	_xp_bar.value = int(p.xp)
 	_stat.text = "Рів. %d · ❤ %d/%d · ✦ %d/%d · 💰 %d · 🧪 %d · 💧 %d" % [int(p.lvl), int(p.hp), int(Player.max_hp(p)), int(p.mp), int(Player.max_mp(p)), int(p.gold), int(p.potions), int(p.ethers)]
 	var alive := enemies.filter(func(e): return float(e.hp) > 0).size()
-	var parts: Array = ["Ворогів: %d" % alive, "Ривок %s" % ("✔" if dash_cd <= 0 else "%.1f" % dash_cd)]
-	for i in C.skills.size():
+	var parts: Array = ["Ворогів: %d" % alive]
+	var sl: Array = Classes.slots(p)
+	for k in Classes.SLOTS:
+		var i := -1
+		for j in C.skills.size():
+			if C.skills[j].id == str(sl[k]):
+				i = j
+		if i < 0:
+			parts.append("%s —" % Classes.KEYS[k])
+			continue
 		var S: Dictionary = C.skills[i]
 		var st: String
 		if int(p.lvl) < int(S.lvl):
@@ -1223,7 +1243,7 @@ func _update_ui() -> void:
 			st = "✦"
 		else:
 			st = "✔"
-		parts.append("%s %s %s" % [Classes.KEYS[i], S.name, st])
+		parts.append("%s %s %s" % [Classes.KEYS[k], S.name, st])
 	_cd_label.text = " · ".join(PackedStringArray(parts))
 	var show_boss: bool = boss_ref != null and float(boss_ref.hp) > 0 and boss_ref.aggro
 	_boss_bar.visible = show_boss

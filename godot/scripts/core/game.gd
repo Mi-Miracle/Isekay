@@ -3,7 +3,7 @@ extends Node
 
 signal update_available(version: String, url: String)
 
-const VERSION := "0.15.0"
+const VERSION := "0.16.0"
 const SAVE_VERSION := 1
 const SAVE_PATH := "user://saves/slot1.json"
 const SETTINGS_PATH := "user://settings.cfg"
@@ -73,7 +73,7 @@ func _unhandled_input(event: InputEvent) -> void:
 
 # ---------------------------------------------------------------- game state
 
-func new_game(hero_name: String, world_seed: int = -1, cls: String = "swordsman") -> void:
+func new_game(hero_name: String, world_seed: int = -1, cls: String = "swordsman", origin: Dictionary = {}) -> void:
 	if world_seed < 0:
 		world_seed = randi() & 0x7FFFFFFF
 	world = null
@@ -84,6 +84,11 @@ func new_game(hero_name: String, world_seed: int = -1, cls: String = "swordsman"
 	}
 	var p := Player.fresh()
 	p.cls = cls
+	for k in ["race", "gender", "bless"]:
+		if origin.has(k):
+			p[k] = origin[k]
+	if origin.get("god_goblin", false):
+		p.god_goblin = true
 	p.hp = Player.max_hp(p)
 	p.mp = Player.max_mp(p)
 	state.player = p

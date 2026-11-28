@@ -156,7 +156,7 @@ func _build_hud() -> void:
 	_prompt.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_root.add_child(_prompt)
 
-	_hints = Game.make_label("WASD — рух · Shift — біг · ЛКМ — іти сюди · E — дія · I — спорядження · H — дім · L — землі · U — серця · F — родина · C — клан · M — мапа · Tab — держави · K — королівства · J — хроніка · X — верхи · T — чекати день · F5 — зберегти · Esc — меню", 15, Color(1, 1, 1, 0.75), 4)
+	_hints = Game.make_label("WASD — рух · Shift — біг · ЛКМ — іти сюди · E — дія · I — спорядження · B — навички · H — дім · L — землі · U — серця · F — родина · C — клан · M — мапа · Tab — держави · K — королівства · J — хроніка · X — верхи · T — чекати день · F5 — зберегти · Esc — меню", 15, Color(1, 1, 1, 0.75), 4)
 	_hints.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
 	_hints.position = Vector2(18, -34)
 	_root.add_child(_hints)
@@ -224,7 +224,7 @@ func set_location(title: String, sub: String, info: String) -> void:
 func set_town_mode(on: bool) -> void:
 	_town_mode = on
 	_news.visible = not on and _news_box.get_child_count() > 0
-	_hints.text = "WASD — рух · ЛКМ — іти сюди · E — увійти / поговорити · I — спорядження · H — дім · L — землі · U — серця · F — родина · C — клан · Esc або брама — вийти" if on else "WASD — рух · Shift — біг · ЛКМ — іти сюди · E — дія · I — спорядження · H — дім · L — землі · U — серця · F — родина · C — клан · M — мапа · Tab — держави · K — королівства · J — хроніка · T — чекати день · F5 — зберегти · Esc — меню"
+	_hints.text = "WASD — рух · ЛКМ — іти сюди · E — увійти / поговорити · I — спорядження · H — дім · L — землі · U — серця · F — родина · C — клан · Esc або брама — вийти" if on else "WASD — рух · Shift — біг · ЛКМ — іти сюди · E — дія · I — спорядження · B — навички · H — дім · L — землі · U — серця · F — родина · C — клан · M — мапа · Tab — держави · K — королівства · J — хроніка · T — чекати день · F5 — зберегти · Esc — меню"
 
 
 func update_news(entries: Array) -> void:
@@ -861,10 +861,16 @@ func open_inventory(town: Dictionary = {}) -> void:
 		var l := _item_label(p.gear[slot])
 		l.custom_minimum_size.x = 350
 		left.add_child(l)
-	var skl := Game.make_label("Навички: " + ", ".join(PackedStringArray(C.skills.map(func(x): return "%s %s%s" % [Classes.KEYS[C.skills.find(x)], x.name, "" if int(p.lvl) >= int(x.lvl) else " (рів. %d)" % int(x.lvl)]))), 15, Color(1, 1, 1, 0.7), 2)
+	var sl: Array = Classes.slots(p)
+	var names: Array = []
+	for k in Classes.SLOTS:
+		var S := Classes.skill_by_id(str(p.cls), str(sl[k]))
+		names.append("%s %s" % [Classes.KEYS[k], S.get("name", "—")])
+	var skl := Game.make_label("Навички: " + ", ".join(PackedStringArray(names)), 15, Color(1, 1, 1, 0.7), 2)
 	skl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	skl.custom_minimum_size.x = 350
 	left.add_child(skl)
+	_small_btn(left, "📖 Книга навичок (B)", open_skills)
 	var sc := ScrollContainer.new()
 	sc.custom_minimum_size = Vector2(640, 480)
 	sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
@@ -2325,6 +2331,40 @@ func open_family() -> void:
 	if not f.dynasty.is_empty():
 		var names: Array = f.dynasty.map(func(d): return "%s (рів. %d)" % [d.name, int(d.lvl)])
 		_info(v, "📜 Предки династії: " + " → ".join(PackedStringArray(names)), 16, Color(1, 1, 1, 0.75))
+	var c := _button(v, "Закрити", close_overlay)
+	_show_overlay(pv[0], 0.45)
+	c.grab_focus.call_deferred()
+
+
+## Книга навичок: усі навички класу й вибір, яку класти на Q / F / V / Shift.
+func open_skills() -> void:
+	var p := Player.ensure(Game.state)
+	var C := Player.cls(p)
+	var pv := _vbox_panel("📖 Книга навичок · %s %s" % [C.icon, C.name], 980)
+	var v: VBoxContainer = pv[1]
+	_info(v, "Натисни на клавішу біля навички — і вона ляже туди. Shift також працює як ПКМ, Q — як середня кнопка миші. Ривка більше немає — тепер у кожного класу є власна навичка руху.", 16, Color(1, 1, 1, 0.75))
+	var sl: Array = Classes.slots(p)
+	for S in C.skills:
+		var open: bool = int(p.lvl) >= int(S.lvl)
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 8)
+		v.add_child(row)
+		var txt := "%s%s — %s\n✦ %d · перезарядка %.1f с%s" % ["" if open else "🔒 ", S.name, S.desc, int(S.mp), float(S.cd), "" if open else " · відкриється на %d рівні" % int(S.lvl)]
+		var lab := Game.make_label(txt, 16, Color.WHITE if open else Color(1, 1, 1, 0.5), 3)
+		lab.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		lab.custom_minimum_size.x = 640
+		lab.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		row.add_child(lab)
+		for k in Classes.SLOTS:
+			var on := str(sl[k]) == str(S.id)
+			var b := _small_btn(row, Classes.KEYS[k], func():
+				Classes.assign(p, k, str(S.id))
+				Audio.sfx("click")
+				open_skills())
+			b.custom_minimum_size = Vector2(84, 40)
+			if on:
+				b.add_theme_color_override("font_color", Game.C_GOLD)
+				b.text = "★" + Classes.KEYS[k]
 	var c := _button(v, "Закрити", close_overlay)
 	_show_overlay(pv[0], 0.45)
 	c.grab_focus.call_deferred()

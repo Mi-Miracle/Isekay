@@ -1068,6 +1068,8 @@ func _unhandled_input(event: InputEvent) -> void:
 				hud.open_chronicle()
 			KEY_I:
 				hud.open_inventory()
+			KEY_B:
+				hud.open_skills()
 			KEY_H:
 				hud.open_house({})
 			KEY_L:
@@ -1323,6 +1325,17 @@ func _selftest() -> void:
 	await tree.create_timer(0.6).timeout
 	Selftest.shot(self, "21_inventory")
 	hud.close_overlay()
+	# v0.16: книга навичок — 6 навичок, 4 слоти, перепризначення
+	var sk_all: Array = Player.cls(pl2).skills
+	var before: Array = Classes.slots(pl2).duplicate()
+	Classes.assign(pl2, 3, str(sk_all[5].id))
+	var after: Array = Classes.slots(pl2)
+	hud.open_skills()
+	await tree.create_timer(0.5).timeout
+	Selftest.shot(self, "21b_skills")
+	hud.close_overlay()
+	Selftest.step("skill_slots", sk_all.size() == 6 and after[3] == sk_all[5].id and after.size() == 4, "%s → %s" % [before, after])
+	Classes.assign(pl2, 3, str(before[3]))
 	Selftest.step("dungeon_combat", float(last_dungeon.get("dmg_dealt", 0)) > 0, "%s: ворогів %d, шкоди %d, золота %d, помер: %s" % [dsel.name, last_dungeon.kills, int(last_dungeon.dmg_dealt), last_dungeon.gold, str(last_dungeon.died)])
 	await tree.create_timer(0.6).timeout
 	Selftest.shot(self, "19_after_dungeon")

@@ -48,6 +48,34 @@ func _ready() -> void:
 	_slider(a, "🎵 Музика", "music_vol", 0.0, 1.0, 0.05, true)
 	_slider(a, "🔔 Звуки", "sfx_vol", 0.0, 1.0, 0.05, true)
 	_note(a, "0% — вимкнено. Музика змінюється за місцевістю, у містах, тавернах, удома й у підземеллях.")
+	var cc := Audio.custom_count()
+	var info := _lbl("📁 Власна музика: %d трек(ів) у грі, %d для меню." % [cc.x, cc.y], 18)
+	a.add_child(info)
+	_note(a, "Поклади файли .mp3 / .ogg / .wav у теку «music» поруч із грою: track1, track2… грають у грі впереміш із 8-бітною музикою, menu — у головному меню.")
+	var mrow := HBoxContainer.new()
+	mrow.add_theme_constant_override("separation", 10)
+	a.add_child(mrow)
+	var openb := Button.new()
+	openb.text = "📂 Відкрити теку музики"
+	openb.pressed.connect(func(): OS.shell_open(Audio.music_dir()))
+	mrow.add_child(openb)
+	var rescan := Button.new()
+	rescan.text = "🔄 Оновити"
+	rescan.pressed.connect(func():
+		Audio.scan_music()
+		var c2 := Audio.custom_count()
+		info.text = "📁 Власна музика: %d трек(ів) у грі, %d для меню." % [c2.x, c2.y]
+		var t := Audio.track
+		Audio.track = ""
+		Audio.music(t))
+	mrow.add_child(rescan)
+	var skip := Button.new()
+	skip.text = "⏭ Наступний трек"
+	skip.pressed.connect(func():
+		var t := Audio.track
+		Audio.track = ""
+		Audio.music(t))
+	mrow.add_child(skip)
 
 	var t := _page(tabs, "Twitch")
 	_toggle(t, "Підключити чат Twitch", "twitch_on", func(_on): Twitch.apply_settings())

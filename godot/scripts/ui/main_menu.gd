@@ -7,6 +7,12 @@ var _overlay: Control
 var _goddess: Label
 var _update_btn: Button
 var _line_i := 0
+var _pokes := 0
+var _exit_runs := 0
+var _typed := ""
+var _honked := false
+var _bubble: Label
+static var _intro_shown := false
 
 
 func _ready() -> void:
@@ -30,6 +36,25 @@ func _ready() -> void:
 	hero.offset_right = -110
 	hero.offset_bottom = -40
 	add_child(hero)
+	var heroine := TextureRect.new()
+	heroine.texture = load(Origin.hero_art(true, true))
+	heroine.name = "HeroineArt"
+	heroine.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	heroine.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	heroine.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	heroine.anchor_left = 0.0
+	heroine.anchor_top = 1.0
+	heroine.anchor_right = 0.0
+	heroine.anchor_bottom = 1.0
+	heroine.offset_left = 90
+	heroine.offset_top = -600
+	heroine.offset_right = 430
+	heroine.offset_bottom = -40
+	heroine.flip_h = true
+	add_child(heroine)
+	for art in [hero, heroine]:
+		art.mouse_filter = Control.MOUSE_FILTER_STOP
+		art.gui_input.connect(_on_poke.bind(art))
 
 	var title := Game.make_label("Хроніки Дивосвіту", 86, Color("#fff3fa"), 22, Game.title_font)
 	title.add_theme_color_override("font_outline_color", Color("#7a1e5c"))
@@ -42,6 +67,15 @@ func _ready() -> void:
 	title.position = Vector2(-600, 70)
 	title.size = Vector2(1200, 120)
 	title.name = "Title"
+	title.mouse_filter = Control.MOUSE_FILTER_STOP
+	title.gui_input.connect(func(e):
+		if e is InputEventMouseButton and e.pressed:
+			Audio.sfx("magic")
+			title.pivot_offset = title.size * 0.5
+			var tw := create_tween()
+			tw.tween_property(title, "rotation", TAU, 0.6).set_trans(Tween.TRANS_BACK)
+			tw.tween_callback(func(): title.rotation = 0.0)
+			_say(["Люмі: «Не крути назву! Я її три дні вигадувала!»", "Люмі: «Ще раз — і назва стане «Хроніки Гобліна»!»", "Люмі: «Ну все, тепер у мене паморочиться в голові.»"].pick_random()))
 	add_child(title)
 	var sub := Game.make_label("аніме-ісекай у світі меча й магії", 26, Color("#ffd6ec"), 8)
 	sub.set_anchors_preset(Control.PRESET_CENTER_TOP)
@@ -62,7 +96,8 @@ func _ready() -> void:
 		cont.tooltip_text = Game.save_summary()
 	_btn("Нова гра", _on_new)
 	_btn("Налаштування", _on_settings)
-	_btn("Вихід", func(): get_tree().quit())
+	var ex := _btn("Вихід", func(): get_tree().quit())
+	ex.mouse_entered.connect(_exit_dodge.bind(ex))
 	_update_btn = _btn("", func(): pass)
 	_update_btn.visible = false
 	(cont if not cont.disabled else _buttons.get_child(1)).grab_focus.call_deferred()
@@ -86,12 +121,23 @@ func _ready() -> void:
 	credit.position = Vector2(-500, -60)
 	credit.size = Vector2(1000, 34)
 	add_child(credit)
-	var ver := Game.make_label("v%s · Godot-версія (етап 4)" % Game.VERSION, 16, Color(1, 1, 1, 0.65), 4)
+	var ver := Game.make_label("v%s · Godot-версія" % Game.VERSION, 16, Color(1, 1, 1, 0.65), 4)
 	ver.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
 	ver.position = Vector2(-360, -34)
 	ver.size = Vector2(345, 24)
 	ver.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	add_child(ver)
+
+	_bubble = Game.make_label("", 20, Color("#1b1020"))
+	_bubble.add_theme_stylebox_override("normal", _bubble_box())
+	_bubble.visible = false
+	_bubble.z_index = 5
+	add_child(_bubble)
+
+	if not _intro_shown and not Game.selftest:
+		_intro_shown = true
+		var intro := MangaIntro.new()
+		add_child(intro)
 
 	Game.update_available.connect(_on_update)
 	if not Game.selftest:
@@ -108,6 +154,68 @@ func _btn(text: String, cb: Callable) -> Button:
 	b.mouse_entered.connect(func(): b.grab_focus())
 	_buttons.add_child(b)
 	return b
+
+
+func _bubble_box() -> StyleBoxFlat:
+	var b := StyleBoxFlat.new()
+	b.bg_color = Color(1, 1, 1, 0.96)
+	b.border_color = Color("#1b1020")
+	b.set_border_width_all(3)
+	b.set_corner_radius_all(18)
+	b.content_margin_left = 16
+	b.content_margin_right = 16
+	b.content_margin_top = 8
+	b.content_margin_bottom = 8
+	return b
+
+
+const POKES_M := ["Гей! Я головний герой, а не кнопка!", "Ще раз тицьнеш — піду в інший ісекай.", "Мій меч заточений, між іншим.", "Тиць-тиць… Тобі не нудно?", "Я вже двічі помирав від вантажівки. Не допомагаєш.", "Окей, ти виграв. Що треба?"]
+const POKES_F := ["Ей! Спершу запроси на каву!", "Я героїня, а не антистрес-іграшка!", "Ще раз — і отримаєш булавою. Ну, мечем.", "Хі-хі. Ой, тобто — не смішно!", "Мене теж збила вантажівка. Ми з тобою схожі.", "Гаразд, гаразд, натискай «Нова гра»!"]
+
+
+## Тицяння в героя/героїню на титулці — репліки й досягнення.
+func _on_poke(e: InputEvent, art: TextureRect) -> void:
+	if not (e is InputEventMouseButton and e.pressed and e.button_index == MOUSE_BUTTON_LEFT):
+		return
+	_pokes += 1
+	Audio.sfx("hit", -6.0, 0.2)
+	var fem := art.name == "HeroineArt"
+	var lines: Array = POKES_F if fem else POKES_M
+	var txt: String = lines[(_pokes - 1) % lines.size()]
+	if _pokes == 10:
+		txt = "🏆 Досягнення: «Тицяльник» — 10 тицянь. Люмі пишається (ні)."
+		Audio.sfx("levelup")
+	_bubble.text = txt
+	_bubble.visible = true
+	_bubble.reset_size()
+	var r := art.get_global_rect()
+	_bubble.position = Vector2(clampf(r.get_center().x - _bubble.size.x * 0.5, 10, size.x - _bubble.size.x - 10), r.position.y + 40)
+	var tw := create_tween()
+	tw.tween_property(art, "scale", Vector2(1.06, 0.94), 0.06)
+	tw.tween_property(art, "scale", Vector2.ONE, 0.12)
+	art.pivot_offset = art.size * Vector2(0.5, 1.0)
+	get_tree().create_timer(2.6).timeout.connect(func(): if _bubble.text == txt: _bubble.visible = false)
+
+
+## Кнопка «Вихід» двічі тікає від курсора.
+func _exit_dodge(b: Button) -> void:
+	if _exit_runs >= 2:
+		return
+	_exit_runs += 1
+	Audio.sfx("dash", -4.0)
+	var tw := create_tween()
+	tw.tween_property(b, "position:x", b.position.x + (180.0 if _exit_runs == 1 else -360.0), 0.18).set_trans(Tween.TRANS_BACK)
+	_say(["Люмі: «Куди?! Ти ж ще не врятував(ла) світ!»", "Люмі: «Ну гаразд, гаразд… Але я ображуся.»"][_exit_runs - 1])
+	if _exit_runs == 2:
+		get_tree().create_timer(2.0).timeout.connect(func():
+			var t2 := create_tween()
+			t2.tween_property(b, "position:x", 0.0, 0.3))
+
+
+func _say(text: String) -> void:
+	_goddess.text = text
+	_goddess.modulate.a = 0.0
+	create_tween().tween_property(_goddess, "modulate:a", 1.0, 0.3)
 
 
 func _next_line() -> void:
@@ -144,6 +252,12 @@ func _on_update(version: String, url: String) -> void:
 
 func _process(_delta: float) -> void:
 	var t := Time.get_ticks_msec() / 1000.0
+	var cyc := fmod(t, 24.0)
+	if cyc > 14.2 and cyc < 14.5 and not _honked:
+		_honked = true
+		Audio.sfx("horn", -6.0, 0.0)
+	elif cyc > 18.0:
+		_honked = false
 	var title: Control = get_node_or_null("Title")
 	if title:
 		title.position.y = 70 + sin(t * 1.3) * 6
@@ -151,6 +265,10 @@ func _process(_delta: float) -> void:
 	if hero:
 		hero.offset_top = -640 + sin(t * 1.1) * 8
 		hero.offset_bottom = -40 + sin(t * 1.1) * 8
+	var her: Control = get_node_or_null("HeroineArt")
+	if her:
+		her.offset_top = -600 + sin(t * 1.1 + 1.7) * 8
+		her.offset_bottom = -40 + sin(t * 1.1 + 1.7) * 8
 
 
 func _show_overlay(panel: Control) -> void:
@@ -187,89 +305,52 @@ func _on_continue() -> void:
 
 
 func _on_new() -> void:
-	var p := PanelContainer.new()
-	p.custom_minimum_size = Vector2(660, 0)
-	var v := VBoxContainer.new()
-	v.add_theme_constant_override("separation", 10)
-	p.add_child(v)
-	var t := Game.make_label("Новий ісекай", 36, Game.C_GOLD, 8, Game.title_font)
-	t.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	v.add_child(t)
-	var joke := Game.make_label("Вантажівка-кун уже прогріває мотор. Як тебе звати?", 18, Color(1, 1, 1, 0.8))
-	joke.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	v.add_child(joke)
-	var name_edit := LineEdit.new()
-	name_edit.placeholder_text = "Ім'я героя"
-	name_edit.max_length = 24
-	name_edit.text = ["Акіра", "Тарас", "Юкі", "Мирослава", "Кенджі", "Оксана"].pick_random()
-	v.add_child(name_edit)
-	v.add_child(Game.make_label("Зерно світу (порожнє — випадковий світ):", 16, Color(1, 1, 1, 0.7)))
-	var seed_edit := LineEdit.new()
-	seed_edit.placeholder_text = "наприклад, 12345"
-	v.add_child(seed_edit)
-	v.add_child(Game.make_label("Ким тебе переродити?", 18, Game.C_GOLD, 4))
-	var grid := GridContainer.new()
-	grid.columns = 3
-	grid.add_theme_constant_override("h_separation", 8)
-	grid.add_theme_constant_override("v_separation", 8)
-	v.add_child(grid)
-	var desc := Game.make_label("", 16, Color(1, 1, 1, 0.8))
-	desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	desc.custom_minimum_size = Vector2(620, 70)
-	var chosen := {"cls": "swordsman"}
-	var btns: Array = []
-	var pick := func(k: String) -> void:
-		chosen.cls = k
-		var C: Dictionary = Classes.info(k)
-		var sk: Array = C.skills.map(func(x): return "%s (рів. %d)" % [x.name, int(x.lvl)])
-		desc.text = "%s %s — %s\n❤ %d · ✦ %d · атака %d · навички: %s" % [C.icon, C.name, C.desc, int(C.hp), int(C.mp), int(C.atk), ", ".join(PackedStringArray(sk))]
-		for b in btns:
-			b.button_pressed = b.get_meta("cls") == k
-	for k in Classes.CLASSES:
-		var C: Dictionary = Classes.CLASSES[k]
-		var b := Button.new()
-		b.toggle_mode = true
-		b.text = "%s %s" % [C.icon, C.name]
-		b.custom_minimum_size = Vector2(200, 46)
-		b.set_meta("cls", k)
-		b.pressed.connect(pick.bind(k))
-		grid.add_child(b)
-		btns.append(b)
-	v.add_child(desc)
-	pick.call("swordsman")
-	var h := HBoxContainer.new()
-	h.add_theme_constant_override("separation", 12)
-	v.add_child(h)
-	var back := Button.new()
-	back.text = "Назад"
-	back.pressed.connect(_close_overlay)
-	h.add_child(back)
-	var go := Button.new()
-	go.text = "Вперед, у Дивосвіт!"
-	go.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	go.pressed.connect(func():
-		var s := -1
-		if seed_edit.text.strip_edges().is_valid_int():
-			s = absi(int(seed_edit.text.strip_edges()))
-		Game.new_game(name_edit.text, s, chosen.cls)
-		get_tree().change_scene_to_file("res://scenes/world.tscn"))
-	h.add_child(go)
-	name_edit.text_submitted.connect(func(_t): go.pressed.emit())
-	_show_overlay(p)
-	name_edit.grab_focus.call_deferred()
+	get_tree().change_scene_to_file("res://scenes/story.tscn")
 
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("ui_cancel") and is_instance_valid(_overlay):
 		_close_overlay()
+	if event is InputEventKey and event.pressed and not event.echo and event.unicode > 0:
+		_typed = (_typed + char(event.unicode).to_lower()).right(8)
+		if _typed.ends_with("lumi") or _typed.ends_with("люмі"):
+			_typed = ""
+			_lumi_cameo()
+
+
+## Секрет: набери «lumi» на титулці — Люмі визирає знизу.
+func _lumi_cameo() -> void:
+	var g := TextureRect.new()
+	g.texture = load("res://assets/art/goddess.png")
+	g.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	g.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	g.size = Vector2(420, 420)
+	g.position = Vector2(size.x * 0.5 - 210, size.y)
+	g.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(g)
+	Audio.sfx("levelup")
+	_say("Люмі: «Ти мене покликав(ла)? ✌️ Секрет знайдено! Тепер у тебе +0 до всього, зате настрій +100.»")
+	var tw := create_tween()
+	tw.tween_property(g, "position:y", size.y - 380, 0.5).set_trans(Tween.TRANS_BACK)
+	tw.tween_interval(2.6)
+	tw.tween_property(g, "position:y", size.y + 20, 0.4)
+	tw.tween_callback(g.queue_free)
 
 
 func _selftest() -> void:
 	await get_tree().create_timer(1.5).timeout
 	Selftest.shot(self, "01_menu")
-	var tc := OS.get_environment("ISEKAY_CLASS")
-	Game.new_game("Тестовий Герой", 12345, tc if tc != "" else "swordsman")
-	get_tree().change_scene_to_file("res://scenes/world.tscn")
+	var intro := MangaIntro.new()
+	add_child(intro)
+	for k in [[2.6, "00a_intro_city"], [5.6, "00b_intro_impact"], [9.8, "00c_intro_title"]]:
+		intro.t = k[0]
+		await get_tree().process_frame
+		await get_tree().process_frame
+		Selftest.shot(self, k[1])
+	intro.skip()
+	Selftest.step("manga_intro", true, "заставка: 3 кадри")
+	await get_tree().create_timer(0.7).timeout
+	get_tree().change_scene_to_file("res://scenes/story.tscn")
 
 
 ## Фон меню: небо на світанку, зорі, місяць, гори, замок і пелюстки сакури.
@@ -323,6 +404,22 @@ class MenuBackground extends Control:
 			draw_colored_polygon(PackedVector2Array([base + Vector2(k - 6, -150), base + Vector2(k + 20, -195), base + Vector2(k + 46, -150)]), Color("#3b1f5e"))
 			draw_circle(base + Vector2(k + 20, -110), 5, Color(1, 0.85, 0.5, 0.6 + 0.4 * sin(t * 3 + k)))
 		_mountains(s, s.y * 0.84, 0.003, 60, Color("#2a173f"), t * 16.0)
+		# вантажівка-кун час від часу проїжджає внизу
+		var cyc := fmod(t, 24.0)
+		if cyc > 14.0 and cyc < 17.5:
+			var k := (cyc - 14.0) / 3.5
+			var tx := s.x + 200 - k * (s.x + 600)
+			var ty := s.y * 0.93
+			draw_rect(Rect2(tx, ty - 70, 150, 70), Color("#e8e2f0"))
+			draw_rect(Rect2(tx - 60, ty - 50, 60, 50), Color("#ff6a8a"))
+			draw_rect(Rect2(tx - 50, ty - 44, 30, 20), Color("#bfe6ff"))
+			draw_circle(Vector2(tx - 62, ty - 18), 7, Color("#fffbe0"))
+			for wx in [-35, 40, 115]:
+				draw_circle(Vector2(tx + wx, ty + 2), 14, Color("#1b1020"))
+				draw_circle(Vector2(tx + wx, ty + 2), 6, Color("#8a93a3"))
+			draw_string(get_theme_default_font(), Vector2(tx + 12, ty - 28), "ІСЕКАЙ-ЕКСПРЕС", HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color("#7a1e5c"))
+			for i in 4:
+				draw_line(Vector2(tx + 160 + i * 18, ty - 60 + i * 15), Vector2(tx + 230 + i * 30, ty - 60 + i * 15), Color(1, 1, 1, 0.5), 2)
 		# пелюстки сакури
 		for p in petals:
 			var x := fmod(p[0].x * s.x - t * 40.0 * p[1] * 25.0 + 10000.0, s.x * 1.2) - s.x * 0.1

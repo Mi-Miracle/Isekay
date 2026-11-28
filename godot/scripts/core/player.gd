@@ -15,7 +15,7 @@ const ORES := {
 
 static func fresh() -> Dictionary:
 	return {"cls": "swordsman", "lvl": 1, "xp": 0, "hp": 100.0, "mp": 40.0, "gold": 50, "potions": 3, "ethers": 1, "ore": {}, "kills": 0, "deaths": 0, "best": {}, "cleared": [],
-		"gear": {"weapon": null, "armor": null, "trinket": null}, "bag": []}
+		"gear": {"weapon": null, "armor": null, "trinket": null}, "bag": [], "race": "human", "gender": "m", "bless": ""}
 
 
 const BAG_MAX := 24
@@ -61,26 +61,26 @@ static func gear_sum(p: Dictionary, key: String) -> float:
 
 static func max_hp(p: Dictionary) -> float:
 	var C := cls(p)
-	return float(C.hp) + (int(p.lvl) - 1) * float(C.hp_lvl) + gear_sum(p, "hp")
+	return (float(C.hp) + (int(p.lvl) - 1) * float(C.hp_lvl)) * (1.0 + Origin.mul(p, "hp")) + gear_sum(p, "hp")
 
 
 static func max_mp(p: Dictionary) -> float:
 	var C := cls(p)
-	return float(C.mp) + (int(p.lvl) - 1) * float(C.mp_lvl) + gear_sum(p, "mp")
+	return (float(C.mp) + (int(p.lvl) - 1) * float(C.mp_lvl)) * (1.0 + Origin.mul(p, "mp")) + gear_sum(p, "mp")
 
 
 static func atk(p: Dictionary) -> float:
 	var C := cls(p)
-	return float(C.atk) + (int(p.lvl) - 1) * float(C.atk_lvl) + gear_sum(p, "atk")
+	return (float(C.atk) + (int(p.lvl) - 1) * float(C.atk_lvl)) * (1.0 + Origin.mul(p, "atk")) + gear_sum(p, "atk")
 
 
 static func def(p: Dictionary) -> float:
 	var C := cls(p)
-	return float(C.def) + (int(p.lvl) - 1) * float(C.def_lvl) + gear_sum(p, "def")
+	return (float(C.def) + (int(p.lvl) - 1) * float(C.def_lvl)) * (1.0 + Origin.mul(p, "def")) + gear_sum(p, "def")
 
 
 static func crit(p: Dictionary) -> float:
-	return float(cls(p).crit) + gear_sum(p, "crit")
+	return float(cls(p).crit) + Origin.mul(p, "crit") + gear_sum(p, "crit")
 
 
 ## Додає річ у торбу. false — торба повна.
@@ -116,7 +116,7 @@ static func xp_need(lvl: int) -> int:
 
 ## Додає досвід, повертає кількість нових рівнів.
 static func add_xp(p: Dictionary, n: int) -> int:
-	p.xp = int(p.xp) + n
+	p.xp = int(p.xp) + int(round(n * (1.0 + Origin.mul(p, "xp"))))
 	var ups := 0
 	while int(p.lvl) < 100 and int(p.xp) >= xp_need(int(p.lvl)):
 		p.xp = int(p.xp) - xp_need(int(p.lvl))
@@ -151,4 +151,4 @@ static func short(p: Dictionary) -> String:
 
 
 static func summary(p: Dictionary) -> String:
-	return "%s %s · рів. %d · ❤ %d/%d · ✦ %d/%d · 💰 %d · 🧪 %d" % [cls(p).icon, cls(p).name, int(p.lvl), int(p.hp), int(max_hp(p)), int(p.mp), int(max_mp(p)), int(p.gold), int(p.potions)]
+	return "%s %s · %s · рів. %d · ❤ %d/%d · ✦ %d/%d · 💰 %d · 🧪 %d" % [cls(p).icon, cls(p).name, Origin.summary(p), int(p.lvl), int(p.hp), int(max_hp(p)), int(p.mp), int(max_mp(p)), int(p.gold), int(p.potions)]

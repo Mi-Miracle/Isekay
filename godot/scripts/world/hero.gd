@@ -15,7 +15,8 @@ var _tex: Texture2D
 
 func _ready() -> void:
 	# арт героя (SpriteCook) з mip-рівнями, щоб на будь-якому зумі був гладкий
-	var src: Texture2D = load("res://assets/art/hero.png")
+	var fem: bool = Game.state.get("player") is Dictionary and Origin.female(Game.state.player)
+	var src: Texture2D = load(Origin.hero_art(fem))
 	if src:
 		var img := src.get_image()
 		if img.is_compressed():
