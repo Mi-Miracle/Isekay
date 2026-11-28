@@ -228,7 +228,7 @@ func _move_hero(dir: Vector2, delta: float) -> void:
 
 
 func hero_atk() -> float:
-	return Player.atk(p) * (1.6 if rage_t > 0 else 1.0) * (1.25 if p.get("blessed", false) else 1.0)
+	return Player.atk(p) * (1.6 if rage_t > 0 else 1.0) * (1.25 if p.get("blessed", false) else 1.0) * (1.15 if p.get("elixir", false) else 1.0)
 
 
 func _hit(e: Dictionary, power: float, knock: Vector2) -> void:
@@ -486,7 +486,7 @@ func _damage_enemy(e: Dictionary, dmg: float, knock: Vector2, crit: bool = false
 func _kill(e: Dictionary) -> void:
 	stats.kills += 1
 	p.kills = int(p.kills) + 1
-	var xp: int = e.xp
+	var xp: int = int(e.xp * (1.2 if p.get("rested", false) else 1.0))
 	stats.xp += xp
 	for q in Guild.event("kill", e.kind):
 		_say("📋 Завдання «%s» виконано! Здай у гільдії." % q.name, 2.5)
@@ -755,8 +755,11 @@ func _mine_vein(c: Vector2i) -> void:
 	fx.append({"type": "spark", "pos": (Vector2(c) + Vector2(0.5, 0.5)) * TILE, "t": 0.25, "col": Player.ORES[v.ore].color})
 	if int(v.hits) > 0:
 		return
-	var n := randi_range(1, 3)
+	var n := randi_range(1, 3) + Estate.prof_lvl("mining") / 5
 	Player.add_ore(p, v.ore, n)
+	var up := Estate.prof_xp("mining", 3)
+	if up != "":
+		_say(up, 2.0)
 	stats.ore[v.ore] = int(stats.ore.get(v.ore, 0)) + n
 	_float_text((Vector2(c) + Vector2(0.5, 0)) * TILE, "+%d %s" % [n, Player.ORES[v.ore].name], Player.ORES[v.ore].color)
 	L.veins.erase(c)

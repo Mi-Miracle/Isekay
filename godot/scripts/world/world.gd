@@ -387,6 +387,8 @@ func _tick_days() -> void:
 	while int(Game.state.day_ticked) < today and n < 40:
 		Game.state.day_ticked = int(Game.state.day_ticked) + 1
 		pol.tick(int(Game.state.day_ticked))
+		for msg in Estate.land_daily(pol):
+			hud.toast(msg, Color("#ffb37a"), 5.0)
 		n += 1
 	if n > 0:
 		if pol.owner_dirty:
@@ -494,6 +496,8 @@ func _on_dungeon_done(st: Dictionary, dinfo: Dictionary) -> void:
 	cam.make_current()
 	var p := Player.ensure(Game.state)
 	p.blessed = false
+	p.elixir = false
+	p.rested = false
 	Game.state.minutes = float(Game.state.minutes) + 120.0 + 60.0 * st.kills / 4.0
 	if st.died:
 		var lost := int(int(p.gold) * 0.25)
@@ -703,6 +707,10 @@ func _unhandled_input(event: InputEvent) -> void:
 				hud.open_chronicle()
 			KEY_I:
 				hud.open_inventory()
+			KEY_H:
+				hud.open_house({})
+			KEY_L:
+				hud.open_land({})
 			KEY_K:
 				hud.open_kingdoms()
 			KEY_F10:
@@ -788,6 +796,41 @@ func _selftest() -> void:
 	hud.open_tavern(tb)
 	await tree.create_timer(0.5).timeout
 	Selftest.shot(self, "04e_tavern")
+	hud.close_overlay()
+	# дім, город, ремесло, землі
+	var pp := Player.ensure(Game.state)
+	pp.gold = 20000
+	var e1 := Estate.buy_house(tb)
+	Estate.build_annex("lab")
+	Estate.upgrade_house()
+	Estate.build_annex("workshop")
+	Estate.plant("healroot")
+	Estate.plant("healroot")
+	Estate.house().plots[0].day = Estate.today() - 5
+	Estate.house().plots[1].day = Estate.today() - 5
+	var hv := Estate.harvest()
+	pp.herbs["healroot"] = int(pp.herbs.get("healroot", 0)) + 2
+	var pot0 := int(pp.potions)
+	var br := Estate.brew("potion")
+	pp.ore["iron"] = 6
+	var fg := Estate.forge("iron", "weapon")
+	Selftest.step("house_craft", e1 == "" and int(Estate.house().lvl) == 1 and int(pp.potions) > pot0 and fg.has("item"), "%s | %s | %s" % [hv, br, fg.get("item", {}).get("name", fg.get("err", ""))])
+	hud.open_house(tb)
+	await tree.create_timer(0.6).timeout
+	Selftest.shot(self, "04f_house")
+	hud.close_overlay()
+	Guild.state().points = 90
+	var e2 := Estate.buy_land(tb)
+	Estate.build_land("farm")
+	Estate.build_land("sawmill")
+	Estate.invite_settlers()
+	var pop0 := int(Estate.land().pop)
+	for i in 6:
+		Estate.land_daily(pol)
+	Selftest.step("land", e2 == "" and int(Estate.land().pop) > pop0 and int(Estate.land().gold) > 0, "%s: жителів %d → %d, казна %d" % [Estate.land().get("name", e2), pop0, int(Estate.land().pop), int(Estate.land().get("gold", 0))])
+	hud.open_land(tb)
+	await tree.create_timer(0.6).timeout
+	Selftest.shot(self, "04g_land")
 	hud.close_overlay()
 	var n_bld := town.buildings.size()
 	town.leave()

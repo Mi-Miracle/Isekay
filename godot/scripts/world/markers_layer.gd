@@ -33,6 +33,7 @@ func _draw() -> void:
 	var vr := view_rect.grow(cell * 4)
 	var show_small := zoom >= 0.9
 	var show_names := zoom >= 1.15
+	_post(k)
 	# назви пам'яток — великі напівпрозорі написи
 	for L in wd.landmarks:
 		var lc: int = L.y * Defs.W + L.x
@@ -73,6 +74,30 @@ func _draw() -> void:
 		if b.id == highlight:
 			var t := Time.get_ticks_msec() / 1000.0
 			draw_arc(p, cell * (1.3 + 0.12 * sin(t * 5.0)) * k, 0, TAU, 40, Color(1, 0.85, 0.4, 0.9), 2.0 / zoom, true)
+
+
+func _post(k: float) -> void:
+	_draw_own(k)
+
+
+func _draw_own(k: float) -> void:
+	var h := Estate.house()
+	if not h.is_empty():
+		var B: Dictionary = wd.baronies[int(h.barony)]
+		var p := Vector2(B.x + 1.6, B.y - 0.4) * cell
+		var u := cell * k * 0.8
+		draw_circle(p, u * 0.9, Color(1, 0.4, 0.7, 0.35))
+		draw_rect(Rect2(p.x - u * 0.45, p.y - u * 0.2, u * 0.9, u * 0.6), Color("#fff0f6"))
+		draw_colored_polygon(PackedVector2Array([p + Vector2(-u * 0.6, -u * 0.2), p + Vector2(0, -u * 0.75), p + Vector2(u * 0.6, -u * 0.2)]), Color("#e05a9a"))
+		_label(p + Vector2(0, u * 0.6), "Мій дім", 14, Color("#ffc4e1"), false)
+	var L := Estate.land()
+	if not L.is_empty():
+		var B: Dictionary = wd.baronies[int(L.barony)]
+		var p := Vector2(B.x - 1.4, B.y - 0.6) * cell
+		var u := cell * k * 0.9
+		draw_line(p + Vector2(0, u * 0.6), p + Vector2(0, -u * 0.8), Color(0.3, 0.2, 0.1), u * 0.1)
+		draw_colored_polygon(PackedVector2Array([p + Vector2(0, -u * 0.8), p + Vector2(u * 0.8, -u * 0.55), p + Vector2(0, -u * 0.3)]), Color("#e05a9a"))
+		_label(p + Vector2(0, u * 0.8), L.name, 14, Color("#ffc4e1"), false)
 
 
 func _label(p: Vector2, text: String, px: int, col: Color, big: bool) -> void:

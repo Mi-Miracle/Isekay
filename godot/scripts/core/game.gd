@@ -3,7 +3,7 @@ extends Node
 
 signal update_available(version: String, url: String)
 
-const VERSION := "0.5.0"
+const VERSION := "0.6.0"
 const SAVE_VERSION := 1
 const SAVE_PATH := "user://saves/slot1.json"
 const SETTINGS_PATH := "user://settings.cfg"

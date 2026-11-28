@@ -156,7 +156,7 @@ func _build_hud() -> void:
 	_prompt.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_root.add_child(_prompt)
 
-	_hints = Game.make_label("WASD — рух · Shift — біг · ЛКМ — іти сюди · E — дія · I — спорядження · M — мапа · Tab — держави · K — королівства · J — хроніка · T — чекати день · F5 — зберегти · Esc — меню", 15, Color(1, 1, 1, 0.75), 4)
+	_hints = Game.make_label("WASD — рух · Shift — біг · ЛКМ — іти сюди · E — дія · I — спорядження · H — дім · L — землі · M — мапа · Tab — держави · K — королівства · J — хроніка · T — чекати день · F5 — зберегти · Esc — меню", 15, Color(1, 1, 1, 0.75), 4)
 	_hints.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
 	_hints.position = Vector2(18, -34)
 	_root.add_child(_hints)
@@ -224,7 +224,7 @@ func set_location(title: String, sub: String, info: String) -> void:
 func set_town_mode(on: bool) -> void:
 	_town_mode = on
 	_news.visible = not on and _news_box.get_child_count() > 0
-	_hints.text = "WASD — рух · ЛКМ — іти сюди · E — увійти / поговорити · I — спорядження · Esc або брама — вийти" if on else "WASD — рух · Shift — біг · ЛКМ — іти сюди · E — дія · I — спорядження · M — мапа · Tab — держави · K — королівства · J — хроніка · T — чекати день · F5 — зберегти · Esc — меню"
+	_hints.text = "WASD — рух · ЛКМ — іти сюди · E — увійти / поговорити · I — спорядження · H — дім · L — землі · Esc або брама — вийти" if on else "WASD — рух · Shift — біг · ЛКМ — іти сюди · E — дія · I — спорядження · H — дім · L — землі · M — мапа · Tab — держави · K — королівства · J — хроніка · T — чекати день · F5 — зберегти · Esc — меню"
 
 
 func update_news(entries: Array) -> void:
@@ -426,6 +426,8 @@ func open_settlement(b: Dictionary) -> void:
 		world.rest_until_morning()
 		close_overlay())
 	_button(h, "Про державу", func(): open_kingdoms(R.id))
+	if b.type != "hellfort":
+		_button(h, "📜 Землі", func(): open_land_office(b))
 	_button(h, "Зберегти", func():
 		world.save()
 		toast("Гру збережено ✨", Game.C_GOLD))
@@ -954,13 +956,18 @@ func open_service(b: Dictionary, name: String) -> void:
 			open_settlement(b)
 		"Шахта":
 			world.enter_dungeon(world.mine_info(b))
+		"Мій дім":
+			open_house(b)
+		"Мої землі":
+			open_land(b)
+		"Маєтки":
+			open_estate_agent(b)
 		_:
 			var jokes := {
 				"Наставник": "Наставник дивиться на тебе і зітхає: «Нові прийоми — в наступному оновленні. Поки що тренуй терпіння.»",
 				"Арена": "На арені сьогодні вихідний. Гладіатори грають у карти.",
 				"Колізей": "Колізей ремонтують після вчорашнього бою з драконом. Приходь пізніше.",
 				"Стайня": "Коні є, але Люмі каже: «Спершу навчися ходити». Їзда верхи — згодом.",
-				"Маєтки": "Агент з нерухомості: «Будинок мрії? Скоро! Поки що є будинок сну. Таверна.»",
 				"Гавань": "Кораблі є. Капітани п'яні. Плавання — в одному з наступних оновлень.",
 			}
 			_simple_panel(name, jokes.get(name, "Тут поки зачинено."), b)
@@ -1183,4 +1190,305 @@ func open_market(b: Dictionary) -> void:
 	_button(h, "🎒 Продати речі", func(): open_inventory(b))
 	var c := _button(h, "Вийти", close_overlay)
 	_show_overlay(pv[0], 0.35)
+	c.grab_focus.call_deferred()
+
+
+# ---------------------------------------------------------------- дім, ремесло, землі
+
+func _row(v: Control) -> HFlowContainer:
+	var r := HFlowContainer.new()
+	r.add_theme_constant_override("h_separation", 8)
+	r.add_theme_constant_override("v_separation", 8)
+	r.alignment = FlowContainer.ALIGNMENT_CENTER
+	v.add_child(r)
+	return r
+
+
+func _small_btn(parent: Control, text: String, cb: Callable, disabled := false) -> Button:
+	var b := Button.new()
+	b.text = text
+	b.add_theme_font_size_override("font_size", 16)
+	b.disabled = disabled
+	b.pressed.connect(cb)
+	parent.add_child(b)
+	return b
+
+
+func _info(v: Control, text: String, size := 17, col := Color.WHITE) -> Label:
+	var l := Game.make_label(text, size, col, 3)
+	l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	l.custom_minimum_size.x = 860
+	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	v.add_child(l)
+	return l
+
+
+func _err(msg: String) -> bool:
+	if msg != "":
+		toast(msg, Color("#ffb3b3"))
+		return true
+	return false
+
+
+func open_estate_agent(b: Dictionary) -> void:
+	var h := Estate.house()
+	var pv := _vbox_panel("Маєтки · агент з нерухомості", 900)
+	var v: VBoxContainer = pv[1]
+	_info(v, "Агент у капелюсі з пір'ям: «Будинок мрії! Вид на площу, сусіди майже не співають уночі.»", 17, Color("#ffd6ec"))
+	if h.is_empty():
+		var H0: Dictionary = Estate.HOUSE_LEVELS[0]
+		_info(v, "%s у %s — %d 💰. %s" % [H0.name, b.name, int(H0.cost), H0.desc])
+		_info(v, "Вдома: сон відновлює сили, город, скриня, прибудови (бібліотека, майстерня, лабораторія…).", 16, Color(1, 1, 1, 0.7))
+		var r := _row(v)
+		_small_btn(r, "🏠 Купити дім тут", func():
+			if not _err(Estate.buy_house(b)):
+				toast("🏠 Вітаємо з новосіллям у %s! Тепер тут є «Мій дім»." % b.name, Game.C_GOLD, 5.0)
+				close_overlay())
+	else:
+		var hb: Dictionary = world.wd.baronies[int(h.barony)]
+		_info(v, "Твій дім — у %s (%s). Ним керують на місці або клавішею H." % [hb.name, Estate.HOUSE_LEVELS[int(h.lvl)].name])
+	var c := _button(v, "Вийти", close_overlay)
+	_show_overlay(pv[0], 0.35)
+	c.grab_focus.call_deferred()
+
+
+## Дім. b — поселення, де зараз герой ({} — дивимось здалеку: лише перегляд).
+func open_house(b: Dictionary) -> void:
+	var h := Estate.house()
+	if h.is_empty():
+		toast("У тебе ще немає дому. Купи в «Маєтках» будь-якого містечка.", Color(1, 1, 1, 0.8))
+		return
+	var here: bool = not b.is_empty() and int(b.id) == int(h.barony)
+	var p := Player.ensure(Game.state)
+	var HL: Dictionary = Estate.HOUSE_LEVELS[int(h.lvl)]
+	var hb: Dictionary = world.wd.baronies[int(h.barony)]
+	var pv := _vbox_panel("%s у %s" % [HL.name, hb.name], 940)
+	var v: VBoxContainer = pv[1]
+	_info(v, HL.desc, 16, Color("#ffd6ec"))
+	if not here:
+		_info(v, "Ти далеко від дому. Керувати можна лише на місці (Мій дім у %s)." % hb.name, 16, Color("#ffb3b3"))
+	_info(v, "💰 %d · Трави: %s · Ремесла: %s" % [int(p.gold), _herbs_text(p), _prof_text()], 16, Game.C_GOLD)
+	# город
+	var plots_txt: Array = []
+	for pl in h.plots:
+		var C: Dictionary = Estate.CROPS[pl.crop]
+		var left := Estate.grow_days(pl.crop) - (Estate.today() - int(pl.day))
+		plots_txt.append("%s %s%s" % [C.icon, C.name, " — достигло!" if left <= 0 else " — ще %.1f дн." % left])
+	_info(v, "🌱 Город (%d/%d): %s" % [h.plots.size(), int(HL.plots), ", ".join(PackedStringArray(plots_txt)) if not plots_txt.is_empty() else "порожньо"], 17)
+	if here:
+		var r := _row(v)
+		for k in Estate.CROPS:
+			var C: Dictionary = Estate.CROPS[k]
+			_small_btn(r, "Посадити %s %s (%d💰)" % [C.icon, C.name, int(C.seed)], func():
+				if not _err(Estate.plant(k)):
+					open_house(b))
+		_small_btn(r, "🧺 Зібрати врожай", func():
+			toast(Estate.harvest(), Color("#7dff9a"), 5.0)
+			open_house(b))
+	# прибудови
+	var an: Array = h.annex.map(func(k): return "%s %s" % [Estate.ANNEXES[k].icon, Estate.ANNEXES[k].name])
+	_info(v, "🏗️ Прибудови (%d/%d): %s" % [h.annex.size(), int(HL.annex), ", ".join(PackedStringArray(an)) if not an.is_empty() else "немає"], 17)
+	if here:
+		var r2 := _row(v)
+		for k in Estate.ANNEXES:
+			if h.annex.has(k):
+				continue
+			var A: Dictionary = Estate.ANNEXES[k]
+			var bt := _small_btn(r2, "%s %s (%d💰)" % [A.icon, A.name, int(A.cost)], func():
+				if not _err(Estate.build_annex(k)):
+					toast("Збудовано: %s!" % A.name, Game.C_GOLD)
+					open_house(b))
+			bt.tooltip_text = A.desc
+	if here:
+		var r3 := _row(v)
+		_small_btn(r3, "🛏️ Спати вдома", func():
+			world.rest_until_morning()
+			toast(Estate.sleep_home(), Game.C_GOLD, 5.0)
+			close_overlay())
+		_small_btn(r3, "📦 Скриня (%d/%d)" % [h.stash.size(), Estate.stash_cap()], func(): open_stash(b))
+		if h.annex.has("workshop"):
+			_small_btn(r3, "🔨 Майстерня", func(): open_workshop(b))
+		if h.annex.has("lab"):
+			_small_btn(r3, "⚗️ Лабораторія", func(): open_lab(b))
+		if int(h.lvl) < Estate.HOUSE_LEVELS.size() - 1:
+			var NX: Dictionary = Estate.HOUSE_LEVELS[int(h.lvl) + 1]
+			_small_btn(r3, "⬆️ Розширити до «%s» (%d💰)" % [NX.name, int(NX.cost)], func():
+				if not _err(Estate.upgrade_house()):
+					toast("🏠 Тепер у тебе %s!" % NX.name, Game.C_GOLD, 5.0)
+					open_house(b))
+	var c := _button(v, "Вийти", close_overlay)
+	_show_overlay(pv[0], 0.4)
+	c.grab_focus.call_deferred()
+
+
+func _herbs_text(p: Dictionary) -> String:
+	var hs := Estate.herbs(p)
+	var parts: Array = []
+	for k in hs:
+		if int(hs[k]) > 0:
+			parts.append("%s%d" % [Estate.CROPS[k].icon, int(hs[k])])
+	return " ".join(PackedStringArray(parts)) if not parts.is_empty() else "немає"
+
+
+func _prof_text() -> String:
+	var pr := Estate.profs()
+	var parts: Array = []
+	for k in Estate.PROFS:
+		parts.append("%s %d" % [Estate.PROFS[k], int(pr[k].lvl)])
+	return ", ".join(PackedStringArray(parts))
+
+
+func open_stash(b: Dictionary) -> void:
+	var h := Estate.house()
+	var p := Player.ensure(Game.state)
+	var pv := _vbox_panel("Скриня (%d/%d)" % [h.stash.size(), Estate.stash_cap()], 900)
+	var v: VBoxContainer = pv[1]
+	var hb := HBoxContainer.new()
+	hb.add_theme_constant_override("separation", 16)
+	v.add_child(hb)
+	for side in ["bag", "stash"]:
+		var col := VBoxContainer.new()
+		col.custom_minimum_size = Vector2(420, 420)
+		hb.add_child(col)
+		col.add_child(Game.make_label("Торба" if side == "bag" else "Скриня", 18, Game.C_GOLD, 3))
+		var arr: Array = p.bag if side == "bag" else h.stash
+		var sc := ScrollContainer.new()
+		sc.custom_minimum_size = Vector2(420, 400)
+		sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+		col.add_child(sc)
+		var lst := VBoxContainer.new()
+		sc.add_child(lst)
+		for i in arr.size():
+			var it: Dictionary = arr[i]
+			var bt := Button.new()
+			bt.text = ("→ " if side == "bag" else "← ") + it.name
+			bt.add_theme_color_override("font_color", Items.RARITY[int(it.rarity)].col)
+			bt.add_theme_font_size_override("font_size", 15)
+			bt.alignment = HORIZONTAL_ALIGNMENT_LEFT
+			bt.tooltip_text = Items.describe(it)
+			bt.pressed.connect(func():
+				if side == "bag":
+					if h.stash.size() < Estate.stash_cap():
+						h.stash.append(p.bag[i])
+						p.bag.remove_at(i)
+				elif p.bag.size() < Player.BAG_MAX:
+					p.bag.append(h.stash[i])
+					h.stash.remove_at(i)
+				open_stash(b))
+			lst.add_child(bt)
+	_button(v, "Назад", func(): open_house(b))
+	_show_overlay(pv[0], 0.4)
+
+
+func open_workshop(b: Dictionary) -> void:
+	var p := Player.ensure(Game.state)
+	var pv := _vbox_panel("Майстерня · ковальство %d" % Estate.prof_lvl("smith"), 900)
+	var v: VBoxContainer = pv[1]
+	_info(v, "Ковадло дзвенить, молот важкий, пальці — поки що всі десять. Кращий коваль — краща річ.", 16, Color("#ffd6ec"))
+	for ore in Estate.FORGE:
+		var F: Dictionary = Estate.FORGE[ore]
+		var have := int(p.ore.get(ore, 0))
+		var r := _row(v)
+		var l := Game.make_label("%s: %d/%d → предмет ~%d рівня" % [Player.ORES[ore].name, have, int(F.need), maxi(int(F.lvl), int(p.lvl) - 2)], 16, Player.ORES[ore].color, 3)
+		l.custom_minimum_size.x = 420
+		r.add_child(l)
+		var slots: Array = ["trinket"] if ore == "crystal" else ["weapon", "armor"]
+		for sl in slots:
+			var do_forge := func():
+				var res := Estate.forge(ore, sl)
+				if res.has("err"):
+					_err(res.err)
+				else:
+					toast("🔨 Викувано: %s%s" % [res.item.name, (" · " + res.msg) if res.msg != "" else ""], Items.RARITY[int(res.item.rarity)].col, 5.0)
+					open_workshop(b)
+			_small_btn(r, "Кувати: %s" % Items.SLOT_NAME[sl], do_forge, have < int(F.need))
+	_button(v, "Назад", func(): open_house(b))
+	_show_overlay(pv[0], 0.4)
+
+
+func open_lab(b: Dictionary) -> void:
+	var p := Player.ensure(Game.state)
+	var pv := _vbox_panel("Лабораторія · алхімія %d" % Estate.prof_lvl("alchemy"), 860)
+	var v: VBoxContainer = pv[1]
+	_info(v, "Колби булькають, щось димить фіолетовим. Брови поки на місці. Трави: %s" % _herbs_text(p), 16, Color("#ffd6ec"))
+	for k in Estate.RECIPES:
+		var R: Dictionary = Estate.RECIPES[k]
+		var need: Array = []
+		for h in R.need:
+			need.append("%s %s×%d" % [Estate.CROPS[h].icon, Estate.CROPS[h].name, int(R.need[h])])
+		var r := _row(v)
+		var l := Game.make_label("%s ← %s%s" % [R.name, ", ".join(PackedStringArray(need)), "" if Estate.prof_lvl("alchemy") >= int(R.lvl) else " (алхімія %d)" % int(R.lvl)], 16, Color.WHITE, 3)
+		l.custom_minimum_size.x = 600
+		l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		r.add_child(l)
+		var do_brew := func():
+			toast("⚗️ " + Estate.brew(k), Color("#c9a7ff"))
+			open_lab(b)
+		_small_btn(r, "Зварити", do_brew, not Estate.can_brew(k))
+	_button(v, "Назад", func(): open_house(b))
+	_show_overlay(pv[0], 0.4)
+
+
+func open_land_office(b: Dictionary) -> void:
+	var L := Estate.land()
+	var g := Guild.state()
+	var T: Dictionary = Estate.LAND_TIERS[0]
+	var pv := _vbox_panel("Земельна канцелярія", 860)
+	var v: VBoxContainer = pv[1]
+	_info(v, "Писар у трьох окулярах: «Землі корона дарує лише перевіреним авантюристам. І за мито, звісно. Мито — святе.»", 16, Color("#ffd6ec"))
+	if L.is_empty():
+		_info(v, "%s у баронстві %s: мито %d 💰, потрібен ранг гільдії %s (у тебе %s)." % [T.name, b.name, int(T.cost), Guild.RANKS[int(T.rank)], Guild.rank_name(g)])
+		_info(v, "Землі приносять золото, дерево й камінь, ростуть поселенцями й розширюються до замку.", 16, Color(1, 1, 1, 0.7))
+		var r := _row(v)
+		_small_btn(r, "📜 Отримати землю тут", func():
+			if not _err(Estate.buy_land(b)):
+				toast("🏰 Тепер у тебе є власні землі: %s! (L — керувати)" % Estate.land().name, Game.C_GOLD, 6.0)
+				open_land(b))
+	else:
+		_info(v, "У тебе вже є землі: %s у %s." % [L.name, world.wd.baronies[int(L.barony)].name])
+	var c := _button(v, "Вийти", close_overlay)
+	_show_overlay(pv[0], 0.35)
+	c.grab_focus.call_deferred()
+
+
+func open_land(b: Dictionary) -> void:
+	var L := Estate.land()
+	if L.is_empty():
+		toast("Земель ще немає. Попроси в канцелярії при дворі (ранг гільдії D+).", Color(1, 1, 1, 0.8))
+		return
+	var here: bool = not b.is_empty() and int(b.id) == int(L.barony)
+	var T: Dictionary = Estate.LAND_TIERS[int(L.tier)]
+	var lb: Dictionary = world.wd.baronies[int(L.barony)]
+	var pv := _vbox_panel("%s «%s»" % [T.name, L.name], 960)
+	var v: VBoxContainer = pv[1]
+	_info(v, "%s · баронство %s. %s" % [T.desc, lb.name, "" if here else "Збирати казну й будувати — на місці."], 16, Color("#ffd6ec"))
+	var food_d := 20 + 35 * Estate.count_bld("farm") - int(L.pop)
+	_info(v, "👥 %d/%d (+%d в дорозі) · 🍞 %d (%+d/день) · 🪵 %d · 🪨 %d · 💰 у казні %d" % [int(L.pop), int(T.cap), int(L.incoming), int(L.food), food_d, int(L.wood), int(L.stone), int(L.gold)], 18, Game.C_GOLD)
+	var bl: Array = L.bld.map(func(k): return "%s %s" % [Estate.LAND_BUILD[k].icon, Estate.LAND_BUILD[k].name])
+	_info(v, "Ділянки (%d/%d): %s" % [L.bld.size(), int(T.lots), ", ".join(PackedStringArray(bl)) if not bl.is_empty() else "порожньо"], 17)
+	if here:
+		var r := _row(v)
+		for k in Estate.LAND_BUILD:
+			var B: Dictionary = Estate.LAND_BUILD[k]
+			var bt := _small_btn(r, "%s %s (%d💰%s%s)" % [B.icon, B.name, int(B.gold), " %d🪵" % int(B.wood) if int(B.wood) > 0 else "", " %d🪨" % int(B.stone) if int(B.stone) > 0 else ""], func():
+				if not _err(Estate.build_land(k)):
+					toast("Збудовано: %s!" % B.name, Game.C_GOLD)
+					open_land(b))
+			bt.tooltip_text = B.desc
+		var r2 := _row(v)
+		_small_btn(r2, "💰 Забрати казну (%d)" % int(L.gold), func():
+			toast("Забрано %d 💰 з казни земель." % Estate.collect_land(), Game.C_GOLD)
+			open_land(b))
+		_small_btn(r2, "📣 Покликати поселенців (60💰)", func():
+			var m := Estate.invite_settlers()
+			toast(m, Color("#a8f0c0") if m.begins_with("Глашатаї рознесли") else Color("#ffb3b3"), 5.0)
+			open_land(b))
+		if int(L.tier) < Estate.LAND_TIERS.size() - 1:
+			var NX: Dictionary = Estate.LAND_TIERS[int(L.tier) + 1]
+			_small_btn(r2, "⬆️ До «%s» (%d💰, %d🪨, ранг %s)" % [NX.name, int(NX.cost), 20 * (int(L.tier) + 1), Guild.RANKS[int(NX.rank)]], func():
+				if not _err(Estate.upgrade_land()):
+					toast("🏰 Твої землі тепер — %s!" % NX.name, Game.C_GOLD, 6.0)
+					open_land(b))
+	var c := _button(v, "Вийти", close_overlay)
+	_show_overlay(pv[0], 0.4)
 	c.grab_focus.call_deferred()

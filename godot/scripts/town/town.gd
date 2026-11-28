@@ -24,7 +24,7 @@ const VILLAGER_LINES := [
 const ICONS := {
 	"Гільдія": "📋", "Таверна": "🍺", "Крамниця": "🛒", "Кузня": "⚒️", "Алхімік": "⚗️", "Наставник": "🎓",
 	"Храм": "⛪", "Арена": "🏟️", "Двір": "👑", "Ринок": "💰", "Стайня": "🐴", "Маєтки": "🏠", "Магічна лавка": "🔮",
-	"Колізей": "🏛️", "Староста": "🧓", "Гавань": "⚓", "Ратуша": "🏛️", "Шахта": "⛏️",
+	"Колізей": "🏛️", "Староста": "🧓", "Гавань": "⚓", "Ратуша": "🏛️", "Шахта": "⛏️", "Мій дім": "🏠", "Мої землі": "🏰",
 }
 
 var world
@@ -79,6 +79,12 @@ func _layout() -> void:
 		names.push_front("Ратуша")
 	if b.type == "mine":
 		names.append("Шахта")
+	if int(Estate.house().get("barony", -1)) == int(b.id):
+		names.push_front("Мій дім")
+	if int(Estate.land().get("barony", -1)) == int(b.id):
+		names.push_front("Мої землі")
+	if not names.has("Маєтки") and b.type in ["town", "city", "capital", "port"]:
+		names.append("Маєтки")
 	var bw := 7 if b.type == "capital" else 6
 	var bh := 5 if b.type == "capital" else 4
 	# слоти навколо площі: верхній ряд, ліва й права колони, нижні кути (не на головній дорозі)
@@ -293,6 +299,10 @@ func _unhandled_input(event: InputEvent) -> void:
 				leave()
 			KEY_I:
 				world.hud.open_inventory(b)
+			KEY_H:
+				world.hud.open_house(b)
+			KEY_L:
+				world.hud.open_land(b)
 			KEY_J:
 				world.hud.open_chronicle()
 			KEY_K:
@@ -427,6 +437,8 @@ class MapLayer extends Node2D:
 				roof = Color("#a0522d")
 			elif bd.name in ["Гільдія"]:
 				roof = Color("#2f5aa8")
+			elif bd.name in ["Мій дім", "Мої землі"]:
+				roof = Color("#e05a9a")
 			draw_colored_polygon(PackedVector2Array([r.position + Vector2(-6, r.size.y * 0.46), r.position + Vector2(r.size.x * 0.5, -T * 0.4), r.position + Vector2(r.size.x + 6, r.size.y * 0.46)]), roof)
 			draw_rect(Rect2(r.position.x - 6, r.position.y + r.size.y * 0.4, r.size.x + 12, 6), roof.darkened(0.25))
 			for wx in [0.18, 0.72]:
