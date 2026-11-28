@@ -86,7 +86,7 @@
           if (!sks.length) sub.appendChild(h('span', { class: 'muted' }, 'Немає навичок. Обери клас у гільдії!'));
           for (const sk of sks) { const cd = b.cd[sk.id]; sub.appendChild(h('button', { class: 'btn small' + (sk.ascend ? ' pink' : ''), disabled: busy || p.mp < sk.mp || cd > 0, title: sk.desc, onclick: () => doAct({ type: 'skill', id: sk.id, target }) }, `${sk.icon} ${sk.name} ★${sk.rank} · 🔷${sk.mp}${cd > 0 ? ` ⏱${cd}` : ''}`)); }
         } else if (menu === 'items') {
-          const its = Object.entries(p.inventory).filter(([id]) => { const it = PL().item(id); return it && it.kind === 'consumable' && !it.use.revive && !it.use.teleport && !it.use.reveal; });
+          const its = Object.entries(p.inventory).filter(([id]) => { const it = PL().item(id); return it && it.kind === 'consumable' && !it.use.revive && !it.use.teleport && !it.use.reveal && !it.use.home; });
           if (!its.length) sub.appendChild(h('span', { class: 'muted' }, 'Немає витратних предметів.'));
           for (const [id, n] of its) { const it = PL().item(id); sub.appendChild(h('button', { class: 'btn small', disabled: busy, onclick: () => doAct({ type: 'item', id, target }) }, `${it.icon} ${it.name} ×${n}`)); }
         } else sub.appendChild(h('span', { class: 'muted', style: { fontSize: '13px' } }, 'Клікни на ворога — обрати ціль. Значок над ворогом — його намір на цей хід. Атака: ПРОБІЛ у золотій зоні!'));

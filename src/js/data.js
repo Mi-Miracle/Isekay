@@ -311,6 +311,7 @@
     scroll_haste: { name: 'Сувій прискорення', icon: '📜', price: 140, use: { buff: 'haste', amt: 1, turns: 3, scroll: true }, desc: 'Додатковий хід щораунду.' },
     scroll_teleport: { name: 'Сувій повернення', icon: '🌀', price: 80, use: { teleport: true }, desc: 'Переносить до найближчого міста (поза боєм).' },
     scroll_reveal: { name: 'Сувій картографа', icon: '🗺️', price: 60, use: { reveal: true }, desc: 'Відкриває мапу навколо (поза боєм).' },
+    scroll_home: { name: 'Сувій «Додому»', icon: '🏡', price: 160, use: { home: true }, desc: 'Переносить у твій будинок чи маєток (поза боєм). Город сам себе не полле!' },
     food_soup: { name: 'Рибна юшка', icon: '🍲', price: 18, use: { hp: 90, food: { buff: 'regen', amt: 0.03, battles: 3 } } },
     food_kebab: { name: 'Шашлик з вовчатини', icon: '🍢', price: 30, use: { hp: 120, food: { buff: 'atk', amt: 0.12, battles: 3 } } },
     food_borsch: { name: 'Борщ героя', icon: '🥣', price: 55, use: { hp: 250, mp: 60, food: { buff: 'all', amt: 0.1, battles: 4 } }, desc: 'Зі сметаною. Без сметани — злочин.' },
@@ -338,7 +339,7 @@
       { id: 'food_steak', lvl: 16, needs: { scale: 1, herb_dragon: 1, meat: 2 }, out: 'food_steak', xp: 70 },
     ],
     scribing: [
-      { id: 'scroll_reveal', lvl: 1, needs: { cloth: 1, herb_heal: 1 }, out: 'scroll_reveal', xp: 10 }, { id: 'scroll_teleport', lvl: 3, needs: { cloth: 1, herb_moon: 1 }, out: 'scroll_teleport', xp: 16 },
+      { id: 'scroll_reveal', lvl: 1, needs: { cloth: 1, herb_heal: 1 }, out: 'scroll_reveal', xp: 10 }, { id: 'scroll_teleport', lvl: 3, needs: { cloth: 1, herb_moon: 1 }, out: 'scroll_teleport', xp: 16 }, { id: 'scroll_home', lvl: 4, needs: { cloth: 1, herb_moon: 1, herb_heal: 1 }, out: 'scroll_home', xp: 18 },
       { id: 'scroll_protect', lvl: 5, needs: { cloth: 1, golem_core: 1 }, out: 'scroll_protect', xp: 22 }, { id: 'scroll_fire', lvl: 7, needs: { cloth: 1, herb_fire: 2 }, out: 'scroll_fire', xp: 28 },
       { id: 'scroll_ice', lvl: 9, needs: { cloth: 1, ice_shard: 1 }, out: 'scroll_ice', xp: 32 }, { id: 'scroll_thunder', lvl: 12, needs: { cloth: 1, feather: 2, gem: 1 }, out: 'scroll_thunder', xp: 40 },
       { id: 'scroll_haste', lvl: 14, needs: { cloth: 1, pixie_dust: 2 }, out: 'scroll_haste', xp: 48 },
@@ -441,8 +442,8 @@
     horse: { name: 'Кінь', icon: '🐎', price: 400, speed: 1.6, enc: 0.85 },
     chicken: { name: 'Гігантська курка', icon: '🐓', price: 700, speed: 1.8, enc: 0.8, desc: 'Ко-ко-кочетом мчить!' },
     carriage: { name: 'Карета', icon: '🛻', price: 1500, speed: 1.8, enc: 0.55, desc: 'Комфорт і менше засідок. Бандити поважають колеса.' },
-    griffin: { name: 'Грифон', icon: '🦅', price: 6000, speed: 3, enc: 0.35, desc: 'Летить над дорогами і проблемами.' },
-    carpet: { name: 'Килим-літак', icon: '🧞', price: 9000, speed: 3.5, enc: 0.3, desc: 'Магія Сходу. Укачує.' },
+    griffin: { name: 'Грифон', icon: '🦅', price: 6000, speed: 3, enc: 0.35, fly: true, desc: 'Летить над дорогами і проблемами. Напряму, над горами й річками.' },
+    carpet: { name: 'Килим-літак', icon: '🧞', price: 9000, speed: 3.5, enc: 0.3, fly: true, desc: 'Магія Сходу. Укачує. Літає напряму.' },
   };
   const SHIP = { name: 'Власний корабель «Ласточка»', icon: '⛵', price: 5000, desc: 'Безкоштовні морські подорожі і швидше по воді.' };
   const COMPANION_NAMES = { m: ['Бруно', 'Кай', 'Тарас', 'Ліам', 'Ґрог', 'Сем', 'Арні', 'Мирон', 'Рю', 'Отто'], f: ['Ліра', 'Мія', 'Оксана', 'Айріс', 'Ніна', 'Юна', 'Тесса', 'Зоряна', 'Хана', 'Віра'] };

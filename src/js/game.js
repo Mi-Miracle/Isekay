@@ -214,11 +214,95 @@
   }
 
   // ---------------- Travel ----------------
-  function routeTo(G, target) { return WM().findRoute(G.world, G.player.location, target); }
+  // v5.3: літаючий транспорт обирає прямий політ, якщо він швидший за дороги
+  function routeTo(G, target, opts = {}) {
+    const ground = WM().findRoute(G.world, G.player.location, target, opts);
+    if (opts.ground || !canFly(G.player)) return ground;
+    const air = airRoute(G, target); if (!air) return ground;
+    if (!ground || routeCost(G, air).days <= routeCost(G, ground).days) return air;
+    return ground;
+  }
   function legDays(leg, p) {
     let d = Math.max(0.4, leg.cost / 9);
     if (leg.kind === 'sea') return d * (p && p.ship ? 0.7 : 1);
+    if (p && nav(p).hurry) d *= HURRY_MUL;
     return d / (p ? PL().travelSpeed(p) : 1);
+  }
+
+  // ---------------- v5.3: сучасна навігація ----------------
+  // стан у p.flags.nav: мітки, відвідані міста (для порталів), оглянуті вежі, поспіх, відстежувана ціль
+  const HURRY_MUL = 0.75, AIR_SEA_MAX = 28, AIR_COST = 0.55;
+  function nav(p) {
+    p.flags = p.flags || {}; const n = p.flags.nav || (p.flags.nav = {});
+    n.pins = n.pins || {}; n.visited = n.visited || {}; n.towers = n.towers || {};
+    if (n.hurry === undefined) n.hurry = false; if (n.track === undefined) n.track = null;
+    return n;
+  }
+  function canFly(p) { const M = D().MOUNTS[p.mount]; return !!(M && M.fly); }
+  function linePath(a, b) {
+    const W = WM().W; let x0 = a % W, y0 = (a / W) | 0; const x1 = b % W, y1 = (b / W) | 0;
+    const dx = Math.abs(x1 - x0), dy = -Math.abs(y1 - y0), sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1; let err = dx + dy; const out = [];
+    for (let i = 0; i < 4000; i++) { out.push(y0 * W + x0); if (x0 === x1 && y0 === y1) break; const e2 = 2 * err; if (e2 >= dy) { err += dy; x0 += sx; } if (e2 <= dx) { err += dx; y0 += sy; } }
+    return out;
+  }
+  function airRoute(G, target) {
+    const w = G.world, from = G.player.location; if (from === target || !G.discovered[target]) return null;
+    const path = linePath(WM().nodeCell(w, from), WM().nodeCell(w, target));
+    let sea = 0; for (const c of path) if (!WM().isLand(w.terrain[c])) sea++;
+    if (sea > AIR_SEA_MAX) return null; // через океан навіть грифон не долетить — треба корабель
+    const cost = Math.max(1, path.length - 1) * AIR_COST;
+    return { nodes: [from, target], legs: [{ to: target, path, cost, kind: 'air' }], cost, air: true };
+  }
+  const hasSvc = (B, s) => WM().SETTLEMENT[B.type].services.includes(s);
+  // поштова карета: між містами зі стайнею, суходолом, без засідок
+  const COACH_SPEED = 2.2;
+  function coachOffer(G, target) {
+    const p = G.player, w = G.world; if (p.location[0] !== 'b' || target[0] !== 'b' || p.location === target) return null;
+    const A0 = w.baronies[+p.location.slice(2)], B0 = w.baronies[+target.slice(2)];
+    if (!hasSvc(A0, 'stable') || !hasSvc(B0, 'stable') || !G.discovered[target]) return null;
+    if (POL().isDemon(G.P, A0.owner) || POL().isDemon(G.P, B0.owner)) return null;
+    const route = WM().findRoute(w, p.location, target, { noSea: true }); if (!route) return null;
+    const days = route.legs.reduce((s, l) => s + Math.max(0.4, l.cost / 9), 0) / COACH_SPEED;
+    return { route, days, gold: Math.round(12 + route.cost * 1.1) };
+  }
+  // портальні камені гільдії: з рангу D, між уже відвіданими містами з гільдією
+  const PORTAL_RANK = 2;
+  function portalList(G) {
+    const p = G.player, w = G.world, n = nav(p); if (p.location[0] !== 'b') return { err: 'Портал є лише в місті з гільдією.' };
+    const here = w.baronies[+p.location.slice(2)];
+    if (!hasSvc(here, 'guild')) return { err: 'Портальний камінь стоїть лише в гільдії шукачів пригод.' };
+    if (!p.guild.registered || p.guild.rank < PORTAL_RANK) return { err: `Портали гільдії відкриваються з рангу ${D().GUILD_RANKS[PORTAL_RANK].r}.` };
+    const out = [];
+    for (const k of Object.keys(n.visited)) {
+      const B = w.baronies[+k.slice(2)]; if (!B || k === p.location || !hasSvc(B, 'guild') || POL().isDemon(G.P, B.owner)) continue;
+      const dist = Math.hypot(B.x - here.x, B.y - here.y);
+      out.push({ node: k, B, dist, gold: Math.round((30 + dist * 0.9) * (B.cont !== here.cont ? 2.5 : 1)) });
+    }
+    return { list: out.sort((a, b) => a.dist - b.dist) };
+  }
+  function usePortal(G, node) {
+    const r = portalList(G); if (r.err) return r.err; const o = r.list.find((x) => x.node === node); if (!o) return 'Цей камінь не відгукується.';
+    if (G.player.gold < o.gold) return `Потрібно ${o.gold}🪙 за заряд каменя.`;
+    G.player.gold -= o.gold; passTime(G, 0.25); arrive(G, node); return null;
+  }
+  // оглядова вежа: у фортецях, столицях і містах з укріпленнями
+  function hasTower(B) { return ['capital', 'fortress', 'city'].includes(B.type) || B.fort >= 4; }
+  function climbTower(G, bid) {
+    const p = G.player, B = G.world.baronies[bid], n = nav(p);
+    if (!hasTower(B)) return { err: 'Тут немає вежі. Хіба що на дах таверни залізти.' };
+    if (n.towers[bid]) return { err: 'Ти вже все звідси роздивився.' };
+    n.towers[bid] = 1; passTime(G, 0.1); const cells = revealArea(G, B.cell, 30, 2); return { cells };
+  }
+  // дім для сувою «Додому»
+  function homeNode(G) { const p = G.player; if (p.house) return 'b:' + p.house.barony; if (p.holdings && p.holdings.length) return 'b:' + p.holdings[0]; return null; }
+  function togglePin(G, node, icon) { const n = nav(G.player); if (n.pins[node] && (!icon || n.pins[node] === icon)) delete n.pins[node]; else n.pins[node] = icon || '📌'; return n.pins[node] || null; }
+  // цілі для трекера: квести (головні першими) + власні мітки, найближчі першими
+  function navTargets(G) {
+    const p = G.player, w = G.world, at = WM().nodeXY(w, p.location), seen = {}, out = [];
+    for (const m of questMarkers(G)) if (!seen[m.node]) { seen[m.node] = 1; out.push({ node: m.node, icon: m.icon, title: m.title, main: !!m.main }); }
+    for (const [k, ic] of Object.entries(nav(p).pins)) if (!seen[k]) { seen[k] = 1; out.push({ node: k, icon: ic, title: 'Мітка: ' + (k[0] === 'b' ? w.baronies[+k.slice(2)].name : k[0] === 'd' ? w.dungeons[+k.slice(2)].name : 'угіддя'), pin: true }); }
+    const d = (t) => { const q = WM().nodeXY(w, t.node); return Math.hypot(q.x - at.x, q.y - at.y); };
+    return out.filter((t) => t.node !== p.location).sort((a, b) => (b.main - a.main) || d(a) - d(b));
   }
   function seaTicket(leg) { return Math.round(15 + leg.cost * 2.5); }
   function routeCost(G, route) {
@@ -264,6 +348,7 @@
 
   function arrive(G, node) {
     const p = G.player; p.location = node; G.discovered[node] = 1; discoverAround(G);
+    { const n = nav(p); if (node[0] === 'b') n.visited[node] = 1; if (n.track === node) n.track = null; }
     if (node[0] === 'r') { const Rn = G.world.rnodes[+node.slice(2)]; p.flags.sitesVisited = p.flags.sitesVisited || {}; p.flags.sitesVisited[Rn.key] = 1; }
     const out = [];
     const [k, id] = node.split(':');
@@ -399,7 +484,7 @@
         for (const sl of Object.keys(D().ARMOR_SLOTS)) for (const mt of ['cloth', 'leather', 'plate']) if (rng.chance(0.18)) L.push(`a_${sl}_${mt}_${t}_0`);
       }
     } else if (kind === 'alchemist') { L.push('potion_s', 'potion_m', 'ether', 'antidote', 'bomb', 'herb_heal', 'herb_moon'); if (B.dev >= 5) L.push('potion_l', 'ether_l', 'elixir_str', 'elixir_luck'); }
-    else if (kind === 'magic') { L.push('scroll_fire', 'scroll_ice', 'scroll_protect', 'scroll_teleport', 'scroll_reveal', 'ether', 'cloth'); if (B.dev >= 7) L.push('scroll_thunder', 'scroll_haste', 'ether_l'); for (let t = 0; t <= maxTier; t++) { L.push(`w_staff_${t}_0`, `o_tome_${t}_0`); if (rng.chance(0.5)) L.push(`a_body_cloth_${t}_1`); } }
+    else if (kind === 'magic') { L.push('scroll_fire', 'scroll_ice', 'scroll_protect', 'scroll_teleport', 'scroll_home', 'scroll_reveal', 'ether', 'cloth'); if (B.dev >= 7) L.push('scroll_thunder', 'scroll_haste', 'ether_l'); for (let t = 0; t <= maxTier; t++) { L.push(`w_staff_${t}_0`, `o_tome_${t}_0`); if (rng.chance(0.5)) L.push(`a_body_cloth_${t}_1`); } }
     else if (kind === 'market') { for (const [id, m] of Object.entries(D().MATERIALS)) if (m.price > 0 && !['quest', 'junk', 'pet'].includes(m.kind) && rng.chance(m.kind === 'seed' || m.kind === 'build' ? 0.8 : 0.35)) L.push(id); }
     return [...new Set(L)];
   }
@@ -845,5 +930,6 @@
     genDungeon, dungeonMove, treasureLoot, completeDungeon, applyRewards, onDefeat, nearestTown, hitArmy, serialize, deserialize, discoverAround, MONTHS,
     revealArea, revealAt, revealAll, exploreReward, fogEncode, fogDecode, MAP_TIERS, mapCells, buyMap, mapOwned, rnodeLeft, gatherRnode,
     spawnMonsters, moveMonsters, monsterNear, monsterEnemies, killMonster, SIGHT,
+    nav, canFly, airRoute, linePath, coachOffer, portalList, usePortal, hasTower, climbTower, homeNode, togglePin, navTargets, HURRY_MUL, PORTAL_RANK,
   };
 })();

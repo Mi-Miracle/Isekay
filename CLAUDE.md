@@ -31,7 +31,7 @@ ISEKAY_SHOTS=/tmp/shots timeout 500 xvfb-run -a -s "-screen 0 1600x900x24" npx e
 
 ## Архітектура
 Чистий JS без збирача. Кожен файл — IIFE, що кладе модуль у `globalThis.ISK`. Порядок підключення важливий — див. `<script>` у `src/index.html`:
-`rng → data → content → content2 → world → politics → heroes → player → combat → game → life → twitch → audio → music → voice → sprites → render → ui → panels → panels2 → estate → combatui → actioncombat → minigames → dungeonui → intro → story → main`.
+`rng → data → content → content2 → world → politics → heroes → player → combat → game → life → twitch → audio → music → voice → sprites → render → ui → panels → panels2 → nav → estate → combatui → actioncombat → minigames → dungeonui → intro → story → main`.
 Логіка (rng, data, content*, world, politics, heroes, player, combat, game, life) працює і в Node — її тестують без Electron.
 
 | Файл | Що там |
@@ -57,6 +57,7 @@ ISEKAY_SHOTS=/tmp/shots timeout 500 xvfb-run -a -s "-screen 0 1600x900x24" npx e
 | `src/js/render.js` | мапа світу: рельєф, дороги, армії, каравани, підсвітка об'єктів, погода |
 | `src/js/ui.js` | HUD, панель локації, подорожі, клавіші, хід часу, контекстне меню |
 | `src/js/panels.js` | основні вікна: герой, речі, навички, гільдія, магазини, будинок, землі, налаштування, чіт-меню |
+| `src/js/nav.js` | v5.3 навігація (UI): банер прибуття, трекер цілі в HUD (N/V), мітки, портали гільдії, вежі, поспіх (Z), зміна транспорту (X), геймпад |
 | `src/js/panels2.js` | вікна v4: лорди/аудієнція, військо, родина, морський бій, верф, голоси, контекстне меню, дзвінок богині |
 | `src/js/estate.js` | садиба й власні землі як окремі піксельні сцени |
 | `src/js/combatui.js` | інтерфейс покрокового бою; `run()` — єдина точка входу в бій (сам обирає режим), `settle()` — спільні нагороди/поразка, `mode()/setMode()` — `localStorage.dyvo_combat` = `action`/`turn` |
@@ -76,6 +77,7 @@ ISEKAY_SHOTS=/tmp/shots timeout 500 xvfb-run -a -s "-screen 0 1600x900x24" npx e
 - Мапа: `render.js` S=7 пікселів на клітинку; `R.hl` — режим підсвітки (клавіша G); туман — `buildFog()`, повна мапа — `drawWorldMap()` (клавіша M / клік по мінімапі).
 - Вузли мапи: `b:` баронство, `d:` підземелля, `r:` угіддя (`here(G).kind === 'res'`). Збору ресурсів у містах більше немає.
 - WASD на мапі веде героя до сусіднього вузла (`walkDir` в ui.js); камера — стрілки.
+- v5.3 навігація: стан у `p.flags.nav` (`GM().nav(p)`: pins, visited, towers, hurry, track). `routeTo` для транспорту з `fly: true` повертає `air`-маршрут (`kind: 'air'`, пряма лінія, ≤28 клітинок моря), якщо він швидший. `coachOffer`, `portalList/usePortal` (ранг ≥ `PORTAL_RANK`), `climbTower`, `homeNode` (сувій `scroll_home`). `startTravel(node, { coach })`. Тести — `test/nav.test.js`, крок автотесту `v53_nav`.
 - Арена: ролі ворогів `x.role` (`shield`/`healer`), чемпіони `e.champion`, рейтинг `b.rank`/`b.rankMul`.
 - Стиль коду: короткі функції-хелпери `h()` для DOM, `UI()/D()/PL()/GM()` як ледачі посилання на модулі.
 

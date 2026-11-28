@@ -164,7 +164,8 @@
       items.push({ icon: '📍', label: `${known ? name : '???'}`, disabled: true }, '-');
       items.push({ icon: 'ℹ️', label: 'Інформація', fn: () => UI().showInfo(node) });
       if (!here) items.push({ icon: '🧭', label: 'Подорожувати сюди', fn: () => UI().startTravel(node) });
-      items.push({ icon: '🎯', label: 'Центрувати мапу', fn: () => ISK.render.centerOn(node) });
+      items.push({ icon: '🔍', label: 'Центрувати мапу', fn: () => ISK.render.centerOn(node) });
+      if (ISK.nav) items.push('-', ...ISK.nav.contextItems(node), '-');
       if (here && k === 'b') {
         const B = g.world.baronies[+id];
         if (LF().lordsAt(g, B.id).length) items.push({ icon: '👑', label: 'Аудієнція у лордів', fn: () => lords(B.id) });

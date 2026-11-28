@@ -228,7 +228,7 @@
       } else if (u.buff) {
         PL().removeItem(p, action.id); b.buffs[u.buff] = { amt: u.amt, turns: u.turns }; ev.push({ kind: 'buff', text: `${it.icon} ${it.name}` });
       } else if (u.cure) { PL().removeItem(p, action.id); b.pStatus = {}; ev.push({ kind: 'text', text: '💊 Отруту виведено.' }); }
-      else if (u.teleport || u.reveal) ev.push({ kind: 'text', text: 'Цей сувій не працює в бою.' });
+      else if (u.teleport || u.reveal || u.home) ev.push({ kind: 'text', text: 'Цей сувій не працює в бою.' });
       else { const r = PL().useConsumable(p, action.id); if (r) ev.push({ kind: 'heal', side: 'ally', ally: 0, amount: 0, text: `${it.icon} ${r.text}` }); }
     } else if (action.type === 'defend') {
       b.defending = true; const g = Math.round(d.maxMp * 0.12); p.mp = Math.min(d.maxMp, p.mp + g);

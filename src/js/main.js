@@ -268,6 +268,22 @@
         const pr = ISK.combatUI.run(es, { biome: 'forest', noDeath: true }); await UI.sleep(2400); await shot('77_arena_roles');
         ISK.actionCombat._live && ISK.actionCombat._live.finish('flee'); await pr; UI.closeAll();
       });
+      await step('v53_nav', async () => {
+        const g = G4(); const p = g.player; UI.closeAll(); const home = 'b:' + g.world.startBarony; ISK.game.revealAll(g, 2);
+        if (p.location !== home) { ISK.game.arrive(g, home); UI.refresh(); }
+        const W = ISK.world; const here = g.world.baronies[g.world.startBarony];
+        const far = g.world.baronies.filter((B) => B.cont === here.cont && B.id !== here.id).sort((a, b) => Math.hypot(b.x - here.x, b.y - here.y) - Math.hypot(a.x - here.x, a.y - here.y))[3];
+        ISK.nav.pin('b:' + far.id, '⭐'); ISK.nav.setTrack('b:' + far.id); await UI.sleep(400); await shot('80_track_pin');
+        p.mounts.push('griffin'); p.mount = 'griffin'; UI.showInfo('b:' + far.id); ISK.render.centerOn(home, 0.5); await UI.sleep(500); await shot('81_flight_route');
+        UI.fastTravel = true; await UI.startTravel('b:' + far.id); UI.fastTravel = false; UI.closeAll();
+        if (p.location !== 'b:' + far.id) errors.push('flight did not arrive: ' + p.location);
+        await UI.sleep(300); await shot('82_arrive_banner'); p.mount = 'feet';
+        const T = g.world.baronies.find((B) => ISK.game.hasTower(B) && B.cont === here.cont); if (T) { g.fog = new Uint8Array(W.W * W.H); ISK.game.arrive(g, 'b:' + T.id); UI.refresh(); ISK.nav.tower(T.id); ISK.render.centerOn(p.location, 0.6); await UI.sleep(500); await shot('83_tower'); }
+        p.guild.registered = true; p.guild.rank = 2; const gt = g.world.baronies.find((B) => W.SETTLEMENT[B.type].services.includes('guild') && B.cont === here.cont && 'b:' + B.id !== p.location); ISK.game.arrive(g, 'b:' + gt.id); UI.refresh();
+        ISK.nav.portals(); await UI.sleep(300); await shot('84_portals'); UI.closeAll();
+        const tgt = g.world.baronies.find((B) => B.id !== gt.id && ISK.game.coachOffer(g, 'b:' + B.id)); if (tgt) { UI.showInfo('b:' + tgt.id); await UI.sleep(300); await shot('85_coach'); }
+        ISK.panels2.mapContext({ clientX: 600, clientY: 400, preventDefault() {} }, 'b:' + far.id); await UI.sleep(200); await shot('86_pin_menu'); document.querySelectorAll('.ctx-menu').forEach((e) => e.remove());
+      });
       await step('v4_combat', async () => {
         const pr = ISK.combatUI.run([ISK.combat.makeEnemy('orc', 14), ISK.combat.makeEnemy('skeleton', 14)], { biome: 'plains', turnBased: true }); await UI.sleep(2000); await shot('54_combat_v4');
         globalThis.ISK_AUTOFIGHT = true; globalThis.ISK_AUTOPLAY = 1;

@@ -213,7 +213,7 @@
       g.save(); g.lineWidth = 3.2 * inv + 1.2; g.setLineDash([8 * inv + 2, 6 * inv + 2]); g.lineDashOffset = -R.t * 0.6;
       route.legs.forEach((leg, li) => {
         if (R.travel && li < R.travel.leg) return;
-        g.strokeStyle = leg.kind === 'sea' ? 'rgba(120,220,255,0.95)' : 'rgba(255,126,182,0.95)';
+        g.strokeStyle = leg.kind === 'sea' ? 'rgba(120,220,255,0.95)' : leg.kind === 'air' ? 'rgba(255,230,120,0.95)' : 'rgba(255,126,182,0.95)';
         g.beginPath(); leg.path.forEach((cell, k) => { const px = (cell % ISK.world.W) * S + S / 2, py = ((cell / ISK.world.W) | 0) * S + S / 2; k ? g.lineTo(px, py) : g.moveTo(px, py); }); g.stroke();
       });
       g.restore();
@@ -370,6 +370,10 @@
       g.beginPath(); g.arc(p.x * S + S / 2, p.y * S - 22 * k + bob, 10 * k, 0, 7); g.fillStyle = m.main ? 'rgba(255,126,182,0.85)' : 'rgba(255,215,110,0.85)'; g.fill();
       g.fillText(m.icon, p.x * S + S / 2, p.y * S - 22 * k + bob);
     }
+    // v5.3: власні мітки та відстежувана ціль
+    { const nv = ISK.game.nav(G.player); const k = Math.max(1, Math.min(1.8, inv * 1.3));
+      for (const [node, ic] of Object.entries(nv.pins)) { const p = ISK.world.nodeXY(w, node); g.font = `${14 * k}px ${EMOJI}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(ic, p.x * S + S / 2 + 12 * k, p.y * S - 12 * k); }
+      if (nv.track) { const p = ISK.world.nodeXY(w, nv.track); g.save(); g.strokeStyle = 'rgba(255,240,140,0.95)'; g.lineWidth = 2.5 * inv + 0.8; g.beginPath(); g.arc(p.x * S + S / 2, p.y * S + S / 2, (16 + Math.sin(R.t / 7) * 4) * k, 0, 7); g.stroke(); g.restore(); } }
     // selection
     if (R.selected) { const p = ISK.world.nodeXY(w, R.selected); g.beginPath(); g.arc(p.x * S + S / 2, p.y * S + S / 2, 16 * Math.max(1, inv) + Math.sin(R.t / 10) * 2, 0, 7); g.strokeStyle = '#ffdf8e'; g.lineWidth = 2.2 * inv + 0.8; g.stroke(); }
     // player (pixel hero)
@@ -439,6 +443,7 @@
     for (const Rn of w.rnodes || []) if (G.discovered['r:' + Rn.id]) { const [x, y] = px(Rn); g.fillText(ISK.data.RESOURCE_SITES[Rn.key].icon, x, y); }
     for (const m of (G.life && G.life.mon) || []) if (fogAt(m.cell) === 2) { const [x, y] = px({ x: m.cell % ISK.world.W, y: (m.cell / ISK.world.W) | 0 }); g.fillText(m.icon, x, y); }
     for (const mk of ISK.game.questMarkers(G)) { const p = ISK.world.nodeXY(w, mk.node); const [x, y] = px(p); g.font = `13px ${EMOJI}`; g.fillText(mk.icon, x, y - 10); }
+    { const nv = ISK.game.nav(G.player); g.font = `12px ${EMOJI}`; for (const [node, ic] of Object.entries(nv.pins)) { const [x, y] = px(ISK.world.nodeXY(w, node)); g.fillText(ic, x + 9, y - 8); } if (nv.track) { const [x, y] = px(ISK.world.nodeXY(w, nv.track)); g.strokeStyle = '#fff08c'; g.lineWidth = 2; g.beginPath(); g.arc(x, y, 11, 0, 7); g.stroke(); } }
     const hp = ISK.world.nodeXY(w, G.player.location); const [hx, hy] = px(hp);
     g.strokeStyle = '#ff7eb6'; g.lineWidth = 2.5; g.beginPath(); g.arc(hx, hy, 9 + Math.sin(Date.now() / 200) * 2, 0, 7); g.stroke(); g.fillStyle = '#ff7eb6'; g.beginPath(); g.arc(hx, hy, 4, 0, 7); g.fill();
     g.strokeStyle = 'rgba(255,223,142,.9)'; g.lineWidth = 1.5; g.strokeRect(R.cam.x * k, R.cam.y * k, R.canvas.clientWidth / R.cam.z * k, R.canvas.clientHeight / R.cam.z * k);
@@ -451,6 +456,12 @@
     const fc = buildFog(); if (fc) { g.imageSmoothingEnabled = true; g.drawImage(fc, 0, 0, m.width, m.height); }
     const k = m.width / (ISK.world.W * S);
     g.strokeStyle = '#ffdf8e'; g.lineWidth = 1.5; g.strokeRect(R.cam.x * k, R.cam.y * k, R.canvas.clientWidth / R.cam.z * k, R.canvas.clientHeight / R.cam.z * k);
+    // v5.3: квести, мітки й ціль на мінімапі
+    if (!R.miniMk || R.t - R.miniMkT > 60) { R.miniMk = ISK.game.questMarkers(R.G); R.miniMkT = R.t; }
+    for (const mk of R.miniMk) { const q = ISK.world.nodeXY(R.G.world, mk.node); g.fillStyle = mk.main ? '#ff7eb6' : '#ffd76e'; g.fillRect(q.x * S * k - 2, q.y * S * k - 2, 4, 4); }
+    const nv = ISK.game.nav(R.G.player);
+    for (const node of Object.keys(nv.pins)) { const q = ISK.world.nodeXY(R.G.world, node); g.fillStyle = '#7cd6ff'; g.fillRect(q.x * S * k - 2, q.y * S * k - 2, 4, 4); }
+    if (nv.track) { const q = ISK.world.nodeXY(R.G.world, nv.track); g.strokeStyle = '#fff08c'; g.lineWidth = 1.5; g.beginPath(); g.arc(q.x * S * k, q.y * S * k, 5, 0, 7); g.stroke(); }
     const p = ISK.world.nodeXY(R.G.world, R.G.player.location); g.fillStyle = '#ff7eb6'; g.beginPath(); g.arc(p.x * S * k, p.y * S * k, 3, 0, 7); g.fill();
   }
   function miniClick() { if (ISK.panels && ISK.panels.worldMap) ISK.panels.worldMap(); }

@@ -133,6 +133,8 @@
       if (p.house && p.house.barony === B.id) svcs.appendChild(h('div', { class: 'svc hl', onclick: () => ISK.estate.open('house') }, h('span', { class: 'i' }, '🏡'), 'Мій дім'));
       if (p.holdings.includes(B.id)) svcs.appendChild(h('div', { class: 'svc hl', onclick: () => ISK.estate.open('land', B.id) }, h('span', { class: 'i' }, '🏰'), 'Мої землі'));
       if (['capital', 'city', 'town', 'port', 'fortress'].includes(B.type) && !ISK.politics.isDemon(G.P, B.owner)) svcs.appendChild(h('div', { class: 'svc', onclick: () => ISK.panels.cartographer(B.id) }, h('span', { class: 'i' }, '🗺️'), 'Картограф'));
+      if (st.services.includes('guild') && !ISK.politics.isDemon(G.P, B.owner)) svcs.appendChild(h('div', { class: 'svc', title: `Телепорт між відвіданими містами з гільдією (з рангу ${ISK.data.GUILD_RANKS[GM().PORTAL_RANK].r})`, onclick: () => ISK.nav.portals() }, h('span', { class: 'i' }, '🌀'), 'Портал гільдії'));
+      if (GM().hasTower(B) && !ISK.politics.isDemon(G.P, B.owner)) svcs.appendChild(h('div', { class: 'svc' + (GM().nav(p).towers[B.id] ? '' : ' hl'), title: 'Залізти на вежу й роздивитися околиці', onclick: () => ISK.nav.tower(B.id) }, h('span', { class: 'i' }, '🗼'), 'Оглядова вежа'));
       if (B.type === 'port') svcs.appendChild(h('div', { class: 'svc', onclick: () => ISK.panels2.shipyard(B) }, h('span', { class: 'i' }, '⚓'), 'Верф і море'));
       if (ISK.life && ISK.life.lordsAt(G, B.id).length && !ISK.politics.isDemon(G.P, B.owner)) svcs.appendChild(h('div', { class: 'svc', onclick: () => ISK.panels2.lords(B.id) }, h('span', { class: 'i' }, '👑'), 'Двір лордів'));
       if (st.services.length || p.house) { el.appendChild(h('div', { class: 'loc-section' }, 'Заклади')); el.appendChild(svcs); }
@@ -230,16 +232,24 @@
       el.appendChild(h('div', { class: 'card', style: { marginTop: '10px' } },
         h('div', null, `🧭 ${route.legs.length} ділянок · ~${Math.max(1, Math.round(cost.days))} дн. · ${ISK.data.MOUNTS[p.mount].icon} ${ISK.data.MOUNTS[p.mount].name}`),
         sea ? h('div', { class: 'gold', style: { fontSize: '13px' } }, p.ship ? `⛵ Морем на власному кораблі (${sea})` : `⛴️ Морські переправи: ${sea}, квитки ~${cost.gold}🪙`) : null,
-        h('button', { class: 'btn primary', style: { marginTop: '8px', width: '100%' }, onclick: () => startTravel(node) }, '🚶 Подорожувати сюди')));
+        route.air ? h('div', { class: 'gold', style: { fontSize: '13px' } }, `${ISK.data.MOUNTS[p.mount].icon} Прямий політ — над горами, лісами й річками`) : null,
+        GM().nav(p).hurry && !route.air ? h('div', { class: 'gold', style: { fontSize: '13px' } }, '🏃 Поспіх: швидше, але засідок більше (Z)') : null,
+        h('button', { class: 'btn primary', style: { marginTop: '8px', width: '100%' }, onclick: () => startTravel(node) }, route.air ? '🪽 Летіти сюди' : '🚶 Подорожувати сюди')));
+      const co = GM().coachOffer(G, node);
+      if (co && co.days < cost.days * 0.95) el.appendChild(h('button', { class: 'btn', style: { marginTop: '6px', width: '100%' }, disabled: p.gold < co.gold, title: 'Швидше і без засідок. Ходить лише між містами зі стайнями.', onclick: () => startTravel(node, { coach: co }) }, `🐎 Поштова карета · ~${Math.max(1, Math.round(co.days))} дн. · ${co.gold}🪙`));
     } else if (node === p.location) el.appendChild(h('div', { class: 'good', style: { marginTop: '8px' } }, 'Ти тут.'));
     else el.appendChild(h('div', { class: 'bad' }, 'Шляху немає.'));
+    if (ISK.nav && node !== p.location) el.appendChild(ISK.nav.infoButtons(node));
   }
 
   // ---------------- Travel ----------------
-  async function startTravel(target) {
+  // opts.coach — поштова карета (ціна/дні з GM().coachOffer, без засідок); opts.route — готовий маршрут
+  async function startTravel(target, opts = {}) {
     const G = UI.G; const p = G.player; if (UI.travelling) return;
-    const route = GM().routeTo(G, target); if (!route || !route.legs.length) return;
-    const cost = GM().routeCost(G, route);
+    const coach = opts.coach || null;
+    const route = coach ? coach.route : (opts.route || GM().routeTo(G, target)); if (!route || !route.legs.length) return;
+    const cost = coach ? { days: coach.days, gold: 0 } : GM().routeCost(G, route);
+    if (coach) { if (p.gold < coach.gold) { toast(`Квиток на карету коштує ${coach.gold}🪙.`, 'bad'); return; } p.gold -= coach.gold; toast(`🐎 Поштова карета: -${coach.gold}🪙. Кучер обіцяє «без пригод». Кучери завжди брешуть, але цей — ні.`, 'good', 3500); A().play('coin'); }
     if (cost.gold > 0) {
       if (p.gold < cost.gold) { toast(`Не вистачає на морські квитки (${cost.gold}🪙)!`, 'bad'); return; }
       if (!(await confirmBox(`Маршрут має морські переправи. Квитки коштують ~${cost.gold}🪙. Плисти?`, 'Пливемо!', 'Ні'))) return;
@@ -251,11 +261,12 @@
     for (let li = 0; li < route.legs.length; li++) {
       const leg = route.legs[li]; R.travel.leg = li;
       if (leg.kind === 'sea' && !p.ship) { const t = GM().seaTicket(leg); p.gold -= t; toast(`⛴️ Квиток на корабель: -${t}🪙`, ''); p.flags.sailed = true; GM().unlock(G, 'sailor'); }
-      const days = GM().legDays(leg, p); const steps = leg.path.length;
+      const days = coach ? coach.days * (leg.cost / Math.max(0.01, route.cost)) : GM().legDays(leg, p); const steps = leg.path.length;
       const encAt = Math.floor(steps * (0.3 + Math.random() * 0.4));
-      let enc = GM().rollEncounter(G, leg.path[encAt] ?? leg.path[0], leg.kind, days);
-      if (enc && enc.type === 'combat' && leg.kind !== 'sea' && Math.random() < 0.5) enc = null; // частину бійок тепер дають видимі монстри
-      $('#travel-text').textContent = `${leg.kind === 'sea' ? '⛵ Морем' : '🚶 Подорож'} до ${nodeName(target)} · ${GM().dateStr(G.time)}`;
+      const hurry = GM().nav(p).hurry;
+      let enc = coach ? null : GM().rollEncounter(G, leg.path[encAt] ?? leg.path[0], leg.kind === 'air' ? 'land' : leg.kind, days);
+      if (enc && enc.type === 'combat' && leg.kind !== 'sea' && Math.random() < (leg.kind === 'air' ? 0.75 : hurry ? 0.15 : 0.5)) enc = null; // частину бійок тепер дають видимі монстри; у польоті — рідше, у поспіху — частіше
+      $('#travel-text').textContent = `${coach ? '🐎 Поштова карета' : leg.kind === 'sea' ? '⛵ Морем' : leg.kind === 'air' ? ISK.data.MOUNTS[p.mount].icon + ' Політ' : hurry ? '🏃 Поспіхом' : '🚶 Подорож'} до ${nodeName(target)} · ${GM().dateStr(G.time)}`;
       const stride = Math.max(1, Math.round(PL().travelSpeed(p)));
       let spent = 0; const stepMs = UI.fastTravel ? 4 : Math.max(8, Math.min(leg.kind === 'sea' ? 14 : 24, 2600 / steps));
       for (let s = 0; s < steps; s += stride) {
@@ -263,7 +274,7 @@
         const px = ISK.render.cellToPx(leg.path[s]); R.travel.pos = px;
         // v5.2: туман розвіюється на ходу; монстри, що бродять, нападають, якщо пройти поруч
         GM().revealAt(G, leg.path[s]);
-        if (leg.kind !== 'sea' && s > 1) { const mon = GM().monsterNear(G, leg.path[s], 1); if (mon) { const res = await fightMonster(mon, true); if (res === 'dead') { endTravel(); return; } if (res === 'fled') { toast('Ти відступив і повернувся назад.', ''); endTravel(); return; } } }
+        if (leg.kind !== 'sea' && leg.kind !== 'air' && !coach && s > 1) { const mon = GM().monsterNear(G, leg.path[s], 1); if (mon) { const res = await fightMonster(mon, true); if (res === 'dead') { endTravel(); return; } if (res === 'fled') { toast('Ти відступив і повернувся назад.', ''); endTravel(); return; } } }
         if (s % 4 === 0) A().play(leg.kind === 'sea' ? 'splash' : 'step');
         const z = R.cam.z; const vw = R.canvas.clientWidth / z, vh = R.canvas.clientHeight / z;
         R.cam.x += (px.x - vw / 2 - R.cam.x) * 0.12; R.cam.y += (px.y - vh / 2 - R.cam.y) * 0.12;
@@ -276,7 +287,9 @@
       { const xr = GM().exploreReward(G); if (xr) { toast(`🧭 Дослідник! Нові землі на мапі: +${xr.xp} ✨`, 'good', 3500); if (xr.ups.length) levelUp(p.level); } }
       if (UI.stopTravel && li < route.legs.length - 1 && route.legs[li + 1].kind !== 'sea' && leg.kind !== 'sea') { toast('Ти зупинився перепочити.', ''); break; }
     }
+    const firstVisit = p.location[0] === 'b' && !GM().nav(p).visited[p.location];
     const evs = GM().arrive(G, p.location); endTravel();
+    if (ISK.nav) ISK.nav.banner(p.location, firstVisit);
     for (const e of evs) {
       if (e.type === 'quest') toast(e.text, 'good');
       if (e.type === 'bounty') {
@@ -494,6 +507,6 @@
     for (const b of btns) items.push({ icon: '▸', label: b.textContent.trim().slice(0, 34) || b.title || 'Дія', fn: () => b.click() });
     ISK.panels2.contextMenu(e.clientX, e.clientY, items);
   });
-  Object.assign(UI, { fightMonster, showMonster, setSpeed, h, $, modal, closeTop, closeAll, confirm: confirmBox, alert: alertBox, toast, cutin, sparkle, levelUp, refresh, renderLocation, showInfo, startTravel, sleep, bindMap, loop, showScreen, startGame, showNews, checkMainQuest, biomeAt, nodeName, SVC });
+  Object.assign(UI, { fightMonster, showMonster, setSpeed, h, $, modal, closeTop, closeAll, confirm: confirmBox, alert: alertBox, toast, cutin, sparkle, levelUp, refresh, renderLocation, showInfo, startTravel, walkDir, sleep, bindMap, loop, showScreen, startGame, showNews, checkMainQuest, biomeAt, nodeName, SVC });
   ISK.ui = UI;
 })();

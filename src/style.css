@@ -553,3 +553,13 @@ img.px.bob { animation: idle 2.4s ease-in-out infinite; }
 .map-preview { width: 100%; height: auto; border-radius: 8px; box-shadow: 0 4px 14px rgba(0,0,0,.45); transform: rotate(-0.6deg); }
 #minimap { cursor: zoom-in; transition: transform .15s, box-shadow .15s; }
 #minimap:hover { transform: scale(1.03); box-shadow: 0 0 0 2px #ffdf8e, var(--shadow); }
+
+/* ---------- v5.3 навігація ---------- */
+#arrive-banner { position: absolute; top: 150px; left: 50%; transform: translate(-50%, -20px); display: flex; align-items: center; gap: 14px; padding: 12px 26px 12px 16px; background: linear-gradient(90deg, rgba(20,16,32,.0), rgba(20,16,32,.88) 18%, rgba(20,16,32,.88) 82%, rgba(20,16,32,0)); border-top: 1px solid rgba(255,223,142,.5); border-bottom: 1px solid rgba(255,223,142,.5); opacity: 0; pointer-events: none; transition: opacity .45s, transform .45s; z-index: 40; text-align: center; }
+#arrive-banner.show { opacity: 1; transform: translate(-50%, 0); }
+#arrive-banner .ab-crest { width: 26px; height: 32px; clip-path: polygon(0 0, 100% 0, 100% 62%, 50% 100%, 0 62%); box-shadow: inset 0 0 0 2px rgba(255,255,255,.35); }
+#arrive-banner .ab-title { font-family: Georgia, serif; font-size: 26px; font-weight: 700; color: #ffe7a6; letter-spacing: .5px; text-shadow: 0 2px 6px #000; }
+#arrive-banner .ab-sub { font-size: 13px; color: #e8dcc0; }
+#arrive-banner .ab-new { font-size: 12px; color: #ff9ecb; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; }
+#hud-track { font-size: 12px; cursor: pointer; max-width: 320px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-left: auto; color: #fff08c; }
+#hud-track.dim { color: var(--muted, #9a94a8); }

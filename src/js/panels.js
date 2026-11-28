@@ -73,6 +73,7 @@
         const it = PL().item(iid); const acts = [];
         if (it.slot) acts.push(h('button', { class: 'btn small primary', disabled: it.lvl > p.level + 2, title: it.lvl > p.level + 2 ? `Потрібен рівень ${it.lvl - 2}` : '', onclick: () => { PL().equip(p, iid); A().play('clang'); reopen(() => inventory(id)); } }, 'Вдягти'));
         if (it.kind === 'consumable' && !it.use.dmg && !it.use.revive && !(it.use.buff && !it.use.food)) acts.push(h('button', { class: 'btn small', onclick: () => {
+          if (it.use.home) { const hn = GM().homeNode(G()); if (!hn) { UI().toast('🏡 У тебе ще нема дому! Купи будинок у місті з нерухомістю.', 'bad'); return; } if (hn === p.location) { UI().toast('Ти й так удома. Сувій ображено згорнувся.', ''); return; } PL().removeItem(p, iid); GM().arrive(G(), hn); UI().closeAll(); ISK.render.centerOn(p.location); UI().toast(`🏡 Додому! ${UI().nodeName(hn)}`, 'good'); A().play('magic'); if (ISK.nav) ISK.nav.banner(hn); UI().refresh(); return; }
           if (it.use.teleport) { const T = GM().nearestTown(G()); PL().removeItem(p, iid); p.location = 'b:' + T.id; UI().closeAll(); ISK.render.centerOn(p.location); UI().toast(`🌀 Телепорт до ${T.name}!`, 'good'); A().play('magic'); return; }
           if (it.use.reveal) { PL().removeItem(p, iid); GM().discoverAround(G(), 45); UI().toast('🗺️ Мапа навколо відкрита!', 'good'); reopen(() => inventory(id)); return; }
           const r = PL().useConsumable(p, iid); if (r) { A().play('heal'); UI().toast(`${it.icon} ${r.text}`, 'good'); } reopen(() => inventory(id)); } }, 'Вжити'));
@@ -254,6 +255,7 @@
     UI().alert('Як грати', [
       '🗺️ Мапа: WASD — герой іде до сусіднього поселення (затисни — іде далі), стрілки — камера, Q/E або коліщатко — масштаб, мінімапа — швидкий перехід. Клік — інфо, подвійний клік — подорож.',
       '🏳️ Регіони видно завжди: тонкі лінії — графства, світліші — герцогства, кольорові — королівства, золотий пунктир — кордон Імперії. Режими 1–4: рельєф, політична, де-юре, небезпека.',
+      '🧭 Навігація: N — наступна ціль (квести й мітки), V — іти до цілі, Z — поспіх, X — змінити транспорт. ПКМ по мапі — мітки. Літаючі (грифон, мітла, килим, віверна) летять напряму. Між містами зі стайнею — поштова карета без засідок. З рангу D — портали гільдії. 🗼 Вежі у фортецях і містах відкривають мапу. Сувій «Додому» — у твою садибу. 🎮 Є підтримка геймпада.',
       '❗ Маркери квестів підстрибують над цілями на мапі.', '⛵ На інші континенти й острови — морем з портів (квиток або власний корабель).',
       '⚔️ Бій: Атака — ПРОБІЛ у золотій зоні. Значки над ворогами — їхні наміри. Шкала УЛЬТИ заповнюється в бою.',
       '🏠 Купи будинок, вирощуй урожай, будуй майстерні. Здобувай славу ⭐ і титули при дворі: Лицар → Барон → Граф → Герцог.',
