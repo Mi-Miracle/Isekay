@@ -153,10 +153,79 @@ static func voyage_days(dist: float) -> float:
 	return maxf(0.5, dist / SHIP_CELLS_PER_DAY)
 
 
+# ---------------------------------------------------------------- власний корабель (верф)
+
+const SHIP_COST := 1500
+const PART_COST := [500, 1100, 2200]
+const SHIP_PARTS := {
+	"hull": {"name": "Корпус", "icon": "🪵", "desc": "Менше шкоди від штормів, на абордаж лізе на одного пірата менше за рівень."},
+	"cannons": {"name": "Гармати", "icon": "💣", "desc": "Залп перед абордажем: вороги починають бій пораненими (−15% ❤ за рівень)."},
+	"sails": {"name": "Вітрила", "icon": "⛵", "desc": "Плавання на 15% швидше за рівень."},
+}
+const SHIP_NAMES := ["Пиріжок Люмі", "Летючий Гарбуз", "Непотоплюваний (майже)", "Вантажівка-кун II", "Морська Капібара", "Сонна Русалка", "Корито Надії"]
+const PIRATE_CAPTAINS := ["Капітан Одноокий Борщ", "Капітан Рудобород", "Капітанка Солона Ганна", "Капітан Чорна Шкарпетка", "Адміралка Буря-Мері", "Капітан Пан Кракенович"]
+
+
+static func ship() -> Dictionary:
+	var s = st().get("ship", {})
+	return s if s is Dictionary else {}
+
+
+static func has_ship() -> bool:
+	return not ship().is_empty()
+
+
+static func buy_ship(rng: RandomNumberGenerator = null) -> String:
+	var p := Player.ensure(Game.state)
+	if has_ship():
+		return "Корабель уже є. Два штурвали — забагато навіть для героя."
+	if int(p.gold) < SHIP_COST:
+		return "Корабель коштує %d 💰. Майстер верфі дуже співчуває." % SHIP_COST
+	p.gold = int(p.gold) - SHIP_COST
+	var nm: String = SHIP_NAMES[(rng.randi() if rng else randi()) % SHIP_NAMES.size()]
+	st().ship = {"name": nm, "hull": 0, "cannons": 0, "sails": 0, "won": 0}
+	return ""
+
+
+static func part_cost(part: String) -> int:
+	var l := int(ship().get(part, 0))
+	return PART_COST[l] if l < PART_COST.size() else -1
+
+
+static func upgrade(part: String) -> String:
+	var p := Player.ensure(Game.state)
+	if not has_ship():
+		return "Спершу купи корабель."
+	var c := part_cost(part)
+	if c < 0:
+		return "Це вже максимум. Далі — тільки магія."
+	if int(p.gold) < c:
+		return "Треба %d 💰." % c
+	p.gold = int(p.gold) - c
+	st().ship[part] = int(ship().get(part, 0)) + 1
+	return ""
+
+
+## Бій на палубі з піратами (або кораблем-привидом).
+static func pirate_fight(ghost: bool, rng: RandomNumberGenerator) -> Dictionary:
+	var S := ship()
+	var p := Player.ensure(Game.state)
+	var n := maxi(3, 7 - int(S.get("hull", 0)))
+	var nm: String = "Капітан-привид Сивобород" if ghost else PIRATE_CAPTAINS[rng.randi() % PIRATE_CAPTAINS.size()]
+	return {"arena": ["deck", "skeleton" if ghost else "orc"], "name": nm, "n": n, "deck": true, "elite": int(p.lvl) >= 15,
+		"wound": 0.15 * int(S.get("cannons", 0))}
+
+
+static func pirate_loot(ghost: bool) -> Dictionary:
+	var l := int(Player.ensure(Game.state).lvl)
+	return {"gold": [120 + l * 18, 260 + l * 30] if not ghost else [200 + l * 25, 420 + l * 40], "xp": [20, 45], "item": "potion_m", "n": [1, 3]}
+
+
 const SEA_EVENTS := [
 	{"w": 34, "text": "🌊 Тихе плавання. Матроси співають про русалку, яка винна їм гроші."},
 	{"w": 12, "text": "🏴‍☠️ Пірати! Капітан відкупився твоїм золотом: −%d 💰. «Податок на сміливість», — пояснив він.", "gold_pct": -0.08},
-	{"w": 8, "text": "🏴‍☠️ Пірати пішли на абордаж, але ти розкидав їх по палубі. Трофей: +%d 💰!", "gold_flat": [40, 160]},
+	{"w": 10, "text": "🏴‍☠️ Піратський корабель іде на абордаж! До бою!", "fight": "pirates"},
+	{"w": 3, "text": "👻 З туману виринає корабель-привид… Скелети лізуть на палубу!", "fight": "ghost", "lvl": 10},
 	{"w": 9, "text": "🐙 Кракен обійняв корабель і довго не відпускав. Плавання затяглося на день.", "days": 1.0},
 	{"w": 9, "text": "🧜 Русалка подарувала тобі мушлю з зіллям. +2 🧪", "potions": 2},
 	{"w": 8, "text": "⛈️ Шторм! Тебе знудило за борт тричі. ❤ трохи знизилось.", "hp_pct": -0.3},
@@ -179,22 +248,29 @@ static func sail(wd: WorldData, from: Dictionary, to: Dictionary, rng: RandomNum
 		var d := Vector2(to.x - from.x, to.y - from.y).length()
 		r = {"dist": d, "fare": fare(d, _island(wd, to) != _island(wd, from)), "days": voyage_days(d)}
 	var p := Player.ensure(Game.state)
+	var own := has_ship()
+	if own:
+		r.fare = 0
+		r.days = float(r.days) * (1.0 - 0.15 * int(ship().get("sails", 0)))
 	if int(p.gold) < int(r.fare):
 		return {"err": "Капітан не пускає без квитка: треба %d 💰." % int(r.fare)}
 	p.gold = int(p.gold) - int(r.fare)
 	if rng == null:
 		rng = RandomNumberGenerator.new()
 		rng.randomize()
+	var pool: Array = SEA_EVENTS.filter(func(e): return int(p.lvl) >= int(e.get("lvl", 0)) and not (Game.selftest and e.has("fight")))
 	var total := 0
-	for e in SEA_EVENTS:
-		total += int(e.w)
+	for e in pool:
+		total += int(e.w) * (2 if own and e.has("fight") else 1)
 	var roll := rng.randi_range(1, total)
-	var ev: Dictionary = SEA_EVENTS[0]
-	for e in SEA_EVENTS:
-		roll -= int(e.w)
+	var ev: Dictionary = pool[0]
+	for e in pool:
+		roll -= int(e.w) * (2 if own and e.has("fight") else 1)
 		if roll <= 0:
 			ev = e
 			break
+	if OS.get_environment("ISEKAY_SEAFIGHT") == "1":
+		ev = SEA_EVENTS.filter(func(e): return str(e.get("fight", "")) == "pirates")[0]
 	var days := float(r.days) + float(ev.get("days", 0.0))
 	var text: String = ev.text
 	if ev.has("gold_pct"):
@@ -210,8 +286,15 @@ static func sail(wd: WorldData, from: Dictionary, to: Dictionary, rng: RandomNum
 	if ev.has("ethers"):
 		p.ethers = int(p.ethers) + int(ev.ethers)
 	if ev.has("hp_pct"):
-		p.hp = maxf(1.0, float(p.hp) * (1.0 + float(ev.hp_pct)))
+		p.hp = maxf(1.0, float(p.hp) * (1.0 + float(ev.hp_pct) * (1.0 - 0.3 * int(ship().get("hull", 0)))))
 	Game.state.minutes = float(Game.state.minutes) + days * 1440.0
 	var t := st()
 	t.voyages = int(t.voyages) + 1
-	return {"days": maxf(0.5, days), "text": text, "fare": int(r.fare)}
+	var res := {"days": maxf(0.5, days), "text": text, "fare": int(r.fare)}
+	if own:
+		res.text = "⛵ «%s»: %s" % [ship().name, text]
+	if ev.has("fight"):
+		var ghost: bool = ev.fight == "ghost"
+		res.fight = pirate_fight(ghost, rng)
+		res.fx = pirate_loot(ghost)
+	return res

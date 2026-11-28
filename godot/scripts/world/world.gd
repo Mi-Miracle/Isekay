@@ -152,6 +152,11 @@ func _build_scene() -> void:
 	add_child(markers)
 	markers.setup(wd, fog, CELL)
 
+	var wl := WeatherLayer.new()
+	wl.world = self
+	add_child(wl)
+	Weather.roll(Game.day_of(Game.state.minutes))
+
 	var lab_cl := CanvasLayer.new()
 	lab_cl.layer = 1
 	add_child(lab_cl)
@@ -404,6 +409,9 @@ func _tick_days() -> void:
 			hud.toast(msg, Color("#ffc6e6"), 7.0)
 		for msg in Clan.daily(int(Game.state.day_ticked)):
 			hud.toast("🏯 " + msg, Color("#ffd27a"), 6.0)
+		var wmsg := Weather.roll(int(Game.state.day_ticked))
+		if wmsg != "" and int(Game.state.day_ticked) == today:
+			hud.toast(wmsg, Color("#cfe6ff"), 6.0)
 		n += 1
 	if n > 0:
 		if pol.owner_dirty:
@@ -586,7 +594,12 @@ func _on_dungeon_done(st: Dictionary, dinfo: Dictionary) -> void:
 	elif dinfo.has("ambush"):
 		if st.cleared:
 			var lines := Events.apply(_ambush_fx)
-			hud.banner("Засідку відбито!", " · ".join(PackedStringArray(lines)) if not lines.is_empty() else "Вороги тікають, кульгаючи.")
+			if str(dinfo.dtype) == "deck":
+				if Travel.has_ship():
+					Travel.st().ship.won = int(Travel.ship().get("won", 0)) + 1
+				hud.banner("🏴‍☠️ Абордаж відбито!", " · ".join(PackedStringArray(lines)) + " · Пірати стрибають за борт. Акули задоволені.")
+			else:
+				hud.banner("Засідку відбито!", " · ".join(PackedStringArray(lines)) if not lines.is_empty() else "Вороги тікають, кульгаючи.")
 		_ambush_fx = {}
 	elif st.cleared:
 		hud.banner("Підземелля зачищено!", "%s: ворогів %d, золота %d, досвіду %d." % [dinfo.name, st.kills, st.gold, st.xp])
@@ -666,6 +679,10 @@ func sail_to(from: Dictionary, to: Dictionary) -> String:
 	hud.set_player(Player.short(Player.ensure(Game.state)))
 	Audio.sfx("sail")
 	hud.toast(res.text, Color("#bfe6ff"), 6.0)
+	if res.has("fight"):
+		Audio.sfx("cannon")
+		hud.banner("🏴‍☠️ Абордаж!", "%s іде на твій корабель! Захищай палубу." % res.fight.name)
+		get_tree().create_timer(0.1 if Game.selftest else 1.6).timeout.connect(func(): start_ambush(res.fight, res.fx))
 	hud.banner("⛵ %s" % to.name, "Пливли %.1f дн. за %d 💰 · %s" % [res.days, res.fare, wd.realms[to.owner].full_name])
 	enter_town.call_deferred(to)
 	return ""
@@ -948,7 +965,7 @@ func _world_music(now: bool) -> void:
 func _reveal(force: bool) -> void:
 	var c := Vector2i(hero_cell())
 	var t := wd.terrain_at(c)
-	var r := REVEAL + (3 if t == Defs.T.HILLS else (5 if t == Defs.T.MOUNTAIN or t == Defs.T.PEAK else 0))
+	var r := int(round(REVEAL * Weather.sight())) + (3 if t == Defs.T.HILLS else (5 if t == Defs.T.MOUNTAIN or t == Defs.T.PEAK else 0))
 	var changed := force
 	for y in range(c.y - r, c.y + r + 1):
 		for x in range(c.x - r, c.x + r + 1):
@@ -1663,6 +1680,50 @@ func _selftest() -> void:
 		if town != null:
 			town.leave()
 		await tree.process_frame
+		# v0.20: верф і абордаж
+		plx.gold = int(plx.gold) + 5000
+		var ship_err := Travel.buy_ship()
+		var upg_err := Travel.upgrade("cannons")
+		hud.open_shipyard(dest if not dest.is_empty() else hb0)
+		await tree.create_timer(0.4).timeout
+		Selftest.shot(self, "25b_shipyard")
+		hud.close_overlay()
+		plx.hp = Player.max_hp(plx)
+		plx.potions = 8
+		var srng := RandomNumberGenerator.new()
+		srng.seed = 5
+		var pf := Travel.pirate_fight(false, srng)
+		start_ambush(pf, Travel.pirate_loot(false))
+		await tree.create_timer(0.8).timeout
+		var n_pir: int = dungeon.enemies.size() if dungeon != null else -1
+		var wounded: bool = dungeon != null and dungeon.enemies.any(func(e): return float(e.hp) < float(e.max))
+		if dungeon != null:
+			Selftest.shot(dungeon, "25c_boarding")
+		var t_sea := Time.get_ticks_msec() + 45000
+		while dungeon != null and Time.get_ticks_msec() < t_sea:
+			await tree.process_frame
+		if dungeon != null:
+			dungeon.leave(false)
+			while dungeon != null:
+				await tree.process_frame
+		Selftest.step("sea_battle", ship_err == "" and upg_err == "" and n_pir >= 4 and wounded and int(last_dungeon.kills) > 0, "корабель «%s», піратів %d, поранені залпом: %s, переможено %d, перемога: %s" % [Travel.ship().get("name", "-"), n_pir, wounded, int(last_dungeon.kills), str(last_dungeon.cleared)])
+		# погода: зима сніжить, дощ на мапі
+		var snowy := 0
+		for dday in range(270, 360):
+			Game.state.weather = {"kind": "clear", "day": dday - 1}
+			Weather.roll(dday)
+			if Weather.kind() in ["snow", "blizzard"]:
+				snowy += 1
+		Game.state.weather = {"kind": "storm", "day": Game.day_of(Game.state.minutes)}
+		var crit_w := Origin.mul(plx, "crit")
+		Game.state.weather = {"kind": "rain", "day": Game.day_of(Game.state.minutes)}
+		hud.set_clock(Game.time_text(Game.state.minutes))
+		await tree.create_timer(0.8).timeout
+		Selftest.shot(self, "25d_weather_rain")
+		Game.state.weather = {"kind": "snow", "day": Game.day_of(Game.state.minutes)}
+		await tree.create_timer(0.8).timeout
+		Selftest.shot(self, "25e_weather_snow")
+		Selftest.step("weather", snowy > 30 and crit_w > Origin.mul(plx, "crit") - 0.06 and Weather.bonus(plx, "travel") < 0.0, "зимових днів зі снігом %d/90, тепер: %s" % [snowy, Weather.tag()])
 	# події з вибором, засідка, чат Twitch
 	var erng := RandomNumberGenerator.new()
 	erng.seed = 7

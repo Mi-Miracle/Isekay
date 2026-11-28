@@ -165,7 +165,8 @@ static func ambush_info(f: Dictionary, wd: WorldData) -> Dictionary:
 	var p := Player.ensure(Game.state)
 	var F: Array = f.get("arena", FIGHTS.get(str(f.get("key", "bandit")), FIGHTS.bandit))
 	var elite: bool = bool(f.get("elite", false))
-	return {"name": "Засідка: %s" % str(f.get("name", "вороги")), "kind": "dungeon", "dtype": F[0], "level": maxi(1, int(p.lvl) - 1 + int(f.get("add", 0))),
+	return {"name": ("Абордаж: %s" if f.get("deck", false) else "Засідка: %s") % str(f.get("name", "вороги")), "kind": "dungeon", "dtype": F[0], "level": maxi(1, int(p.lvl) - 1 + int(f.get("add", 0))),
 		"floors": 1, "id": -1, "seed": wd.world_seed * 31 + today() * 977 + randi() % 1000,
 		"ambush": {"n": maxi(1, int(f.get("n", 1))), "boss_kind": F[1], "boss_name": str(f.get("name", DungeonGen.MONSTERS[F[1]].name)),
-			"boss_hp": 5.0 if elite else 2.5, "boss_size": 1.6 if elite else 1.3}}
+			"boss_hp": 5.0 if elite else 2.5, "boss_size": 1.6 if elite else 1.3,
+			"deck": bool(f.get("deck", false)), "arena": bool(f.get("deck", false)), "wound": float(f.get("wound", 0.0))}}

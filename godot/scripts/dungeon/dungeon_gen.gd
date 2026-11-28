@@ -9,6 +9,7 @@ const H := 40
 
 ## Хто живе в якому підземеллі (ключі — типи з Defs.DTYPES).
 const POOLS := {
+	"deck": ["orc", "goblin", "skeleton"],
 	"goblin": ["goblin", "wolf", "bat", "orc"], "crypt": ["skeleton", "ghost", "bat", "mimic"], "slime": ["slime", "spider", "bat", "mushroom"],
 	"ruins": ["skeleton", "spider", "golem", "mimic"], "mine": ["bat", "spider", "golem"], "tower": ["ghost", "golem", "bat", "imp"],
 	"dragon": ["golem", "wyvern", "salamander", "bat"], "beast": ["wolf", "spider", "bat", "harpy"], "spider": ["spider", "bat", "slime"],
@@ -29,6 +30,7 @@ const THEMES := {
 	"crystal": {"floor": Color("#4a5476"), "wall": Color("#1f2342"), "tint": Color("#d8d0ff")},
 	"minecave": {"floor": Color("#5a4b3e"), "wall": Color("#2a211a"), "tint": Color.WHITE},
 	"arena": {"floor": Color("#a08660"), "wall": Color("#4a3a52"), "tint": Color.WHITE},
+	"deck": {"floor": Color("#7a5634"), "wall": Color("#103452"), "tint": Color.WHITE},
 }
 
 const MONSTERS := {
@@ -71,6 +73,8 @@ static func generate(seed_v: int, opts: Dictionary) -> Dictionary:
 	L.tiles.resize(W * H)
 	if mine:
 		_caves(L, rng)
+	elif opts.get("ambush", {}).get("deck", false):
+		_deck(L)
 	elif opts.get("ambush", {}).get("arena", false):
 		_arena(L)
 	else:
@@ -112,13 +116,16 @@ static func generate(seed_v: int, opts: Dictionary) -> Dictionary:
 		L.boss = true
 		L.stairs = Vector2i(-1, -1)
 		var bpos: Vector2i = floor_cells.pop_back() if not floor_cells.is_empty() else far
-		if amb.get("arena", false):
+		if amb.get("deck", false):
+			bpos = far
+			floor_cells = [far + Vector2i(-4, -4), far + Vector2i(-4, 4), far + Vector2i(-9, -2), far + Vector2i(-9, 3), far + Vector2i(-14, -5), far + Vector2i(-14, 5), far + Vector2i(2, -3)]
+		elif amb.get("arena", false):
 			bpos = far
 			floor_cells = [far + Vector2i(0, -3), far + Vector2i(0, 3), far + Vector2i(-2, -2)]
 		var bk: String = amb.get("boss_kind", pool[0])
 		L.spawns.append({"pos": bpos, "kind": bk, "lvl": lvl, "boss": true, "name": amb.get("boss_name", MONSTERS[bk].name)})
 		for i in mini(int(amb.get("n", 1)) - 1, floor_cells.size()):
-			L.spawns.append({"pos": floor_cells[i], "kind": bk if (rng.chance(0.6) or amb.get("arena", false)) else pool[rng.rangei(0, pool.size() - 1)], "lvl": lvl, "boss": false})
+			L.spawns.append({"pos": floor_cells[i], "kind": bk if (rng.chance(0.6) or (amb.get("arena", false) and not amb.get("deck", false))) else pool[rng.rangei(0, pool.size() - 1)], "lvl": lvl, "boss": false})
 		L.ambush = true
 		return L
 	var n_mobs := (10 if mine else 14) + floor_i * 2 + mini(8, lvl / 4)
@@ -184,6 +191,30 @@ static func _arena(L: Dictionary) -> void:
 	L.rooms = [r]
 	L.start = Vector2i(r.position.x + 3, r.get_center().y)
 	L.far = Vector2i(r.end.x - 4, r.get_center().y)
+
+
+## Палуба корабля для абордажу: витягнутий корпус із загостреним носом, дві щогли посередині, навколо — море.
+static func _deck(L: Dictionary) -> void:
+	var x0 := 8
+	var x1 := 48
+	var cy := 20
+	for x in range(x0, x1):
+		var t := float(x - x0) / float(x1 - x0)
+		var half := 8
+		if t > 0.72:
+			half = int(round(8.0 * (1.0 - (t - 0.72) / 0.28 * 0.85)))
+		elif t < 0.08:
+			half = 6
+		for y in range(cy - half, cy + half):
+			if y > 0 and y < H - 1:
+				L.tiles[y * W + x] = Tile.FLOOR
+	for m in [Vector2i(20, cy - 1), Vector2i(33, cy - 1)]:
+		for dy in 2:
+			for dx in 2:
+				L.tiles[(m.y + dy) * W + m.x + dx] = Tile.WALL
+	L.rooms = [Rect2i(x0, cy - 8, x1 - x0, 16)]
+	L.start = Vector2i(x0 + 3, cy)
+	L.far = Vector2i(x1 - 9, cy)
 
 
 static func _rooms(L: Dictionary, rng: Rng) -> void:

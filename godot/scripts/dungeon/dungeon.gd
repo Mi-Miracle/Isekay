@@ -149,6 +149,11 @@ func _load_floor(n: int) -> void:
 	boss_ref = null
 	for sp in L.spawns:
 		enemies.append(_make_enemy(sp))
+	var wound := float(info.get("ambush", {}).get("wound", 0.0))
+	if wound > 0.0:
+		Audio.sfx("cannon")
+		for e in enemies:
+			e.hp = float(e.hp) * (1.0 - wound)
 	seen = PackedByteArray()
 	seen.resize(L.w * L.h)
 	visible_t = PackedByteArray()

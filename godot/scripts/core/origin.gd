@@ -51,7 +51,7 @@ static func blessing(p: Dictionary) -> Dictionary:
 
 ## Сумарний бонус раси й благословення за ключем (hp, mp, atk, def, crit, xp, speed, cdr).
 static func mul(p: Dictionary, key: String) -> float:
-	return float(race(p).bonus.get(key, 0.0)) + float(blessing(p).get("bonus", {}).get(key, 0.0)) + Artifacts.bonus(p, key) + Pets.bonus(p, key)
+	return float(race(p).bonus.get(key, 0.0)) + float(blessing(p).get("bonus", {}).get(key, 0.0)) + Artifacts.bonus(p, key) + Pets.bonus(p, key) + Weather.bonus(p, key)
 
 
 static func female(p: Dictionary) -> bool:

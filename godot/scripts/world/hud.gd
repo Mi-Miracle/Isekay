@@ -246,7 +246,7 @@ func set_player(text: String) -> void:
 
 
 func set_clock(text: String) -> void:
-	_clock.text = text
+	_clock.text = text + Weather.tag()
 
 
 func set_prompt(text: String) -> void:
@@ -1657,7 +1657,13 @@ func open_harbor(b: Dictionary) -> void:
 		_info(v, "Кораблів тут немає. Тільки чайки, і ті пішки.", 17)
 	else:
 		_info(v, "Капітан у капелюсі з папугою: «Квиток туди — платиш. Назад — теж платиш. Кракен — безкоштовно.»", 17, Color("#bfe6ff"))
-		_info(v, "💰 %d · Час у морі минає, як і на суші. По дорозі можуть статися пригоди." % int(p.gold), 16, Game.C_GOLD)
+		_info(v, "💰 %d · Час у морі минає, як і на суші. По дорозі можуть статися пригоди — і пірати." % int(p.gold), 16, Game.C_GOLD)
+		var S := Travel.ship()
+		var ry := _row(v)
+		if S.is_empty():
+			_small_btn(ry, "⚓ Верф: купити власний корабель — %d 💰 (плавання без квитків)" % Travel.SHIP_COST, func(): open_shipyard(b), int(p.gold) < Travel.SHIP_COST)
+		else:
+			_small_btn(ry, "⚓ Верф: «%s» (корпус %d · гармати %d · вітрила %d)" % [S.name, int(S.hull), int(S.cannons), int(S.sails)], func(): open_shipyard(b))
 		var routes := Travel.routes(wd, b)
 		if routes.is_empty():
 			_info(v, "Жодного іншого порту в Дивосвіті. Підозріло.", 16, Color("#ffb3b3"))
@@ -1666,13 +1672,49 @@ func open_harbor(b: Dictionary) -> void:
 			var known: bool = world.fog[int(to.y) * Defs.W + int(to.x)] > 0
 			var nm: String = to.name if known else "невідомий порт"
 			var where: String = wd.realms[to.owner].full_name if known else "на %s" % r.dir
-			var line := "⛵ %s (%s)%s — %.1f дн. · %d 💰" % [nm, where, " · 🏝️ інший берег" if r.other else "", float(r.days), int(r.fare)]
+			var own := Travel.has_ship()
+			var dd := float(r.days) * (1.0 - 0.15 * int(S.get("sails", 0))) if own else float(r.days)
+			var line := "⛵ %s (%s)%s — %.1f дн. · %s" % [nm, where, " · 🏝️ інший берег" if r.other else "", dd, "свій корабель" if own else "%d 💰" % int(r.fare)]
 			var row := _row(v)
 			_small_btn(row, line, func():
-				_err(world.sail_to(b, to)), int(p.gold) < int(r.fare))
+				_err(world.sail_to(b, to)), not own and int(p.gold) < int(r.fare))
 	var c := _button(v, "Вийти", close_overlay)
 	_show_overlay(pv[0], 0.35)
 	c.grab_focus.call_deferred()
+
+
+## Верф: купити корабель і покращити корпус, гармати й вітрила.
+func open_shipyard(b: Dictionary) -> void:
+	var p := Player.ensure(Game.state)
+	var pv := _vbox_panel("⚓ Верф · %s" % b.name, 940)
+	var v: VBoxContainer = pv[1]
+	_info(v, "Майстер верфі стукає по дошці: «Дуб! Смола! Жодної дірки… майже.» · 💰 %d" % int(p.gold), 17, Color("#bfe6ff"))
+	var S := Travel.ship()
+	if S.is_empty():
+		_info(v, "Власний корабель: плаваєш без квитків, швидше з вітрилами, а пірати… трапляються частіше. Бо в тебе є що грабувати.", 16)
+		var r := _row(v)
+		_small_btn(r, "Купити корабель — %d 💰" % Travel.SHIP_COST, func():
+			if not _err(Travel.buy_ship()):
+				Audio.sfx("horn")
+				toast("⛵ Твій корабель — «%s»! Капітан(ка) %s на борту." % [Travel.ship().name, Game.state.hero_name], Game.C_GOLD, 6.0)
+				open_shipyard(b), int(p.gold) < Travel.SHIP_COST)
+	else:
+		_info(v, "⛵ «%s» · відбито абордажів: %d" % [S.name, int(S.get("won", 0))], 19, Game.C_GOLD)
+		for part in Travel.SHIP_PARTS:
+			var P: Dictionary = Travel.SHIP_PARTS[part]
+			var lv := int(S.get(part, 0))
+			var c := Travel.part_cost(part)
+			_info(v, "%s %s — рівень %d/3 · %s" % [P.icon, P.name, lv, P.desc], 16)
+			var r := _row(v)
+			_small_btn(r, "Покращити — %d 💰" % c if c > 0 else "Максимум ✅", func():
+				if not _err(Travel.upgrade(part)):
+					Audio.sfx("mine")
+					open_shipyard(b), c < 0 or int(p.gold) < c)
+	var rr := _row(v)
+	_small_btn(rr, "⚓ Назад до гавані", func(): open_harbor(b))
+	var cl := _button(v, "Вийти", close_overlay)
+	_show_overlay(pv[0], 0.35)
+	cl.grab_focus.call_deferred()
 
 
 func open_estate_agent(b: Dictionary) -> void:
