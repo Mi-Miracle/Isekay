@@ -1,6 +1,6 @@
 {
   "name": "isekay",
-  "version": "5.7.0",
+  "version": "5.8.0",
   "private": true,
   "devDependencies": {
     "electron": "^33.4.11",

@@ -126,6 +126,7 @@
       el.appendChild(h('div', { class: 'row' }, ISK.sprites.img(ISK.sprites.icon(['capital', 'city', 'fortress', 'town', 'port', 'mine', 'hellfort'].includes(B.type) ? B.type : 'village'), 40), h('div', null, h('h3', null, B.name),
         h('div', { class: 'loc-sub' }, `${st.name} · графство ${w.counties[B.county].name}, герцогство ${w.duchies[B.duchy].name}`, h('br'), owner ? owner.fullName + (owner.liege >= 0 ? ' (Імперія)' : '') : 'Нічийна земля', B.occ >= 0 ? h('span', { class: 'bad' }, ` · окуповано: ${w.realms[B.occ].name}`) : null, lm ? h('div', { class: 'gold' }, `${lm.icon} ${lm.name}`) : null))));
       if (ISK.politics.isDemon(G.P, B.owner)) el.appendChild(h('div', { class: 'quest main' }, '😈 Землі Темряви. Тут немає закладів — лише біль і погана погода.'));
+      el.appendChild(h('button', { class: 'btn primary enter-town', title: 'Мапа поселення: заклади стоять як будівлі (клавіша E)', onclick: () => ISK.estate.open('town', B.id) }, `🚪 Увійти в ${B.name}`));
       const ev = ISK.life && ISK.life.eventAt(G, B.id);
       if (ev) el.appendChild(h('div', { class: 'quest' }, { festival: '🎉 Ярмарок! Ціни в крамницях нижчі.', goblin_market: '👺 Гоблінський базар: дивні товари, підозрілі гобліни.', tournament: '🏆 Лицарський турнір! Слава переможцям.', dragon: '🐉 Над містом кружляє дракон. Не виходь без шолома.' }[ev.key] || '✨ Тут щось відбувається!'));
       const svcs = h('div', { class: 'svc-grid' });
@@ -172,7 +173,7 @@
       el.appendChild(acts);
     } else {
       const Dg = hr.Dg;
-      el.appendChild(h('div', { class: 'row' }, h('div', { style: { fontSize: '34px' } }, Dg.icon), h('div', null, h('h3', null, Dg.name), h('div', { class: 'loc-sub' }, `Підземелля · рекомендований рівень ${Dg.level} · поверхів: ${Dg.floors}`, G.cleared[Dg.id] ? h('span', { class: 'good' }, ' · зачищено') : null))));
+      el.appendChild(h('div', { class: 'row' }, h('div', { style: { fontSize: '34px' } }, Dg.icon), h('div', null, h('h3', null, Dg.name), h('div', { class: 'loc-sub' }, `Підземелля · рекомендований рівень ${ISK.combat.mobLvl(Dg.level)} · поверхів: ${Dg.floors}`, G.cleared[Dg.id] ? h('span', { class: 'good' }, ' · зачищено') : null))));
       if (Dg.relic && p.flags.relicsRevealed && !G.cleared[Dg.id]) el.appendChild(h('div', { class: 'quest main' }, '🔱 Тут зберігається Осколок Печаті!'));
       const seasonOk = Dg.season === undefined || Dg.season === null || !ISK.life || ISK.life.environment(G).seasonIdx === Dg.season;
       if (Dg.season !== undefined && Dg.season !== null) el.appendChild(h('div', { class: 'quest' + (seasonOk ? '' : ' main') }, `${ISK.data.SEASONS[Dg.season].icon} Сезонне підземелля: відчиняється лише в сезон «${ISK.data.SEASONS[Dg.season].name}».${seasonOk ? ' Двері відчинені!' : ' Зараз на дверях табличка: «Зачинено. Пішли на обід (на три місяці)».'}`));
@@ -208,7 +209,7 @@
       el.appendChild(h('div', { class: 'kv' },
         h('div', { class: 'k' }, 'Розвиток'), h('div', null, '★'.repeat(Math.ceil(B.dev / 2)) + ` (${B.dev}/10)`),
         h('div', { class: 'k' }, 'Укріплення'), h('div', null, '🧱'.repeat(Math.min(8, B.fort))),
-        h('div', { class: 'k' }, 'Небезпека'), h('div', { style: { color: B.danger > p.level + 3 ? 'var(--bad)' : B.danger > p.level ? 'var(--gold)' : 'var(--good)' } }, `монстри ~${B.danger} рівня`),
+        h('div', { class: 'k' }, 'Небезпека'), h('div', { style: { color: ISK.combat.mobLvl(B.danger) > p.level + 3 ? 'var(--bad)' : ISK.combat.mobLvl(B.danger) > p.level ? 'var(--gold)' : 'var(--good)' } }, `монстри ~${ISK.combat.mobLvl(B.danger)} рівня`),
         lm ? [h('div', { class: 'k' }, 'Місцевість'), h('div', { class: 'gold' }, `${lm.icon} ${lm.name}`)] : null,
         h('div', { class: 'k' }, 'Угіддя'), h('div', null, (w.graph[node] || []).filter((e) => e.to[0] === 'r' && G.discovered[e.to]).map((e) => ISK.data.RESOURCE_SITES[w.rnodes[+e.to.slice(2)].key].icon).join(' ') || (known ? '—' : '?')),
         h('div', { class: 'k' }, 'Заклади'), h('div', null, st.services.map((s) => SVC[s].icon).join(' ') || '—')));
@@ -224,7 +225,7 @@
     } else {
       const Dg = w.dungeons[+id];
       el.appendChild(h('h3', null, `${Dg.icon} ${Dg.name}`));
-      el.appendChild(h('div', { class: 'kv' }, h('div', { class: 'k' }, 'Рівень'), h('div', null, String(Dg.level)), h('div', { class: 'k' }, 'Поверхи'), h('div', null, String(Dg.floors)),
+      el.appendChild(h('div', { class: 'kv' }, h('div', { class: 'k' }, 'Рівень'), h('div', null, String(ISK.combat.mobLvl(Dg.level))), h('div', { class: 'k' }, 'Поверхи'), h('div', null, String(Dg.floors)),
         h('div', { class: 'k' }, 'Стан'), h('div', null, G.cleared[Dg.id] ? '✔️ Зачищено' : 'Не досліджено'), Dg.island ? [h('div', { class: 'k' }, 'Острів'), h('div', null, '🏝️ тільки морем')] : null,
         Dg.relic && p.flags.relicsRevealed ? [h('div', { class: 'k' }, 'Реліквія'), h('div', { class: 'gold' }, '🔱 Осколок Печаті')] : null));
     }
@@ -351,7 +352,7 @@
   // ---- v5.2: монстри на мапі ----
   async function fightMonster(m, ambush) {
     const G = UI.G, p = G.player;
-    if (ambush) toast(`⚠️ ${m.icon} ${m.name} (рів. ${m.lvl}) перегородили шлях!`, 'bad', 3500);
+    if (ambush) toast(`⚠️ ${m.icon} ${m.name} (рів. ${ISK.combat.mobLvl(m.lvl)}) перегородили шлях!`, 'bad', 3500);
     const r = await ISK.combatUI.run(GM().monsterEnemies(m), { biome: ISK.data.BIOME_OF_TERRAIN[G.world.terrain[m.cell]] || 'plains' });
     if (r === 'win') { GM().killMonster(G, m); toast(`🏆 ${m.name} розбито! Дорога вільна.`, 'good'); refresh(); return 'ok'; }
     if (r === 'lose') return 'dead';
@@ -362,9 +363,9 @@
     const G = UI.G, w = G.world, p = G.player; const el = $('#info-panel'); el.classList.remove('hidden'); el.innerHTML = ''; ISK.render.R.selected = null;
     el.appendChild(h('button', { class: 'close-x', onclick: () => el.classList.add('hidden') }, '✕'));
     const W0 = ISK.world.W; const at = ISK.world.nodeXY(w, p.location); const dist = Math.hypot((m.cell % W0) - at.x, ((m.cell / W0) | 0) - at.y);
-    const dl = m.lvl - p.level;
+    const dl = ISK.combat.mobLvl(m.lvl) - p.level;
     el.appendChild(h('h3', null, `${m.icon} ${m.name}`));
-    el.appendChild(h('div', { class: 'kv' }, h('div', { class: 'k' }, 'Рівень'), h('div', { style: { color: dl > 5 ? 'var(--bad)' : dl > 1 ? 'var(--gold)' : 'var(--good)' } }, String(m.lvl) + (m.elite ? ' ⭐ еліта' : '')), h('div', { class: 'k' }, 'Кількість'), h('div', null, String(m.n)), h('div', { class: 'k' }, 'Відстань'), h('div', null, `~${Math.round(dist)} кл.`)));
+    el.appendChild(h('div', { class: 'kv' }, h('div', { class: 'k' }, 'Рівень'), h('div', { style: { color: dl > 5 ? 'var(--bad)' : dl > 1 ? 'var(--gold)' : 'var(--good)' } }, String(ISK.combat.mobLvl(m.lvl)) + (m.elite ? ' ⭐ еліта' : '')), h('div', { class: 'k' }, 'Кількість'), h('div', null, String(m.n)), h('div', { class: 'k' }, 'Відстань'), h('div', null, `~${Math.round(dist)} кл.`)));
     el.appendChild(h('div', { class: 'muted', style: { margin: '6px 0' } }, dl > 5 ? 'Виглядають так, ніби їдять героїв на сніданок. Краще обійти.' : 'Бродять околицями. Можна обійти іншою дорогою — або напасти першим.'));
     const near = dist <= 14 && !UI.travelling;
     el.appendChild(h('button', { class: 'btn primary', disabled: !near, style: { width: '100%' }, onclick: async () => { el.classList.add('hidden'); showNews(GM().passTime(G, Math.max(0.1, dist / 40))); const r = await fightMonster(m, false); if (r === 'dead') refresh(); } }, near ? '⚔️ Напасти першим' : 'Занадто далеко — підійди ближче'));
@@ -465,17 +466,18 @@
     $('#travel-stop').addEventListener('click', () => { UI.stopTravel = true; });
     $('#hl-toggle').addEventListener('click', () => { R.hl = !R.hl; $('#hl-toggle').classList.toggle('active', R.hl); A().play('click'); toast(R.hl ? '⛏️ Підсвічено: шахти, підземелля (колір = складність), родовища, артефакти 🏺' : 'Підсвітку вимкнено', ''); });
     document.querySelectorAll('#side-menu [data-panel]').forEach((b) => b.addEventListener('click', () => { A().play('click'); ISK.panels.open(b.dataset.panel); }));
-    const gameActive = () => UI.G && $('#screen-game').classList.contains('active') && !UI.inCombat && !UI.inMinigame && !UI.inDungeon;
+    const gameActive = () => UI.G && $('#screen-game').classList.contains('active') && !UI.inCombat && !UI.inMinigame && !UI.inDungeon && !UI.inEstate;
     window.addEventListener('keydown', (e) => {
       if (!gameActive() || e.target.tagName === 'INPUT') return;
       if (WASD[e.code] && !UI.modalStack.length && !e.ctrlKey) { R.keys.add(e.code); e.preventDefault(); if (!e.repeat) walkDir(); return; }
-      if (['KeyQ', 'KeyE', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code) && !UI.modalStack.length) { if (!e.ctrlKey) return; R.keys.add(e.code); ISK.render.freeCam(); e.preventDefault(); return; }
+      if (['KeyQ', 'KeyE', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code) && !UI.modalStack.length && (e.ctrlKey || !['KeyQ', 'KeyE'].includes(e.code))) { if (!e.ctrlKey) return; R.keys.add(e.code); ISK.render.freeCam(); e.preventDefault(); return; }
       if (e.key === 'Escape') { if (!closeTop()) ISK.panels.open('system'); return; }
       if (UI.modalStack.length) return;
       const byCode = { KeyC: 'character', KeyI: 'inventory', KeyK: 'skills', KeyP: 'professions', KeyJ: 'quests', KeyR: 'realms', KeyH: 'chronicle', KeyT: 'party', KeyY: 'achievements' };
       if (byCode[e.code]) ISK.panels.open(byCode[e.code]);
       if (e.code === 'Space') { e.preventDefault(); setSpeed(UI.timeSpeed ? 0 : 1); return; }
       if (e.code === 'KeyG') { $('#hl-toggle').click(); return; }
+      if (e.code === 'KeyE' && !e.ctrlKey && UI.G.player.location[0] === 'b' && !UI.travelling) { ISK.estate.open('town'); return; }
       if (e.code === 'KeyM') { ISK.panels.worldMap(); return; }
       if (e.code === 'KeyF') { ISK.render.centerOn(UI.G.player.location); return; }
       if (e.code === 'Equal' || e.code === 'NumpadAdd') { setSpeed(Math.min(3, UI.timeSpeed + 1)); return; }

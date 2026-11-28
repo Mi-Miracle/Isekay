@@ -47,9 +47,13 @@
     e.shield = e.shieldMax; e.broken = 0;
   }
 
+  // v5.8: монстри ростуть разом із героєм — до базового рівня місцевості додається ~70% рівнів героя понад перший
+  const MOB_GROWTH = 0.7;
+  function heroLevel() { const G = globalThis.ISK && ISK.ui && ISK.ui.G; return G && G.player ? G.player.level || 1 : 1; }
+  function mobLvl(base, hero = heroLevel()) { const cap = (D().LEVEL_CAP || 100) + 20; return Math.max(1, Math.min(cap, Math.round(base + Math.max(0, hero - 1) * MOB_GROWTH))); }
   function makeEnemy(key, lvl, mods = {}) {
     const m = D().MONSTERS[key] || D().MONSTERS.goblin;
-    lvl = Math.max(1, Math.round(lvl));
+    lvl = mods.noScale ? Math.max(1, Math.round(lvl)) : mobLvl(lvl);
     const f = mods.elite ? 1.8 : 1;
     const e = {
       key, name: (mods.elite ? 'Елітний ' : '') + m.name, icon: m.icon, lvl, humanoid: !!m.humanoid,
@@ -400,5 +404,5 @@
     b.rewards = { xp, gold, items, fame };
   }
 
-  ISK.combat = { makeEnemy, makeBoss, startBattle, act, alive, aliveAllies, allyHp, hitEnemy, computeRewards, mitig, DIFF, DTYPES, WEAPON_DTYPE };
+  ISK.combat = { mobLvl, MOB_GROWTH, makeEnemy, makeBoss, startBattle, act, alive, aliveAllies, allyHp, hitEnemy, computeRewards, mitig, DIFF, DTYPES, WEAPON_DTYPE };
 })();

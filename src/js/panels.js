@@ -29,6 +29,22 @@
   function open(name) { if (UI().modalStack.length) UI().closeAll(); ({ character, inventory, skills, professions, quests, realms, chronicle, system, party, achievements }[name] || (() => {}))(); }
 
   // ---------------- Character ----------------
+  // v5.8: клік по слоту спорядження — список того, що можна вдягти саме сюди
+  function equipPicker(slot) {
+    const p = G().player; const cur = PL().item(p.equipment[slot]);
+    const ids = Object.keys(p.inventory).filter((iid) => p.inventory[iid] > 0 && PL().fitsSlot(PL().item(iid), slot));
+    ids.sort((a, b) => (PL().item(b).lvl || 0) - (PL().item(a).lvl || 0) || (PL().item(b).rarity || 0) - (PL().item(a).rarity || 0));
+    const back = () => { UI().closeTop(); reopen(character); };
+    UI().modal({ title: `${PL().SLOT_NAMES[slot]}: що вдягти?`, icon: cur ? cur.icon : '🎒', size: 'narrow', body: () => {
+      const w = h('div', { class: 'col' });
+      w.appendChild(h('div', { class: 'card' }, h('div', { class: 'muted', style: { fontSize: '12px' } }, 'Зараз вдягнуто'), cur ? itemEl(p.equipment[slot], 1, slot === 'costume' && p.equipment[slot] === 'c_default' ? [] : [h('button', { class: 'btn small', onclick: () => { PL().unequip(p, slot); A().play('click'); back(); } }, 'Зняти')]) : h('div', { class: 'muted' }, '— порожньо —')));
+      if (!ids.length) { w.appendChild(h('div', { class: 'muted' }, 'У рюкзаку немає нічого для цього слота. Зазирни в крамницю, кузню чи підземелля!')); return w; }
+      const list = h('div', { class: 'items' });
+      for (const iid of ids) { const it = PL().item(iid); const lock = it.lvl > p.level + 2;
+        list.appendChild(itemEl(iid, p.inventory[iid], [h('button', { class: 'btn small primary', disabled: lock, title: lock ? `Потрібен рівень ${it.lvl - 2}` : '', onclick: () => { if (PL().equipTo(p, iid, slot)) { A().play('clang'); back(); } } }, lock ? `🔒 рів. ${it.lvl - 2}` : 'Вдягти')])); }
+      w.appendChild(list); return w;
+    } });
+  }
   function character() {
     const p = G().player; const R = D().RACES[p.race];
     UI().modal({ title: p.name, sub: `${R.icon} ${R.name} · ${PL().socialName(p)} · ⭐ слава ${Math.floor(p.fame)} · колись ${p.origin}`, iconEl: SP().img(SP().hero(p), 48), body: () => {
@@ -42,7 +58,8 @@
       eq.appendChild(doll);
       for (const slot of PL().SLOTS) {
         const id = p.equipment[slot]; const it = PL().item(id);
-        eq.appendChild(h('div', { class: 'slot r' + (it ? it.rarity || 0 : 0), title: it ? `${it.name}\n${itemDesc(it)}` : PL().SLOT_NAMES[slot] }, h('div', { class: 'sl' }, PL().SLOT_NAMES[slot]), h('div', { class: 'si' }, it ? it.icon : '—'), h('div', { class: 'sn' }, it ? it.name : ''),
+        const can = Object.keys(p.inventory).filter((iid) => PL().fitsSlot(PL().item(iid), slot)).length;
+        eq.appendChild(h('div', { class: 'slot clickable r' + (it ? it.rarity || 0 : 0) + (can ? ' has-alt' : ''), title: (it ? `${it.name}\n${itemDesc(it)}\n\n` : PL().SLOT_NAMES[slot] + '\n') + (can ? `Клікни — вибрати з ${can} речей` : 'Клікни — що можна вдягти'), onclick: (e) => { if (e.target.closest('.x')) return; equipPicker(slot); } }, can ? h('div', { class: 'alt-n' }, '+' + can) : null, h('div', { class: 'sl' }, PL().SLOT_NAMES[slot]), h('div', { class: 'si' }, it ? it.icon : '—'), h('div', { class: 'sn' }, it ? it.name : ''),
           it && !(slot === 'costume' && id === 'c_default') ? h('button', { class: 'x', title: 'Зняти', onclick: () => { PL().unequip(p, slot); reopen(character); } }, '✕') : null));
       }
       const cl = h('div', { class: 'card' }, h('h4', null, 'Класи, раса, благословення'));
@@ -254,6 +271,8 @@
   function help() {
     UI().alert('Як грати', [
       '🗺️ Мапа: рух у два натискання — клік (або WASD) обирає напрямок і показує шлях, другий клік (або те саме WASD) — іти. Камера завжди йде за героєм; Ctrl + перетягування або Ctrl + стрілки — оглянути мапу, Ctrl + коліщатко (чи Ctrl + Q/E) — наблизити/віддалити. Пішки герой ходить повільно — верхи й каретою швидше. Куплені мапи відкриваються лише на мінімапі та мапі світу (M).',
+      '🏘️ Міста й села: кнопка «Увійти» або клавіша E — мапа поселення з будівлями (гільдія, ринок, таверна…). Клікни будівлю — герой підійде й увійде. Дім: подвір\'я → двері → кімнати (ліжко, кухня, комора, бібліотека). WASD — ходити, E — дія поруч, Esc — вийти.',
+      '🎽 Герой: клікни слот спорядження — побачиш усе, що можна туди вдягти. Монстри ростуть разом із тобою: до рівня місцевості додається ~70% твоїх рівнів.',
       '🏳️ Регіони видно завжди: тонкі лінії — графства, світліші — герцогства, кольорові — королівства, золотий пунктир — кордон Імперії. Режими 1–4: рельєф, політична, де-юре, небезпека.',
       '🧭 Навігація: N — наступна ціль (квести й мітки), V — іти до цілі, Z — поспіх, X — змінити транспорт. ПКМ по мапі — мітки. Літаючі (грифон, мітла, килим, віверна) летять напряму. Між містами зі стайнею — поштова карета без засідок. З рангу D — портали гільдії. 🗼 Вежі у фортецях і містах відкривають мапу. Сувій «Додому» — у твою садибу. 🎮 Є підтримка геймпада.',
       '❗ Маркери квестів підстрибують над цілями на мапі.', '⛵ На інші континенти й острови — морем з портів (квиток або власний корабель).',
@@ -834,11 +853,20 @@
   function worldMap() {
     const g = G(); if (!g) return; let political = false;
     const cv = document.createElement('canvas'); const W = ISK.world.W, H = ISK.world.H; const vw = Math.min(window.innerWidth - 120, 1400, (window.innerHeight - 230) * W / H); cv.width = Math.round(vw); cv.height = Math.round(vw * H / W); cv.className = 'world-map-cv';
-    let raf = 0; const loop = () => { if (!cv.isConnected) { cancelAnimationFrame(raf); return; } ISK.render.drawWorldMap(cv, { political }); raf = requestAnimationFrame(loop); };
+    // v5.8: коліщатко — наблизити/віддалити, перетягування — зсунути, клік — показати це місце на мапі
+    const view = { z: 1, ox: 0, oy: 0 }; const clampV = () => { const mw = cv.width / view.z, mh = cv.height / view.z; view.ox = Math.max(0, Math.min(cv.width - mw, view.ox)); view.oy = Math.max(0, Math.min(cv.height - mh, view.oy)); };
+    { const hp = ISK.world.nodeXY(g.world, g.player.location); view.z = 2.5; view.ox = (hp.x + 0.5) / W * cv.width - cv.width / view.z / 2; view.oy = (hp.y + 0.5) / H * cv.height - cv.height / view.z / 2; clampV(); }
+    let raf = 0; const loop = () => { if (!cv.isConnected) { cancelAnimationFrame(raf); return; } ISK.render.drawWorldMap(cv, { political, view }); raf = requestAnimationFrame(loop); };
     const known = g.fog ? Math.round(g.fog.reduce((a, v) => a + (v === 2 ? 1 : 0), 0) / g.fog.length * 1000) / 10 : 100;
-    cv.addEventListener('click', (e) => { const r = cv.getBoundingClientRect(); const k = (W * ISK.render.S) / r.width; ISK.render.lookAt((e.clientX - r.left) * k, (e.clientY - r.top) * k); UI().closeAll(); });
-    UI().modal({ title: 'Мапа Дивосвіту', icon: '🗺️', sub: `Досліджено власними очима: ${known}% світу · клік — перейти туди · мапи продає картограф у містах`, size: 'full',
-      body: () => h('div', { class: 'col' }, h('div', { class: 'row' }, h('button', { class: 'btn small', onclick: (e) => { political = !political; e.target.textContent = political ? '🏔️ Рельєф' : '👑 Королівства'; } }, '👑 Королівства'), h('span', { class: 'muted' }, '🟫 умовна (куплена) · ⬛ невідомо · кольорові кола — монстри поруч')), cv) });
+    const toCv = (e) => { const r = cv.getBoundingClientRect(); return [(e.clientX - r.left) * cv.width / r.width, (e.clientY - r.top) * cv.height / r.height]; };
+    cv.addEventListener('wheel', (e) => { e.preventDefault(); const [mx, my] = toCv(e); const wx = view.ox + mx / view.z, wy = view.oy + my / view.z; view.z = Math.max(1, Math.min(12, view.z * (e.deltaY < 0 ? 1.18 : 0.85))); view.ox = wx - mx / view.z; view.oy = wy - my / view.z; clampV(); }, { passive: false });
+    let drag = null; cv.addEventListener('mousedown', (e) => { if (e.button !== 0) return; const [mx, my] = toCv(e); drag = { mx, my, ox: view.ox, oy: view.oy, moved: false }; cv.style.cursor = 'grabbing'; });
+    const mm = (e) => { if (!drag) return; const [mx, my] = toCv(e); const dx = mx - drag.mx, dy = my - drag.my; if (Math.abs(dx) + Math.abs(dy) > 5) drag.moved = true; view.ox = drag.ox - dx / view.z; view.oy = drag.oy - dy / view.z; clampV(); };
+    const mu = (e) => { if (!drag) return; const d = drag; drag = null; cv.style.cursor = ''; if (d.moved || !cv.isConnected) return; const [mx, my] = toCv(e); const k = (W * ISK.render.S) / cv.width; ISK.render.lookAt((view.ox + mx / view.z) * k, (view.oy + my / view.z) * k); UI().closeAll(); };
+    window.addEventListener('mousemove', mm); window.addEventListener('mouseup', mu);
+    const zbtn = (lbl, f) => h('button', { class: 'btn small', onclick: () => { const cx = view.ox + cv.width / view.z / 2, cy = view.oy + cv.height / view.z / 2; view.z = Math.max(1, Math.min(12, view.z * f)); view.ox = cx - cv.width / view.z / 2; view.oy = cy - cv.height / view.z / 2; clampV(); } }, lbl);
+    UI().modal({ title: 'Мапа Дивосвіту', icon: '🗺️', sub: `Досліджено власними очима: ${known}% світу · коліщатко — масштаб, тягни — зсунути, клік — глянути туди`, size: 'full', onClose: () => { window.removeEventListener('mousemove', mm); window.removeEventListener('mouseup', mu); },
+      body: () => h('div', { class: 'col' }, h('div', { class: 'row' }, h('button', { class: 'btn small', onclick: (e) => { political = !political; e.target.textContent = political ? '🏔️ Рельєф' : '👑 Королівства'; } }, '👑 Королівства'), zbtn('➕', 1.5), zbtn('➖', 1 / 1.5), h('button', { class: 'btn small', onclick: () => { view.z = 1; view.ox = 0; view.oy = 0; } }, '🌍 Увесь світ'), h('span', { class: 'muted' }, '🟫 умовна (куплена) · ⬛ невідомо · кольорові кола — монстри поруч')), cv) });
     loop();
   }
   // ---- NPC heroes ----

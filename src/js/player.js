@@ -174,6 +174,14 @@
     p.hp = Math.min(p.hp, maxHp(p)); p.mp = Math.min(p.mp, maxMp(p));
     return true;
   }
+  // v5.8: вдягти в конкретний слот (для вибору з вкладки «Герой»; кільця — у ring1 чи ring2)
+  function fitsSlot(it, slot) { return !!(it && it.slot && (it.slot === slot || (it.slot === 'ring' && (slot === 'ring1' || slot === 'ring2')))); }
+  function equipTo(p, id, slot) {
+    const it = item(id); if (!fitsSlot(it, slot) || !hasItem(p, id)) return false;
+    if (it.slot !== 'ring') return equip(p, id);
+    removeItem(p, id); if (p.equipment[slot]) addItem(p, p.equipment[slot]); p.equipment[slot] = id;
+    p.hp = Math.min(p.hp, maxHp(p)); p.mp = Math.min(p.mp, maxMp(p)); return true;
+  }
   function unequip(p, slot) {
     if (!p.equipment[slot]) return;
     if (slot === 'costume') { if (p.equipment.costume !== 'c_default') addItem(p, p.equipment.costume); p.equipment.costume = 'c_default'; p.look.costume = 'c_default'; return; }
@@ -236,7 +244,7 @@
   function encounterMul(p) { let m = (D().MOUNTS[p.mount] || D().MOUNTS.feet).enc; if (D().hasArt && D().hasArt(p, 'stealth')) m *= 0.4; return m; }
 
   ISK.player = {
-    SLOTS, SLOT_NAMES, newPlayer, xpNeed, classXpNeed, profXpNeed, totalStats, maxHp, maxMp, derived, classLevel, skillRank, availableSkills, knownSkills,
+    SLOTS, SLOT_NAMES, fitsSlot, equipTo, newPlayer, xpNeed, classXpNeed, profXpNeed, totalStats, maxHp, maxMp, derived, classLevel, skillRank, availableSkills, knownSkills,
     addXp, addClassXp, upgradeSkill, addProfXp, profRank, addFame, addItem, hasItem, removeItem, equip, unequip, sellPrice, buyPrice, priceMul,
     guildRank, nextRank, socialName, useConsumable, item, companionStats, petStats, addPetXp, addCompanionXp, travelSpeed, encounterMul, rankSkill,
   };

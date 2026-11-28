@@ -299,6 +299,24 @@
         document.querySelector('.tabs button[data-id="garden"]')?.click(); await UI.sleep(200); await shot('97_house_garden'); UI.closeAll();
         g.time = Math.floor(g.time / 360) * 360 + 120; ISK.estate.open('house'); await UI.sleep(1300); await shot('98_estate_manor'); ISK.estate.close();
       });
+      // v5.8: локації — дім зсередини, мапа міста, вибір спорядження, масштаб мапи світу, рівні мобів
+      await step('v58_locations', async () => {
+        const g = G4(); const p = g.player; UI.closeAll();
+        for (const k of ['kitchen', 'chest', 'incubator']) ISK.game.upgradeHouse(g, k);
+        ISK.estate.open('house'); await UI.sleep(300); ISK.estate.go('home'); await UI.sleep(1200); await shot('58a_home_inside');
+        if (ISK.estate.kind() !== 'home') errors.push('home interior did not open');
+        ISK.estate.close();
+        const town = g.world.baronies.find((b) => b.type === 'capital' && !ISK.politics.isDemon(g.P, b.owner)); ISK.game.arrive(g, 'b:' + town.id); UI.refresh(); await UI.sleep(200); await shot('58b_enter_btn');
+        ISK.estate.open('town', town.id); await UI.sleep(1300); await shot('58c_town_capital');
+        if (ISK.estate.kind() !== 'town') errors.push('town map did not open');
+        ISK.estate.close();
+        const vil = g.world.baronies.find((b) => b.type === 'village' && !ISK.politics.isDemon(g.P, b.owner)); ISK.game.arrive(g, 'b:' + vil.id); UI.refresh(); ISK.estate.open('town', vil.id); await UI.sleep(1000); await shot('58d_town_village'); ISK.estate.close();
+        const port = g.world.baronies.find((b) => b.type === 'port' && !ISK.politics.isDemon(g.P, b.owner)); if (port) { ISK.game.arrive(g, 'b:' + port.id); UI.refresh(); ISK.estate.open('town', port.id); await UI.sleep(1000); await shot('58e_town_port'); ISK.estate.close(); }
+        ISK.panels.character(); await UI.sleep(200); document.querySelector('.eqgrid .slot.clickable')?.click(); await UI.sleep(300); await shot('58f_equip_picker'); UI.closeAll();
+        ISK.panels.worldMap(); await UI.sleep(400); await shot('58g_worldmap_zoom'); UI.closeAll();
+        const l1 = ISK.combat.mobLvl(5, 1), l50 = ISK.combat.mobLvl(5, 50); if (!(l50 > l1)) errors.push('mob level does not grow');
+        console.log('mob lvl 5 @hero1 =', l1, '@hero50 =', l50);
+      });
       await step('v54_depths', async () => {
         const g = G4(); const p = g.player; UI.closeAll(); const DP = ISK.depths;
         p.hp = ISK.player.maxHp(p); p.level = Math.max(p.level, 20);

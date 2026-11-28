@@ -260,14 +260,14 @@
       const x = Dg.x * S + S / 2, y = Dg.y * S + S / 2; const s = (Dg.final ? 26 : 16) * Math.max(0.9, Math.min(1.5 * MUL, inv * 1.2));
       if (Dg.relic && !G.cleared[Dg.id] && G.player.flags.relicsRevealed) { g.beginPath(); g.arc(x, y, s * 0.8 + Math.sin(R.t / 12) * 2, 0, 7); g.fillStyle = 'rgba(255,126,182,0.35)'; g.fill(); }
       // v4: difficulty ring (green easy → red deadly) + highlight pulse
-      const dl = Dg.level - G.player.level; const dcol = G.cleared[Dg.id] ? '#7cd67c' : dl <= -5 ? '#7cd67c' : dl <= 2 ? '#ffd36e' : dl <= 8 ? '#ff9a40' : '#ff4a5a';
+      const dl = ISK.combat.mobLvl(Dg.level) - G.player.level; const dcol = G.cleared[Dg.id] ? '#7cd67c' : dl <= -5 ? '#7cd67c' : dl <= 2 ? '#ffd36e' : dl <= 8 ? '#ff9a40' : '#ff4a5a';
       if (!G.cleared[Dg.id]) { g.beginPath(); g.arc(x, y, s * 0.78 + (R.hl ? Math.sin(R.t / 8) * 3 : 0), 0, 7); g.strokeStyle = dcol; g.globalAlpha = R.hl ? 0.95 : 0.55; g.lineWidth = (R.hl ? 3 : 2) * inv + 0.6; g.stroke(); g.globalAlpha = 1; }
       g.beginPath(); g.arc(x, y, s * 0.55, 0, 7); g.fillStyle = G.cleared[Dg.id] ? 'rgba(40,60,40,0.85)' : 'rgba(25,10,30,0.85)'; g.fill();
       g.lineWidth = 1.5 * inv; g.strokeStyle = Dg.final ? '#ff5c3c' : '#c9a6ff'; g.stroke();
       if (Dg.artifact && !G.cleared[Dg.id]) { g.font = `${s * 0.45}px ${EMOJI}`; g.fillText('🏺', x + s * 0.55, y - s * 0.5); }
       if (Dg.season !== undefined && Dg.season !== null) { g.font = `${s * 0.42}px ${EMOJI}`; g.fillText(ISK.data.SEASONS[Dg.season].icon, x - s * 0.58, y - s * 0.5); }
       g.font = `${s * 0.72}px ${EMOJI}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = '#fff'; g.fillText(G.cleared[Dg.id] ? '✔️' : Dg.icon, x, y + 1);
-      if (z1 > 1.0 || R.hl) text(g, `${Dg.name} (${Dg.level})`, x, y + s * 0.95, 10 * inv + 2, '#e8d6ff', 600, 3 * inv);
+      if (z1 > 1.0 || R.hl) text(g, `${Dg.name} (${ISK.combat.mobLvl(Dg.level)})`, x, y + s * 0.95, 10 * inv + 2, '#e8d6ff', 600, 3 * inv);
     }
     // smooth world-clock fraction (time passes gradually while travelling / time-flow)
     const frac = G.time - Math.floor(G.time);
@@ -346,14 +346,14 @@
     // v5.2: монстри, що бродять (видно лише там, де бачиш зараз/бачив)
     for (const m of (G.life && G.life.mon) || []) {
       if (fogAt(m.cell) < 2) continue; const W0 = ISK.world.W; const x = (m.cell % W0) * S + S / 2, y = ((m.cell / W0) | 0) * S + S / 2; if (!vis(x, y)) continue;
-      const k = Math.max(0.9, Math.min(1.8 * MUL, inv * 1.3)); const bob = Math.abs(Math.sin(R.t / 7 + m.id)) * 2 * k; const dl = m.lvl - G.player.level;
+      const k = Math.max(0.9, Math.min(1.8 * MUL, inv * 1.3)); const bob = Math.abs(Math.sin(R.t / 7 + m.id)) * 2 * k; const dl = ISK.combat.mobLvl(m.lvl) - G.player.level;
       const col = dl <= -4 ? '#7cd67c' : dl <= 1 ? '#ffd36e' : dl <= 5 ? '#ff9a40' : '#ff4a5a';
       g.beginPath(); g.ellipse(x, y + 3 * k, 7 * k, 2.6 * k, 0, 0, 7); g.fillStyle = 'rgba(0,0,0,0.4)'; g.fill();
       g.beginPath(); g.arc(x, y - 6 * k - bob, 8 * k, 0, 7); g.fillStyle = 'rgba(30,8,12,0.82)'; g.fill(); g.strokeStyle = col; g.lineWidth = 1.6 * k; g.stroke();
       g.font = `${10 * k}px ${EMOJI}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = '#fff'; g.fillText(m.icon, x, y - 5.5 * k - bob);
       if (m.n > 1) { g.font = `800 ${6 * k}px "Segoe UI", sans-serif`; g.fillStyle = col; g.fillText('×' + m.n, x + 8 * k, y + 1 * k); }
       if (m.elite) { g.font = `${6 * k}px ${EMOJI}`; g.fillText('⭐', x - 8 * k, y - 13 * k - bob); }
-      if (z1 > 1.6) text(g, `${m.name} · ${m.lvl}`, x, y + 9 * k, 5.5 * k, col, 700, 2.2);
+      if (z1 > 1.6) text(g, `${m.name} · ${ISK.combat.mobLvl(m.lvl)}`, x, y + 9 * k, 5.5 * k, col, 700, 2.2);
     }
     // туман війни поверх світу
     { const fc = buildFog(true); if (fc) { g.imageSmoothingEnabled = true; g.drawImage(fc, 0, 0, ISK.world.W * S, ISK.world.H * S); } }
@@ -443,23 +443,27 @@
   // повна мапа світу (відкривається кліком по мінімапі)
   function drawWorldMap(cv, opts = {}) {
     const G = R.G, w = G.world, g = cv.getContext('2d'); const k = cv.width / (ISK.world.W * S);
-    g.fillStyle = '#0a0c18'; g.fillRect(0, 0, cv.width, cv.height);
+    g.setTransform(1, 0, 0, 1, 0, 0); g.fillStyle = '#0a0c18'; g.fillRect(0, 0, cv.width, cv.height);
+    // v5.8: масштаб і зсув мапи світу (коліщатко / перетягування)
+    const V = opts.view || { z: 1, ox: 0, oy: 0 }; const Z = V.z; const u = Math.min(Z, 2.2) / Z;
+    g.setTransform(Z, 0, 0, Z, -V.ox * Z, -V.oy * Z);
     g.save(); g.filter = 'sepia(0.35) saturate(0.85)'; g.drawImage(R.base, 0, 0, cv.width, cv.height); g.restore();
     if (opts.political) { if (!R.layers.political) buildLayer('political'); g.globalAlpha = 0.55; g.drawImage(R.layers.political, 0, 0, cv.width, cv.height); g.globalAlpha = 1; }
     const fc = buildFog(); if (fc) { g.imageSmoothingEnabled = true; g.drawImage(fc, 0, 0, cv.width, cv.height); }
     const px = (o) => [(o.x + 0.5) * S * k, (o.y + 0.5) * S * k];
     g.textAlign = 'center'; g.textBaseline = 'middle';
-    for (const B of w.baronies) { if (!G.discovered['b:' + B.id]) continue; const [x, y] = px(B); const big = ['capital', 'city'].includes(B.type); g.fillStyle = big ? '#ffe7a6' : '#f4e6c8'; g.strokeStyle = '#2a1a0a'; g.lineWidth = 1; g.beginPath(); g.arc(x, y, big ? 4 : 2.4, 0, 7); g.fill(); g.stroke(); if (big || cv.width > 1200) { g.font = `${big ? 700 : 500} ${big ? 11 : 9}px Georgia, serif`; g.lineWidth = 3; g.strokeStyle = 'rgba(20,12,4,.85)'; g.strokeText(B.name, x, y - 9); g.fillStyle = big ? '#ffe7a6' : '#f0e2c4'; g.fillText(B.name, x, y - 9); } }
-    g.font = `11px ${EMOJI}`;
+    for (const B of w.baronies) { if (!G.discovered['b:' + B.id]) continue; const [x, y] = px(B); const big = ['capital', 'city'].includes(B.type); g.fillStyle = big ? '#ffe7a6' : '#f4e6c8'; g.strokeStyle = '#2a1a0a'; g.lineWidth = u; g.beginPath(); g.arc(x, y, (big ? 4 : 2.4) * u, 0, 7); g.fill(); g.stroke(); if (big || cv.width * Z > 1200) { g.font = `${big ? 700 : 500} ${(big ? 11 : 9) * u}px Georgia, serif`; g.lineWidth = 3 * u; g.strokeStyle = 'rgba(20,12,4,.85)'; g.strokeText(B.name, x, y - 9 * u); g.fillStyle = big ? '#ffe7a6' : '#f0e2c4'; g.fillText(B.name, x, y - 9 * u); } }
+    g.font = `${11 * u}px ${EMOJI}`;
     for (const Dg of w.dungeons) if (G.discovered['d:' + Dg.id]) { const [x, y] = px(Dg); g.fillText(G.cleared[Dg.id] ? '✔️' : Dg.icon, x, y); }
-    g.font = `9px ${EMOJI}`;
+    g.font = `${9 * u}px ${EMOJI}`;
     for (const Rn of w.rnodes || []) if (G.discovered['r:' + Rn.id]) { const [x, y] = px(Rn); g.fillText(ISK.data.RESOURCE_SITES[Rn.key].icon, x, y); }
     for (const m of (G.life && G.life.mon) || []) if (fogAt(m.cell) === 2) { const [x, y] = px({ x: m.cell % ISK.world.W, y: (m.cell / ISK.world.W) | 0 }); g.fillText(m.icon, x, y); }
-    for (const mk of ISK.game.questMarkers(G)) { const p = ISK.world.nodeXY(w, mk.node); const [x, y] = px(p); g.font = `13px ${EMOJI}`; g.fillText(mk.icon, x, y - 10); }
-    { const nv = ISK.game.nav(G.player); g.font = `12px ${EMOJI}`; for (const [node, ic] of Object.entries(nv.pins)) { const [x, y] = px(ISK.world.nodeXY(w, node)); g.fillText(ic, x + 9, y - 8); } if (nv.track) { const [x, y] = px(ISK.world.nodeXY(w, nv.track)); g.strokeStyle = '#fff08c'; g.lineWidth = 2; g.beginPath(); g.arc(x, y, 11, 0, 7); g.stroke(); } }
+    for (const mk of ISK.game.questMarkers(G)) { const p = ISK.world.nodeXY(w, mk.node); const [x, y] = px(p); g.font = `${13 * u}px ${EMOJI}`; g.fillText(mk.icon, x, y - 10 * u); }
+    { const nv = ISK.game.nav(G.player); g.font = `${12 * u}px ${EMOJI}`; for (const [node, ic] of Object.entries(nv.pins)) { const [x, y] = px(ISK.world.nodeXY(w, node)); g.fillText(ic, x + 9 * u, y - 8 * u); } if (nv.track) { const [x, y] = px(ISK.world.nodeXY(w, nv.track)); g.strokeStyle = '#fff08c'; g.lineWidth = 2 * u; g.beginPath(); g.arc(x, y, 11 * u, 0, 7); g.stroke(); } }
     const hp = ISK.world.nodeXY(w, G.player.location); const [hx, hy] = px(hp);
-    g.strokeStyle = '#ff7eb6'; g.lineWidth = 2.5; g.beginPath(); g.arc(hx, hy, 9 + Math.sin(Date.now() / 200) * 2, 0, 7); g.stroke(); g.fillStyle = '#ff7eb6'; g.beginPath(); g.arc(hx, hy, 4, 0, 7); g.fill();
-    g.strokeStyle = 'rgba(255,223,142,.9)'; g.lineWidth = 1.5; g.strokeRect(R.cam.x * k, R.cam.y * k, R.canvas.clientWidth / R.cam.z * k, R.canvas.clientHeight / R.cam.z * k);
+    g.strokeStyle = '#ff7eb6'; g.lineWidth = 2.5 * u; g.beginPath(); g.arc(hx, hy, (9 + Math.sin(Date.now() / 200) * 2) * u, 0, 7); g.stroke(); g.fillStyle = '#ff7eb6'; g.beginPath(); g.arc(hx, hy, 4 * u, 0, 7); g.fill();
+    g.strokeStyle = 'rgba(255,223,142,.9)'; g.lineWidth = 1.5 * u; g.strokeRect(R.cam.x * k, R.cam.y * k, R.canvas.clientWidth / R.cam.z * k, R.canvas.clientHeight / R.cam.z * k);
+    g.setTransform(1, 0, 0, 1, 0, 0);
     return k;
   }
   function drawMini() {
