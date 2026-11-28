@@ -80,6 +80,7 @@ ISEKAY_SHOTS=/tmp/shots timeout 590 xvfb-run -a -s "-screen 0 1600x900x24" npx e
 - Вузли мапи: `b:` баронство, `d:` підземелля, `r:` угіддя (`here(G).kind === 'res'`). Збору ресурсів у містах більше немає.
 - WASD на мапі веде героя до сусіднього вузла (`walkDir` в ui.js); камера — стрілки.
 - v5.3 навігація: стан у `p.flags.nav` (`GM().nav(p)`: pins, visited, towers, hurry, track). `routeTo` для транспорту з `fly: true` повертає `air`-маршрут (`kind: 'air'`, пряма лінія, ≤28 клітинок моря), якщо він швидший. `coachOffer`, `portalList/usePortal` (ранг ≥ `PORTAL_RANK`), `climbTower`, `homeNode` (сувій `scroll_home`). `startTravel(node, { coach })`. Тести — `test/nav.test.js`, крок автотесту `v53_nav`.
+- v5.5 будинок: `H.lvl` (0–4, `D.HOUSE_LEVELS`: slots/cap/plots/cost; міграція в `houseLevel`), `upgradeLock` (місця й максимальний рівень; `noCap` у города), ферма `U.prod` → `houseDaily` щодня у `H.store` (ліміт `storeCap`), `collectStore`, `plantAll/harvestAll`, `sleepAtHome` → `p.flags.rested`, бібліотека й «виспався» множать досвід в `addXp`. Тести — `test/house.test.js`, крок автотесту `v55_house`.
 - Арена: ролі ворогів `x.role` (`shield`/`healer`), чемпіони `e.champion`, рейтинг `b.rank`/`b.rankMul`.
 - Стиль коду: короткі функції-хелпери `h()` для DOM, `UI()/D()/PL()/GM()` як ледачі посилання на модулі.
 

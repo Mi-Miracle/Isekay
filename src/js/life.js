@@ -378,7 +378,7 @@
   function daily(G, d) {
     const p = G.player; const env = environment(G); ISK.season = env.season.id;
     // winter freezes the garden
-    if (env.seasonIdx === 3 && p.house) for (const pl of p.house.plots) if (pl.seed && !pl.ready) pl.readyDay += 1;
+    if (env.seasonIdx === 3 && p.house && !p.house.upgrades.greenhouse) for (const pl of p.house.plots) if (pl.seed && !pl.ready) pl.readyDay += 1;
     // army upkeep & desertion
     if (p.army) { const u = armyUpkeep(p); if (p.gold >= u) p.gold -= u; else { lossesFrac(p, 0.1); G.notices.push('💸 Військові без платні: 10% дезертирували!'); } }
     // children

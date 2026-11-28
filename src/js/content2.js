@@ -308,6 +308,38 @@
     knights: { name: 'Лицарі', icon: '⚜️', cost: 70, power: 3.6, upkeep: 0.18, desc: 'Елітна важка кіннота. Пахне величчю.' },
   };
 
+
+  // ---------------- v5.5: будинок росте — рівні дому, прибудови до 3 рівнів, ферма ----------------
+  // slots — скільки різних прибудов можна мати; cap — максимальний рівень прибудови при цьому домі; plots — базові грядки
+  D.HOUSE_LEVELS = [
+    { name: 'Хатинка', icon: '🛖', slots: 4, cap: 1, plots: 2, cost: null, desc: 'Дах є. Іноді.' },
+    { name: 'Дім', icon: '🏠', slots: 7, cap: 2, plots: 4, cost: { gold: 1500, wood: 20, stone: 10 }, desc: 'Справжні двері! З замком!' },
+    { name: 'Котедж', icon: '🏡', slots: 11, cap: 2, plots: 6, cost: { gold: 4000, wood: 35, stone: 25, plank: 10 }, desc: 'Сусіди починають заздрити.' },
+    { name: 'Особняк', icon: '🏛️', slots: 16, cap: 3, plots: 8, cost: { gold: 10000, wood: 50, stone: 50, plank: 20, ore_iron: 10 }, desc: 'Має окрему кімнату для взуття.' },
+    { name: 'Маєток', icon: '🏰', slots: 21, cap: 3, plots: 10, cost: { gold: 25000, wood: 80, stone: 90, plank: 40, gem: 3 }, desc: 'Барди складають пісні про твій паркан.' },
+  ];
+  Object.assign(D.HOUSE_UPGRADES.bed, { max: 3, desc: 'Безкоштовний сон удома. Від рів. 2 — «Виспався»: +20% досвіду на кілька перемог.' });
+  Object.assign(D.HOUSE_UPGRADES.garden, { max: 5, noCap: true, name: 'Город (+2 грядки)' });
+  Object.assign(D.HOUSE_UPGRADES.trophy, { max: 3, desc: '+слава кожні 10 днів (більше з рівнем). Гості заздрять.' });
+  Object.assign(D.HOUSE_UPGRADES.cathouse, { max: 3, desc: 'Абсолютно нічого не дає. Але котів більше. І вони щасливіші.' });
+  // prod: що дає щодня за рівень ([предмет, к-сть на рівень, шанс]); noWinter — узимку відпочиває
+  Object.assign(D.HOUSE_UPGRADES, {
+    coop: { name: 'Курник', icon: '🐔', cost: 350, max: 3, farm: true, prod: [['egg', 2, 1]], desc: 'Кури несуть яйця щодня. Півень будить о 4:00. Щодня.' },
+    cowshed: { name: 'Корівник', icon: '🐄', cost: 600, max: 3, farm: true, prod: [['milk', 2, 1], ['meat', 1, 0.25]], desc: 'Молоко щодня, іноді м\'ясо. Корова Зірка — головна в господарстві.' },
+    sheepfold: { name: 'Вівчарня', icon: '🐑', cost: 500, max: 3, farm: true, prod: [['wool', 1, 0.7]], desc: 'Вовна для тканин і кравців.' },
+    apiary: { name: 'Пасіка', icon: '🐝', cost: 450, max: 3, farm: true, noWinter: true, prod: [['honey', 1, 0.8]], desc: 'Мед (не взимку). Бджоли кусаються лише тих, хто заслужив.' },
+    orchard: { name: 'Фруктовий сад', icon: '🍎', cost: 700, max: 3, farm: true, noWinter: true, prod: [['apple', 2, 1], ['berries', 1, 0.6]], desc: 'Яблука та ягоди (не взимку).' },
+    pond: { name: 'Рибний ставок', icon: '🎣', cost: 550, max: 3, farm: true, prod: [['fish_carp', 1, 1], ['fish_trout', 1, 0.35]], desc: 'Свіжа риба щодня. Карась Петро тут головний.' },
+    greenhouse: { name: 'Теплиця', icon: '🪴', cost: 1200, max: 2, desc: '+2 грядки за рівень, і город росте навіть узимку.' },
+    irrigation: { name: 'Зрошення', icon: '💧', cost: 800, max: 3, desc: 'Урожай росте на 10% швидше за рівень.' },
+    library: { name: 'Бібліотека', icon: '📚', cost: 1500, max: 3, desc: '+5% досвіду за рівень. Книжки ще й підпирають шафу.' },
+    training: { name: 'Тренувальний двір', icon: '🎯', cost: 900, max: 3, desc: 'Загін щодня тренується: досвід компаньйонам.' },
+    storehouse: { name: 'Комора', icon: '🏚️', cost: 400, max: 3, desc: 'Більше місця для продуктів ферми (без комори — лише 15).' },
+  });
+  Object.assign(D.MATERIALS, { apple: { name: 'Яблука', icon: '🍎', price: 7, kind: 'crop' } });
+  D.RECIPES && D.RECIPES.cooking && D.RECIPES.cooking.push({ id: 'food_applepie', lvl: 5, needs: { apple: 3, crop_wheat: 1, egg: 1 }, out: 'food_applepie', xp: 20 });
+  if (D.CONSUMABLES && !D.CONSUMABLES.food_applepie) D.CONSUMABLES.food_applepie = { name: 'Яблучний пиріг', icon: '🥧', price: 60, use: { hp: 180 }, desc: 'Як у бабусі. Навіть краще: бабуся тут — ти.' };
+
   // ---------------- ships & naval ----------------
   D.SHIP_UPGRADES = {
     hull: { name: 'Укріплений корпус', icon: '🪵', cost: [800, 2000, 5000], desc: '+HP корабля' },

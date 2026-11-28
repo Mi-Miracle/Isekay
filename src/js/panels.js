@@ -604,14 +604,18 @@
     UI().modal({ title: 'Мій дім', icon: '🏡', sub: `${g.world.baronies[H.barony].name} · затишно, хоч і пахне котами`, tabs: [
       { id: 'home', label: '🛋️ Кімнати', render: () => {
         const w = h('div', { class: 'col' });
-        w.appendChild(h('div', { class: 'row' }, H.upgrades.bed ? h('button', { class: 'btn primary', onclick: () => { p.hp = PL().maxHp(p); p.mp = PL().maxMp(p); for (const c of p.party) c.hp = undefined; UI().showNews(GM().passTime(g, 1)); autosave(); A().play('heal'); UI().toast('😴 Найкращий сон — удома. (Автозбереження)', 'good'); } }, '🛏️ Спати') : null,
+        w.appendChild(h('div', { class: 'row' }, H.upgrades.bed ? h('button', { class: 'btn primary', onclick: () => { p.hp = PL().maxHp(p); p.mp = PL().maxMp(p); for (const c of p.party) c.hp = undefined; UI().showNews(GM().passTime(g, 1)); const rs = GM().sleepAtHome(g); autosave(); A().play('heal'); UI().toast('😴 Найкращий сон — удома. (Автозбереження)' + (rs ? ` · Виспався: +20% досвіду ще на ${rs} перемог` : ''), 'good', 4000); } }, '🛏️ Спати') : null,
           H.upgrades.kitchen ? h('button', { class: 'btn', onclick: () => { UI().closeAll(); cooking(); } }, '🍳 Кухня') : null,
           H.upgrades.lab ? h('button', { class: 'btn', onclick: () => { UI().closeAll(); UI().modal({ title: 'Лабораторія', icon: '⚗️', tabs: [{ id: 'a', label: '⚗️ Алхімія', render: () => craftTab('alchemy') }, { id: 's', label: '📜 Сувої', render: () => craftTab('scribing') }] }); } }, '⚗️ Лабораторія') : null,
           H.upgrades.forge ? h('button', { class: 'btn', onclick: () => { UI().closeAll(); UI().modal({ title: 'Домашня кузня', icon: '⚒️', body: forgeTab }); } }, '⚒️ Кузня') : null,
           H.upgrades.incubator && PL().hasItem(p, 'dragon_egg') ? h('button', { class: 'btn pink', onclick: () => { PL().removeItem(p, 'dragon_egg'); if (!p.pets.some((x) => x.key === 'dragon')) { p.pets.push({ key: 'dragon', name: 'Іскорка', lvl: Math.max(1, p.level - 3), xp: 0 }); p.activePet = p.pets.length - 1; } GM().unlock(g, 'pet'); UI().closeAll(); UI().cutin('ДРАКОНЧИК!', 'З яйця вилупилася Іскорка! Вона вже підпалила килим.', '#ff9a3c'); } }, '🥚 Висидіти яйце') : null));
-        w.appendChild(h('h4', null, 'Покращення'));
+        const I = GM().houseInfo(g); const tabTo = (id) => { reopen(house); setTimeout(() => document.querySelector(`.tabs button[data-id="${id}"]`)?.click(), 10); };
+        w.appendChild(h('div', { class: 'card' }, h('div', { class: 'row', style: { justifyContent: 'space-between' } }, h('div', null, h('div', { style: { fontSize: '20px', fontWeight: 800 } }, `${I.L.icon} ${I.L.name}`), h('div', { class: 'muted', style: { fontSize: '13px' } }, `${I.L.desc} · прибудов ${I.used}/${I.slots} · макс. рівень прибудов ${I.cap} · грядок ${H.plots.length}`)),
+          I.next ? h('button', { class: 'btn primary', title: I.next.desc, onclick: () => { const e = GM().upgradeHouseLevel(g); if (e) { UI().toast(e, 'bad', 4000); return; } A().play('clang'); UI().cutin(`${I.next.icon} ${I.next.name.toUpperCase()}!`, 'Будинок перебудовано! Сусіди в шоці.', '#ffd76e'); reopen(house); } }, `🔨 Перебудувати в «${I.next.name}» · ${Object.entries(I.next.cost).map(([k2, v]) => (k2 === 'gold' ? `${v}🪙` : `${PL().item(k2).icon}${v}`)).join(' ')}`) : h('span', { class: 'gold' }, '👑 Найкращий дім у королівстві'))));
+        w.appendChild(h('h4', null, 'Прибудови'));
         const grid = h('div', { class: 'items' });
-        for (const [k, U] of Object.entries(D().HOUSE_UPGRADES)) { const lvl = H.upgrades[k] || 0; const max = U.max || 1; const c = GM().upgradeCost(g, k); grid.appendChild(itemElRaw(U.icon, `${U.name}${lvl ? ` (рів. ${lvl}/${max})` : ''}`, `${U.desc}${lvl < max ? ` · ${c.gold}🪙 🪵${c.wood} 🪨${c.stone}` : ''}`, [lvl < max ? h('button', { class: 'btn small primary', onclick: () => { const e = GM().upgradeHouse(g, k); if (e) UI().toast(e, 'bad'); else { A().play('clang'); UI().toast(`🔨 Збудовано: ${U.name}!`, 'good'); reopen(house); } } }, 'Будувати') : h('span', { class: 'good' }, '✔')])); }
+        for (const [k, U] of Object.entries(D().HOUSE_UPGRADES)) { const lvl = H.upgrades[k] || 0; const max = U.max || 1; const c = GM().upgradeCost(g, k); const lock = lvl < max ? GM().upgradeLock(g, k) : null;
+          grid.appendChild(itemElRaw(U.icon, `${U.name}${lvl ? ` (рів. ${lvl}/${max})` : ''}`, `${U.desc}${lvl < max ? ` · ${c.gold}🪙 🪵${c.wood} 🪨${c.stone}` : ''}${lock ? ' · 🔒 ' + lock : ''}`, [lvl < max ? h('button', { class: 'btn small ' + (lock ? 'ghost' : 'primary'), disabled: !!lock, onclick: () => { const e = GM().upgradeHouse(g, k); if (e) UI().toast(e, 'bad'); else { A().play('clang'); UI().toast(`🔨 ${lvl ? 'Покращено' : 'Збудовано'}: ${U.name}${lvl ? ' → рів. ' + (lvl + 1) : ''}!`, 'good'); reopen(house); } } }, lvl ? '⬆️ Покращити' : 'Будувати') : h('span', { class: 'good' }, '✔')])); }
         w.appendChild(grid);
         w.appendChild(h('div', { class: 'muted', style: { fontSize: '12px' } }, 'Деревину добувай лісорубством 🪓, камінь — гірництвом ⛏️, або купуй на ринку.'));
         return w;
@@ -620,6 +624,12 @@
         const w = h('div', { class: 'col' });
         if (!H.plots.length) { w.appendChild(h('div', { class: 'muted' }, 'Збудуй «Город» у вкладці кімнат, щоб отримати грядки.')); return w; }
         const seeds = Object.keys(D().CROPS).filter((s) => PL().hasItem(p, s));
+        const gtab = () => { reopen(house); setTimeout(() => document.querySelector('.tabs button[data-id="garden"]')?.click(), 10); };
+        const empty = H.plots.filter((x) => !x.seed).length, ready = H.plots.filter((x) => x.ready).length;
+        w.appendChild(h('div', { class: 'row', style: { gap: '8px', flexWrap: 'wrap' } },
+          h('button', { class: 'btn primary', disabled: !ready, onclick: () => { const r = GM().harvestAll(g); A().play('coin'); UI().toast('🌾 Зібрано: ' + Object.entries(r).map(([id, n]) => `${PL().item(id).icon}×${n}`).join(' '), 'good', 3500); gtab(); } }, `🌾 Зібрати все (${ready})`),
+          h('select', { disabled: !empty || !seeds.length, onchange: (e) => { if (!e.target.value) return; const n = GM().plantAll(g, e.target.value); A().play('bubble'); UI().toast(`🌱 Посаджено грядок: ${n}`, 'good'); gtab(); } }, h('option', { value: '' }, empty ? (seeds.length ? `🌱 Посадити на всі порожні (${empty})…` : 'Немає насіння') : 'Порожніх грядок нема'), seeds.map((sd) => h('option', { value: sd }, `${PL().item(sd).name} ×${p.inventory[sd]}`))),
+          H.upgrades.greenhouse ? h('span', { class: 'tag ally' }, '🪴 Теплиця: росте і взимку') : null, H.upgrades.irrigation ? h('span', { class: 'tag ally' }, `💧 −${H.upgrades.irrigation * 10}% часу росту`) : null));
         const grid = h('div', { class: 'plots' });
         H.plots.forEach((pl, i) => {
           const C = pl.seed ? D().CROPS[pl.seed] : null;
@@ -629,6 +639,18 @@
             !pl.seed ? h('select', { onchange: (e) => { if (GM().plant(g, i, e.target.value)) { A().play('bubble'); reopen(house); setTimeout(() => document.querySelector('.tabs button[data-id="garden"]')?.click(), 10); } } }, h('option', { value: '' }, seeds.length ? 'Посадити...' : 'Немає насіння'), seeds.map((s) => h('option', { value: s }, `${PL().item(s).name} ×${p.inventory[s]}`))) : null));
         });
         w.appendChild(grid); w.appendChild(h('div', { class: 'muted', style: { fontSize: '12px' } }, 'Насіння купуй на ринку 🏪. Урожай — для кулінарії й продажу. Борщ сам себе не зварить!'));
+        return w;
+      } },
+      { id: 'farm', label: '🐔 Ферма', render: () => {
+        const w = h('div', { class: 'col' }); const I = GM().houseInfo(g);
+        const farms = Object.entries(D().HOUSE_UPGRADES).filter(([, U]) => U.farm);
+        const have = farms.filter(([k]) => H.upgrades[k]);
+        if (!have.length) { w.appendChild(h('div', { class: 'muted' }, 'Збудуй курник, корівник, пасіку, сад чи ставок у вкладці «Кімнати» — і щодня тут з\'являтимуться продукти.')); return w; }
+        w.appendChild(h('div', { class: 'items' }, have.map(([k, U]) => itemElRaw(U.icon, `${U.name} (рів. ${H.upgrades[k]})`, 'Щодня: ' + U.prod.map(([id, per, ch]) => `${PL().item(id).icon} ${PL().item(id).name} ×${per * H.upgrades[k]}${ch < 1 ? ` (${Math.round(ch * 100)}%)` : ''}`).join(', ') + (U.noWinter ? ' · взимку відпочиває' : ''), []))));
+        w.appendChild(h('h4', null, `🏚️ Комора: ${I.stored}/${I.storeCap}`));
+        w.appendChild(h('div', { class: 'row', style: { flexWrap: 'wrap', gap: '6px' } }, Object.entries(H.store).map(([id, n]) => h('span', { class: 'tag' }, `${PL().item(id).icon} ${PL().item(id).name} ×${n}`)), !I.stored ? h('span', { class: 'muted' }, 'Поки порожньо. Кури ще думають.') : null));
+        w.appendChild(h('button', { class: 'btn primary', disabled: !I.stored, style: { marginTop: '8px' }, onclick: () => { const r = GM().collectStore(g); A().play('coin'); UI().toast('🧺 Забрано з комори: ' + Object.entries(r).map(([id, n]) => `${PL().item(id).icon}×${n}`).join(' '), 'good', 3500); reopen(house); setTimeout(() => document.querySelector('.tabs button[data-id="farm"]')?.click(), 10); } }, '🧺 Забрати все з комори'));
+        if (I.stored >= I.storeCap) w.appendChild(h('div', { class: 'bad', style: { fontSize: '13px' } }, 'Комора повна — нові продукти псуються! Забери або збудуй більшу комору.'));
         return w;
       } },
       { id: 'chest', label: '🧰 Скриня', render: () => {

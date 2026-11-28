@@ -268,6 +268,20 @@
         const pr = ISK.combatUI.run(es, { biome: 'forest', noDeath: true }); await UI.sleep(2400); await shot('77_arena_roles');
         ISK.actionCombat._live && ISK.actionCombat._live.finish('flee'); await pr; UI.closeAll();
       });
+      await step('v55_house', async () => {
+        const g = G4(), p = g.player; UI.closeAll(); ISK.depthsUI.close && ISK.depths && (g.depth = null);
+        if (!p.house) { const tw = g.world.baronies.find((b) => b.type === 'city' && !ISK.politics.isDemon(g.P, b.owner)); ISK.game.buyHouse(g, tw.id); }
+        ISK.game.arrive(g, 'b:' + p.house.barony); UI.refresh(); p.gold += 200000;
+        for (const [id, n] of [['wood', 900], ['stone', 900], ['plank', 90], ['ore_iron', 30], ['gem', 5], ['seed_wheat', 30], ['seed_carrot', 20]]) ISK.player.addItem(p, id, n);
+        while (!ISK.game.upgradeHouseLevel(g)) { /* до Маєтку */ }
+        for (const k of ['coop', 'cowshed', 'sheepfold', 'apiary', 'orchard', 'pond', 'greenhouse', 'irrigation', 'library', 'training', 'storehouse', 'garden', 'bed', 'trophy', 'cathouse']) for (let i = 0; i < 3; i++) ISK.game.upgradeHouse(g, k);
+        for (let i = 0; i < 3; i++) ISK.game.houseDaily(g); ISK.game.plantAll(g, 'seed_wheat');
+        if (ISK.game.houseInfo(g).lvl !== 4) errors.push('house did not reach manor');
+        ISK.panels.house(); await UI.sleep(300); await shot('95_house_rooms');
+        document.querySelector('.tabs button[data-id="farm"]')?.click(); await UI.sleep(200); await shot('96_house_farm');
+        document.querySelector('.tabs button[data-id="garden"]')?.click(); await UI.sleep(200); await shot('97_house_garden'); UI.closeAll();
+        g.time = Math.floor(g.time / 360) * 360 + 120; ISK.estate.open('house'); await UI.sleep(1300); await shot('98_estate_manor'); ISK.estate.close();
+      });
       await step('v54_depths', async () => {
         const g = G4(); const p = g.player; UI.closeAll(); const DP = ISK.depths;
         p.hp = ISK.player.maxHp(p); p.level = Math.max(p.level, 20);

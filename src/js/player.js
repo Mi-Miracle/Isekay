@@ -116,6 +116,8 @@
   function addXp(p, amount) {
     if (p.cheat === 'exp') amount = Math.round(amount * 1.6);
     if (D().hasArt && D().hasArt(p, 'xp')) amount = Math.round(amount * 1.25);
+    if (p.house && p.house.upgrades && p.house.upgrades.library) amount = Math.round(amount * (1 + 0.05 * p.house.upgrades.library));
+    if (p.flags && p.flags.rested > 0 && amount > 0) { amount = Math.round(amount * 1.2); p.flags.rested--; }
     if (p.level >= (D().LEVEL_CAP || 100)) return { amount: 0, ups: [] };
     p.xp += amount; const ups = [];
     while (p.level < (D().LEVEL_CAP || 100) && p.xp >= xpNeed(p.level)) { p.xp -= xpNeed(p.level); p.level++; p.statPoints += 3; p.hp = maxHp(p); p.mp = maxMp(p); ups.push(p.level); }

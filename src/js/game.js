@@ -187,7 +187,8 @@
       if (p.gold >= wage) p.gold -= wage;
       else { p.party = p.party.filter((x) => x !== c); G.notices.push(`💸 ${c.name} пішов(ла): «Без грошей — без героїзму. Бувай!»`); }
     }
-    if (p.house && p.house.upgrades.trophy && d % 10 === 0) PL().addFame(p, 2);
+    if (p.house && p.house.upgrades.trophy && d % 10 === 0) PL().addFame(p, 2 * p.house.upgrades.trophy);
+    if (p.house) houseDaily(G);
     if (p.cheat === 'gacha' && d % 1 === 0 && (p.flags.gachaDay || 0) < d) { p.flags.gachaDay = d; const r = Math.random(); const prize = r < 0.003 ? D().randomGear(p.level, 4) : r < 0.03 ? D().randomGear(p.level, 3) : r < 0.12 ? D().randomGear(p.level, 2) : r < 0.3 ? 'potion_m' : r < 0.55 ? 'food_bread' : r < 0.75 ? 'potion_s' : 'boot'; PL().addItem(p, prize); G.notices.push(`🎰 Щоденна гача: ${PL().item(prize).name}!${r < 0.03 ? ' ЛЕГЕНДАРНО!!!' : r > 0.75 ? ' (Чобіт. Гача така гача.)' : ''}`); }
     for (const q of p.quests) if (q.deadline && d > q.deadline && !q.failed) { q.failed = true; G.notices.push(`⌛ Квест «${q.title}» провалено: час вийшов.`); }
     p.quests = p.quests.filter((q) => !q.failed);
@@ -607,26 +608,79 @@
   function buyHouse(G, bid) {
     const p = G.player, B = G.world.baronies[bid]; const cost = houseCost(B);
     if (p.gold < cost) return 'Недостатньо золота';
-    p.gold -= cost; p.house = { barony: bid, upgrades: {}, plots: [], chest: {} };
+    p.gold -= cost; p.house = { barony: bid, upgrades: {}, plots: [], chest: {}, lvl: 0, store: {} }; ensurePlots(p.house);
     unlock(G, 'homeowner'); return null;
   }
   function upgradeHouse(G, key) {
     const p = G.player, H = p.house, U = D().HOUSE_UPGRADES[key];
     const lvl = H.upgrades[key] || 0; const max = U.max || 1;
     if (lvl >= max) return 'Максимальний рівень';
+    const lock = upgradeLock(G, key); if (lock) return lock;
     const cost = Math.round(U.cost * (1 + lvl * 0.8));
     const wood = 4 + lvl * 4, stone = key === 'forge' || key === 'trophy' ? 6 + lvl * 4 : 2;
     if (p.gold < cost || !PL().hasItem(p, 'wood', wood) || !PL().hasItem(p, 'stone', stone)) return `Потрібно ${cost}🪙, 🪵×${wood}, 🪨×${stone}`;
     p.gold -= cost; PL().removeItem(p, 'wood', wood); PL().removeItem(p, 'stone', stone);
     H.upgrades[key] = lvl + 1;
-    if (key === 'garden') for (let i = 0; i < 2; i++) H.plots.push({ seed: null });
+    ensurePlots(H);
     return null;
   }
+
+  // ---------------- v5.5: рівні дому, ферма, комора ----------------
+  function houseLevel(H) {
+    if (H.lvl === undefined) { const n = Object.keys(H.upgrades).length; H.lvl = n >= 6 ? 2 : n >= 3 ? 1 : 0; } // міграція старих сейвів
+    H.store = H.store || {}; return H.lvl;
+  }
+  function houseInfo(G) {
+    const H = G.player.house; const lvl = houseLevel(H); const L = D().HOUSE_LEVELS[lvl];
+    return { lvl, L, next: D().HOUSE_LEVELS[lvl + 1] || null, used: Object.keys(H.upgrades).length, slots: L.slots, cap: L.cap, storeCap: storeCap(H), stored: Object.values(H.store).reduce((a, b) => a + b, 0) };
+  }
+  // чому не можна збудувати/покращити прибудову (null — можна)
+  function upgradeLock(G, key) {
+    const H = G.player.house, U = D().HOUSE_UPGRADES[key], lvl = H.upgrades[key] || 0, I = houseInfo(G);
+    if (!lvl && I.used >= I.slots) return `Немає місця (${I.used}/${I.slots}) — перебудуй дім`;
+    if (lvl >= Math.min(U.max || 1, U.noCap ? 99 : I.cap)) return lvl >= (U.max || 1) ? 'Максимальний рівень' : `Рівень ${lvl + 1} — у більшому домі (${I.next ? I.next.name : '—'})`;
+    return null;
+  }
+  function ensurePlots(H) {
+    const want = D().HOUSE_LEVELS[houseLevel(H)].plots + (H.upgrades.garden || 0) * 2 + (H.upgrades.greenhouse || 0) * 2;
+    while (H.plots.length < want) H.plots.push({ seed: null });
+  }
+  function upgradeHouseLevel(G) {
+    const p = G.player, H = p.house; const lvl = houseLevel(H); const N = D().HOUSE_LEVELS[lvl + 1];
+    if (!N) return 'Більше нікуди. Хіба що в замок — але це вже інша історія.';
+    for (const [id, n] of Object.entries(N.cost)) if (id === 'gold' ? p.gold < n : !PL().hasItem(p, id, n)) return 'Не вистачає: ' + Object.entries(N.cost).map(([k, v]) => (k === 'gold' ? `${v}🪙` : `${PL().item(k).icon}×${v}`)).join(', ');
+    for (const [id, n] of Object.entries(N.cost)) { if (id === 'gold') p.gold -= n; else PL().removeItem(p, id, n); }
+    H.lvl = lvl + 1; ensurePlots(H); PL().addFame(p, 5 + H.lvl * 5);
+    if (H.lvl >= 4) unlock(G, 'manor');
+    return null;
+  }
+  function storeCap(H) { return 15 + (H.upgrades.storehouse || 0) * 30; }
+  // щоденна продукція ферми — у комору
+  function houseDaily(G) {
+    const p = G.player, H = p.house; if (!H) return null; houseLevel(H);
+    const winter = ISK.life && ISK.life.environment ? ISK.life.environment(G).seasonIdx === 3 : false;
+    const cap = storeCap(H); let tot = Object.values(H.store).reduce((a, b) => a + b, 0); const got = {};
+    for (const [k, lvl] of Object.entries(H.upgrades)) {
+      const U = D().HOUSE_UPGRADES[k]; if (!U || !U.prod || (U.noWinter && winter)) continue;
+      for (const [id, per, ch] of U.prod) { if (Math.random() > ch) continue; const n = Math.min(per * lvl, cap - tot); if (n <= 0) continue; H.store[id] = (H.store[id] || 0) + n; got[id] = (got[id] || 0) + n; tot += n; }
+    }
+    if (H.upgrades.training && p.party.length) PL().addCompanionXp(p, 6 * H.upgrades.training);
+    return got;
+  }
+  function collectStore(G) {
+    const p = G.player, H = p.house; const got = { ...H.store };
+    for (const [id, n] of Object.entries(got)) PL().addItem(p, id, n);
+    H.store = {}; const n = Object.values(got).reduce((a, b) => a + b, 0); if (n) PL().addProfXp(p, 'farming', Math.min(40, 4 + n)); return got;
+  }
+  function plantAll(G, seed) { let n = 0; G.player.house.plots.forEach((pl, i) => { if (!pl.seed && PL().hasItem(G.player, seed) && plant(G, i, seed)) n++; }); return n; }
+  function harvestAll(G) { const out = {}; G.player.house.plots.forEach((pl, i) => { if (pl.ready) { const r = harvest(G, i, 1); if (r) out[r.crop] = (out[r.crop] || 0) + r.n; } }); return out; }
+  // сон удома: від рівня ліжка 2 — «Виспався»
+  function sleepAtHome(G) { const p = G.player, b = (p.house && p.house.upgrades.bed) || 0; if (b >= 2) { p.flags.rested = Math.max(p.flags.rested || 0, (b - 1) * 3); } return p.flags.rested || 0; }
   function upgradeCost(G, key) { const U = D().HOUSE_UPGRADES[key]; const lvl = (G.player.house.upgrades[key] || 0); return { gold: Math.round(U.cost * (1 + lvl * 0.8)), wood: 4 + lvl * 4, stone: key === 'forge' || key === 'trophy' ? 6 + lvl * 4 : 2 }; }
   function plant(G, i, seed) {
     const p = G.player, pl = p.house.plots[i]; const C = D().CROPS[seed];
     if (!pl || pl.seed || !C || !PL().removeItem(p, seed)) return false;
-    const days = Math.ceil(C.days / (p.cheat === 'farmer' ? 2 : 1) * (1 - Math.min(0.4, p.professions.farming.lvl * 0.015)));
+    const days = Math.max(1, Math.ceil(C.days / (p.cheat === 'farmer' ? 2 : 1) * (1 - Math.min(0.4, p.professions.farming.lvl * 0.015)) * (1 - 0.1 * (p.house.upgrades.irrigation || 0))));
     Object.assign(pl, { seed, planted: day(G), readyDay: day(G) + days, ready: false });
     PL().addProfXp(p, 'farming', 4); return true;
   }
@@ -911,7 +965,7 @@
     for (const k of Object.keys(D().PROFESSIONS)) s.player.professions[k] = s.player.professions[k] || { lvl: 1, xp: 0 };
     ISK.difficulty = s.difficulty || 'normal';
     for (const k of ['jackSkills', 'children']) s.player[k] = s.player[k] || [];
-    s.player.lordRel = s.player.lordRel || {}; if (!('artifact' in s.player.equipment)) s.player.equipment.artifact = null;
+    s.player.lordRel = s.player.lordRel || {}; if (s.player.house) ensurePlots(s.player.house); if (!('artifact' in s.player.equipment)) s.player.equipment.artifact = null;
     const G = { version: 4, difficulty: s.difficulty || 'normal', life: s.life || {}, sites: s.sites || {}, worldOpts: s.worldOpts || {}, seed: s.seed, world, P, player: s.player, time: s.time, boards: s.boards || {}, cleared: s.cleared || {}, dungeon: s.dungeon, discovered: s.discovered || {}, notices: [], hires: {}, startDay: s.startDay || 0 };
     if (s.fog) G.fog = fogDecode(s.fog);
     else { // міграція зі старих збережень: усе, що вже знав, — відкрите
@@ -930,6 +984,7 @@
     genDungeon, dungeonMove, treasureLoot, completeDungeon, applyRewards, onDefeat, nearestTown, hitArmy, serialize, deserialize, discoverAround, MONTHS,
     revealArea, revealAt, revealAll, exploreReward, fogEncode, fogDecode, MAP_TIERS, mapCells, buyMap, mapOwned, rnodeLeft, gatherRnode,
     spawnMonsters, moveMonsters, monsterNear, monsterEnemies, killMonster, SIGHT,
+    houseLevel, houseInfo, upgradeLock, ensurePlots, upgradeHouseLevel, storeCap, houseDaily, collectStore, plantAll, harvestAll, sleepAtHome,
     nav, canFly, airRoute, linePath, coachOffer, portalList, usePortal, hasTower, climbTower, homeNode, togglePin, navTargets, HURRY_MUL, PORTAL_RANK,
   };
 })();
