@@ -27,6 +27,7 @@ var _realm_tex: ImageTexture
 var _realm_img_tex: ImageTexture
 var _seen_seq := 0
 var dungeon: Dungeon = null
+var town: Town = null
 var last_dungeon: Dictionary = {}
 var _lab_cl: CanvasLayer
 
@@ -437,7 +438,38 @@ func mine_info(b: Dictionary) -> Dictionary:
 	return {"name": "Шахти %s" % b.name, "kind": "mine", "dtype": "minecave", "level": maxi(1, int(b.danger)), "floors": 3, "id": 100000 + int(b.id), "seed": wd.world_seed * 137 + int(b.id) + int(Game.state.day_ticked)}
 
 
+func enter_town(b: Dictionary) -> void:
+	hud.close_overlay()
+	town = Town.new()
+	town.setup(self, b)
+	town.finished.connect(_on_town_done)
+	visible = false
+	_lab_cl.visible = false
+	set_process(false)
+	hud.set_town_mode(true)
+	get_tree().root.add_child(town)
+	var done := Guild.event("visit", int(b.id))
+	for q in done:
+		hud.toast("📋 Завдання виконано: %s — здай у гільдії." % q.name, Game.C_GOLD, 5.0)
+	hud.banner(b.name, "%s · %s" % [Defs.SETTLEMENT[b.type].name, wd.realms[b.owner].full_name])
+
+
+func _on_town_done() -> void:
+	town.queue_free()
+	town = null
+	visible = true
+	_lab_cl.visible = true
+	set_process(true)
+	hud.set_town_mode(false)
+	cam.make_current()
+
+
 func enter_dungeon(dinfo: Dictionary) -> void:
+	if town != null:
+		town.done = true
+		town.queue_free()
+		town = null
+		hud.set_town_mode(false)
 	hud.close_overlay()
 	save()
 	dungeon = Dungeon.new()
@@ -461,6 +493,7 @@ func _on_dungeon_done(st: Dictionary, dinfo: Dictionary) -> void:
 	set_process(true)
 	cam.make_current()
 	var p := Player.ensure(Game.state)
+	p.blessed = false
 	Game.state.minutes = float(Game.state.minutes) + 120.0 + 60.0 * st.kills / 4.0
 	if st.died:
 		var lost := int(int(p.gold) * 0.25)
@@ -628,28 +661,11 @@ func _update_near() -> void:
 
 
 func _update_daynight() -> void:
-	var h := Game.hour_of(Game.state.minutes)
-	var night := Color(0.38, 0.42, 0.72)
-	var dusk := Color(1.0, 0.78, 0.72)
-	var day := Color(1, 1, 1)
-	var c: Color
-	if h < 5.0 or h >= 21.0:
-		c = night
-	elif h < 7.0:
-		c = night.lerp(dusk, (h - 5.0) / 2.0)
-	elif h < 9.0:
-		c = dusk.lerp(day, (h - 7.0) / 2.0)
-	elif h < 18.0:
-		c = day
-	elif h < 19.5:
-		c = day.lerp(dusk, (h - 18.0) / 1.5)
-	else:
-		c = dusk.lerp(night, (h - 19.5) / 1.5)
-	daynight.color = c
+	daynight.color = Game.daylight(Game.hour_of(Game.state.minutes))
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if not _ready_done or hud.is_modal() or dungeon != null:
+	if not _ready_done or hud.is_modal() or dungeon != null or town != null:
 		return
 	if event is InputEventMouseButton and event.pressed:
 		if event.button_index == MOUSE_BUTTON_WHEEL_UP:
@@ -673,7 +689,10 @@ func _unhandled_input(event: InputEvent) -> void:
 				toggle_realms()
 			KEY_E, KEY_ENTER:
 				if _near_kind == "b":
-					hud.open_settlement(_near)
+					if _near.type == "hellfort" or Defs.SETTLEMENT[_near.type].services.is_empty():
+						hud.open_settlement(_near)
+					else:
+						enter_town(_near)
 				elif _near_kind == "d":
 					hud.open_dungeon(_near)
 			KEY_F5:
@@ -729,6 +748,52 @@ func _selftest() -> void:
 		await tree.create_timer(0.6).timeout
 		Selftest.shot(self, "04_settlement")
 		hud.close_overlay()
+	# місто й гільдія
+	var tb: Dictionary = _near if _near_kind == "b" else wd.baronies[wd.start_barony]
+	enter_town(tb)
+	await tree.create_timer(1.5).timeout
+	Selftest.shot(town, "04b_town")
+	var gb: Dictionary = {}
+	for tbd in town.buildings:
+		if tbd.name == "Таверна" or tbd.name == "Гільдія":
+			gb = tbd
+	if not gb.is_empty():
+		town.hero.position = (Vector2(gb.door) + Vector2(0.5, 0.8)) * Town.TILE
+	await tree.create_timer(0.6).timeout
+	Selftest.shot(town, "04c_town_door")
+	hud.open_guild(tb)
+	await tree.create_timer(0.6).timeout
+	var brd := Guild.board(wd, tb)
+	var hunt: Dictionary = {}
+	for q in brd:
+		if q.type == "hunt":
+			hunt = q
+	Guild.accept(brd[0])
+	if not hunt.is_empty():
+		Guild.accept(hunt)
+	hud.open_guild(tb)
+	await tree.create_timer(0.6).timeout
+	Selftest.shot(self, "04d_guild")
+	hud.close_overlay()
+	var gold0 := int(Player.ensure(Game.state).gold)
+	var turned := ""
+	if not hunt.is_empty():
+		for i in int(hunt.need):
+			Guild.event("kill", hunt.target)
+		for i in Guild.state().active.size():
+			if Guild.state().active[i].type == "hunt":
+				turned = Guild.turn_in(i)
+				break
+	Selftest.step("guild_quest", brd.size() >= 3 and turned != "" and int(Player.ensure(Game.state).gold) > gold0, "дошка %d, нагорода: %s" % [brd.size(), turned])
+	hud.open_tavern(tb)
+	await tree.create_timer(0.5).timeout
+	Selftest.shot(self, "04e_tavern")
+	hud.close_overlay()
+	var n_bld := town.buildings.size()
+	town.leave()
+	while town != null:
+		await tree.process_frame
+	Selftest.step("town", n_bld >= 3, "%d будівель" % n_bld)
 	_zoom_target = 0.6
 	toggle_realms()
 	await tree.create_timer(1.5).timeout

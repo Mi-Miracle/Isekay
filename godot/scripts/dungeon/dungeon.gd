@@ -228,7 +228,7 @@ func _move_hero(dir: Vector2, delta: float) -> void:
 
 
 func hero_atk() -> float:
-	return Player.atk(p) * (1.6 if rage_t > 0 else 1.0)
+	return Player.atk(p) * (1.6 if rage_t > 0 else 1.0) * (1.25 if p.get("blessed", false) else 1.0)
 
 
 func _hit(e: Dictionary, power: float, knock: Vector2) -> void:
@@ -488,6 +488,8 @@ func _kill(e: Dictionary) -> void:
 	p.kills = int(p.kills) + 1
 	var xp: int = e.xp
 	stats.xp += xp
+	for q in Guild.event("kill", e.kind):
+		_say("📋 Завдання «%s» виконано! Здай у гільдії." % q.name, 2.5)
 	var ups := Player.add_xp(p, xp)
 	fx.append({"type": "poof", "pos": e.pos, "t": 0.45, "size": float(e.size)})
 	_float_text(e.pos + Vector2(0, -20), "+%d досв." % xp, Color("#c9a7ff"))
@@ -722,6 +724,8 @@ func _pickup() -> void:
 func _on_boss_dead() -> void:
 	floor_cleared = true
 	stats.cleared = true
+	for q in Guild.event("clear", int(info.id)):
+		_float_text(hero.position + Vector2(0, -80), "📋 %s ✅" % q.name, Game.C_GOLD)
 	var first: bool = not p.cleared.has(int(info.id))
 	if first:
 		p.cleared.append(int(info.id))

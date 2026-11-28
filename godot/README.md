@@ -57,6 +57,8 @@ godot --headless --path godot --export-release "Windows Desktop" Dyvosvit.exe
 | `scripts/core/player.gd` | герой гравця (`state.player`): рівень, досвід, ❤/✦, золото, зілля, руда, зачищені підземелля |
 | `scripts/dungeon/dungeon_gen.gd` | рівні підземель (кімнати+коридори) і шахт (печери, жили), пули монстрів за типом підземелля, статистика монстрів |
 | `scripts/dungeon/dungeon.gd` | сцена підземелля/шахти: екшен-бій, ШІ ворогів (melee/swoop/lunge/ranged/slam, боси з фазами), туман із лінією зору, лут, бот для автотесту |
+| `scripts/core/guild.gd` | гільдія: дошка завдань (`clear/hunt/ore/visit`), активні квести, події `Guild.event(kind, target)`, здача, ранги F→S (`state.guild`) |
+| `scripts/town/town.gd` | сцена поселення: розкладка будівель за `Defs.SETTLEMENT[type].services`, мешканці, герої, взаємодія (E → `hud.open_service`) |
 | `scripts/world/world.gd` | сцена мапи: генерація у потоці, рух героя, камера, туман, день/ніч, близькість до поселень, автотест |
 | `scripts/world/hud.gd` | інтерфейс: картка місця, годинник, міні-мапа, банери, пауза, вікна поселень/підземель, мапа світу |
 | `scripts/world/markers_layer.gd` | значки поселень/підземель і чіткі написи |

@@ -3,7 +3,7 @@ extends Node
 
 signal update_available(version: String, url: String)
 
-const VERSION := "0.4.0"
+const VERSION := "0.5.0"
 const SAVE_VERSION := 1
 const SAVE_PATH := "user://saves/slot1.json"
 const SETTINGS_PATH := "user://settings.cfg"
@@ -145,6 +145,24 @@ static func day_of(minutes: float) -> int:
 
 static func hour_of(minutes: float) -> float:
 	return fmod(minutes, 1440.0) / 60.0
+
+
+## Колір освітлення за годиною (ніч — синя, світанок і захід — рожеві).
+static func daylight(h: float) -> Color:
+	var night := Color(0.38, 0.42, 0.72)
+	var dusk := Color(1.0, 0.78, 0.72)
+	var day := Color(1, 1, 1)
+	if h < 5.0 or h >= 21.0:
+		return night
+	if h < 7.0:
+		return night.lerp(dusk, (h - 5.0) / 2.0)
+	if h < 9.0:
+		return dusk.lerp(day, (h - 7.0) / 2.0)
+	if h < 18.0:
+		return day
+	if h < 19.5:
+		return day.lerp(dusk, (h - 18.0) / 1.5)
+	return dusk.lerp(night, (h - 19.5) / 1.5)
 
 
 static func season_of_day(day: int) -> int:

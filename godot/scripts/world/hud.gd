@@ -24,6 +24,8 @@ var _overlay: Control
 var map_mat: ShaderMaterial
 var _hints: Label
 var _pstat: Label
+var _quests: Label
+var _town_mode := false
 var _news: PanelContainer
 var _news_box: VBoxContainer
 
@@ -173,6 +175,11 @@ func _build_hud() -> void:
 	_news.add_child(_news_box)
 	_news.visible = false
 
+	_quests = Game.make_label("", 15, Color("#ffe6a8"), 4)
+	_quests.position = Vector2(20, 140)
+	_quests.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_root.add_child(_quests)
+
 	_banner = VBoxContainer.new()
 	_banner.set_anchors_preset(Control.PRESET_CENTER_TOP)
 	_banner.position = Vector2(-600, 150)
@@ -212,6 +219,12 @@ func set_location(title: String, sub: String, info: String) -> void:
 	_loc_title.text = title
 	_loc_sub.text = sub
 	_loc_info.text = info
+
+
+func set_town_mode(on: bool) -> void:
+	_town_mode = on
+	_news.visible = not on and _news_box.get_child_count() > 0
+	_hints.text = "WASD — рух · ЛКМ — іти сюди · E — увійти / поговорити · I — спорядження · Esc або брама — вийти" if on else "WASD — рух · Shift — біг · ЛКМ — іти сюди · E — дія · I — спорядження · M — мапа · Tab — держави · K — королівства · J — хроніка · T — чекати день · F5 — зберегти · Esc — меню"
 
 
 func update_news(entries: Array) -> void:
@@ -271,6 +284,9 @@ func _process(_d: float) -> void:
 		_fps.text = "FPS %d" % Engine.get_frames_per_second()
 	if _mini_marks:
 		_mini_marks.queue_redraw()
+	if _quests:
+		_quests.text = Guild.tracker_text()
+		_quests.position.y = 140 if _loc_info.text.count("\n") == 0 else 160
 
 
 func is_modal() -> bool:
@@ -859,7 +875,7 @@ func open_inventory(town: Dictionary = {}) -> void:
 	h.add_theme_constant_override("separation", 10)
 	v.add_child(h)
 	if not town.is_empty():
-		_button(h, "Назад у поселення", func(): open_settlement(town))
+		_button(h, "Назад", func(): _back(town))
 	var close := _button(h, "Закрити", close_overlay)
 	_show_overlay(pv[0])
 	close.grab_focus.call_deferred()
@@ -914,5 +930,257 @@ func open_smith(b: Dictionary) -> void:
 	h.add_theme_constant_override("separation", 10)
 	v.add_child(h)
 	_button(h, "🎒 Спорядження", func(): open_inventory(b))
-	_button(h, "Назад", func(): open_settlement(b))
+	_button(h, "Назад", func(): _back(b))
 	_show_overlay(pv[0])
+
+
+# ---------------------------------------------------------------- заклади міста
+
+func open_service(b: Dictionary, name: String) -> void:
+	match name:
+		"Гільдія":
+			open_guild(b)
+		"Таверна":
+			open_tavern(b)
+		"Храм":
+			open_temple(b)
+		"Кузня":
+			open_smith(b)
+		"Крамниця", "Алхімік", "Магічна лавка":
+			open_shop(b, name)
+		"Ринок":
+			open_market(b)
+		"Двір", "Ратуша", "Староста":
+			open_settlement(b)
+		"Шахта":
+			world.enter_dungeon(world.mine_info(b))
+		_:
+			var jokes := {
+				"Наставник": "Наставник дивиться на тебе і зітхає: «Нові прийоми — в наступному оновленні. Поки що тренуй терпіння.»",
+				"Арена": "На арені сьогодні вихідний. Гладіатори грають у карти.",
+				"Колізей": "Колізей ремонтують після вчорашнього бою з драконом. Приходь пізніше.",
+				"Стайня": "Коні є, але Люмі каже: «Спершу навчися ходити». Їзда верхи — згодом.",
+				"Маєтки": "Агент з нерухомості: «Будинок мрії? Скоро! Поки що є будинок сну. Таверна.»",
+				"Гавань": "Кораблі є. Капітани п'яні. Плавання — в одному з наступних оновлень.",
+			}
+			_simple_panel(name, jokes.get(name, "Тут поки зачинено."), b)
+
+
+func _back(b: Dictionary) -> void:
+	if _town_mode:
+		close_overlay()
+	else:
+		open_settlement(b)
+
+
+func _simple_panel(title: String, text: String, b: Dictionary) -> void:
+	var pv := _vbox_panel(title, 620)
+	var v: VBoxContainer = pv[1]
+	var l := Game.make_label(text, 18, Color.WHITE)
+	l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	l.custom_minimum_size.x = 580
+	v.add_child(l)
+	var c := _button(v, "Вийти", close_overlay)
+	_show_overlay(pv[0], 0.35)
+	c.grab_focus.call_deferred()
+
+
+func open_guild(b: Dictionary) -> void:
+	var g := Guild.state()
+	var wd: WorldData = world.wd
+	var pv := _vbox_panel("Гільдія авантюристів", 1000)
+	var v: VBoxContainer = pv[1]
+	var ri := Guild.rank_i(g)
+	var nxt := "" if ri >= Guild.RANKS.size() - 1 else " · до рангу %s: %d очок" % [Guild.RANKS[ri + 1], Guild.RANK_POINTS[ri + 1] - int(g.points)]
+	var head := Game.make_label("Твій ранг: %s · очок: %d%s · виконано завдань: %d" % [Guild.rank_name(g), int(g.points), nxt, int(g.done)], 18, Game.C_GOLD, 4)
+	head.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	v.add_child(head)
+	var clerk := Game.make_label("Реєстраторка поправляє окуляри: «Нове завдання? Чи знову скаржитесь, що слизи липкі?»", 16, Color("#ffd6ec"))
+	clerk.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	clerk.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	v.add_child(clerk)
+	# активні
+	if not g.active.is_empty():
+		v.add_child(Game.make_label("Твої завдання (здати можна в будь-якій гільдії):", 17, Color(1, 1, 1, 0.7), 3))
+		for i in g.active.size():
+			var q: Dictionary = g.active[i]
+			var row := HBoxContainer.new()
+			row.add_theme_constant_override("separation", 10)
+			v.add_child(row)
+			var have := int(Player.ensure(Game.state).ore.get(q.target, 0)) if q.type == "ore" else int(q.have)
+			var l := Game.make_label("%s (%d/%d) — %d 💰, %d досв." % [q.name, mini(have, int(q.need)), int(q.need), int(q.gold), int(q.xp)], 17, Color("#7dff9a") if Guild.ready(q) else Color.WHITE, 3)
+			l.custom_minimum_size.x = 720
+			l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			row.add_child(l)
+			var bt := Button.new()
+			bt.text = "Здати" if Guild.ready(q) else "Відмовитись"
+			bt.add_theme_font_size_override("font_size", 16)
+			bt.pressed.connect(func():
+				if Guild.ready(q):
+					var txt := Guild.turn_in(i)
+					toast("📋 %s: %s" % [q.name, txt], Game.C_GOLD, 6.0)
+				else:
+					g.active.remove_at(i)
+				open_guild(b))
+			row.add_child(bt)
+	v.add_child(Game.make_label("Дошка завдань (оновлюється щотижня):", 17, Color(1, 1, 1, 0.7), 3))
+	var sc := ScrollContainer.new()
+	sc.custom_minimum_size = Vector2(960, 330)
+	sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	v.add_child(sc)
+	var lst := VBoxContainer.new()
+	lst.add_theme_constant_override("separation", 8)
+	sc.add_child(lst)
+	for q in Guild.board(wd, b):
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 10)
+		lst.add_child(row)
+		var warn := " ⚠️" if int(q.lvl) > int(Player.ensure(Game.state).lvl) + 3 else ""
+		var l := Game.make_label("%s%s — %d 💰, %d досв., %d очок\n%s" % [q.name, warn, int(q.gold), int(q.xp), int(q.pts), q.desc], 16, Color.WHITE, 3)
+		l.custom_minimum_size.x = 720
+		l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		row.add_child(l)
+		var bt := Button.new()
+		var active := Guild.is_active(q)
+		bt.text = "Взято" if active else "Взяти"
+		bt.disabled = active or g.active.size() >= Guild.MAX_ACTIVE
+		bt.add_theme_font_size_override("font_size", 16)
+		bt.pressed.connect(func():
+			if Guild.accept(q):
+				toast("📋 Нове завдання: %s" % q.name, Game.C_ACCENT2)
+			open_guild(b))
+		row.add_child(bt)
+	var c := _button(v, "Вийти", close_overlay)
+	_show_overlay(pv[0], 0.35)
+	c.grab_focus.call_deferred()
+
+
+func _rumors(b: Dictionary) -> Array:
+	var wd: WorldData = world.wd
+	var pol: Politics = world.pol
+	var out: Array = []
+	var p := Player.ensure(Game.state)
+	var bv := Vector2(b.x, b.y)
+	var dgs := wd.dungeons.filter(func(d): return not d.final and not p.cleared.has(int(d.id)) and wd.comp[d.cell] == b.land)
+	dgs.sort_custom(func(x, y): return Vector2(x.x, x.y).distance_to(bv) < Vector2(y.x, y.y).distance_to(bv))
+	if not dgs.is_empty():
+		var d: Dictionary = dgs[0]
+		var dir := Vector2(d.x, d.y) - bv
+		var side := "на північ" if absf(dir.y) > absf(dir.x) and dir.y < 0 else ("на південь" if absf(dir.y) > absf(dir.x) else ("на схід" if dir.x > 0 else "на захід"))
+		out.append("«Кажуть, %s звідси є «%s». Небезпека — десь %d. Мій кузен пішов туди і повернувся без штанів.»" % [side, d.name, int(d.level)])
+	var wars: Array = pol.P.wars
+	if not wars.is_empty():
+		var w: Dictionary = wars.pick_random()
+		out.append("«Чув? Іде «%s». %s проти %s. Ціни на мечі злетіли.»" % [w.name, pol.rname(int(w.leader_a)), pol.rname(int(w.leader_d))])
+	var heroes: Array = pol.P.heroes.filter(func(h): return h.alive)
+	if not heroes.is_empty():
+		var h: Dictionary = heroes.pick_random()
+		out.append("«%s нещодавно був у %s. Рівень %d! А я досі рівень «пиво».»" % [h.name, wd.baronies[h.node].name, int(h.lvl)])
+	out.append(["«Богиня Люмі колись замовила тут суп і не заплатила. Ми досі чекаємо.»", "«Якщо побачиш вантажівку — не стій на дорозі. Просто порада.»", "«У Демонії, кажуть, теж є таверни. Але пиво там гаряче.»"].pick_random())
+	return out
+
+
+func open_tavern(b: Dictionary) -> void:
+	var p := Player.ensure(Game.state)
+	var pv := _vbox_panel("Таверна «%s»" % ["Сонний Дракон", "Веселий Гоблін", "Три Пиріжки", "Кульгавий Грифон", "Ісекайник"][int(b.id) % 5], 820)
+	var v: VBoxContainer = pv[1]
+	var host := Game.make_label("Корчмар протирає кухоль уже двадцяту хвилину: «Чого бажаєте? Окрім пригод — пригоди тут не наливають.»", 17, Color("#ffd6ec"))
+	host.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	host.custom_minimum_size.x = 780
+	v.add_child(host)
+	v.add_child(Game.make_label("Чутки:", 17, Game.C_GOLD, 3))
+	for r in _rumors(b):
+		var l := Game.make_label("• " + r, 16, Color.WHITE, 2)
+		l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		l.custom_minimum_size.x = 780
+		v.add_child(l)
+	var h := HBoxContainer.new()
+	h.alignment = BoxContainer.ALIGNMENT_CENTER
+	h.add_theme_constant_override("separation", 10)
+	v.add_child(h)
+	_button(h, "🛏️ Переночувати — 10 💰", func():
+		if int(p.gold) < 10:
+			toast("Грошей нема. Корчмар пропонує стайню. Безкоштовно. З конем.", Color("#ffb3b3"))
+			return
+		p.gold = int(p.gold) - 10
+		world.rest_until_morning()
+		close_overlay())
+	_button(h, "🍻 Пригостити всіх — 30 💰", func():
+		if int(p.gold) < 30:
+			toast("На всіх не вистачить. На себе — теж.", Color("#ffb3b3"))
+			return
+		p.gold = int(p.gold) - 30
+		var g := Guild.state()
+		g.points = int(g.points) + 1
+		toast("Таверна співає пісню на твою честь! (+1 очко гільдії, -30 💰, +100 до слави)", Game.C_GOLD, 5.0)
+		open_tavern(b))
+	var c := _button(h, "Вийти", close_overlay)
+	_show_overlay(pv[0], 0.35)
+	c.grab_focus.call_deferred()
+
+
+func open_temple(b: Dictionary) -> void:
+	var p := Player.ensure(Game.state)
+	var pv := _vbox_panel("Храм Люмі", 700)
+	var v: VBoxContainer = pv[1]
+	var l := Game.make_label("Статуя богині Люмі підозріло схожа на неї саму в найкращий день. Жриця усміхається: «Богиня бачить усе. Навіть твою інвентарну торбу.»", 17, Color("#fff6b0"))
+	l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	l.custom_minimum_size.x = 660
+	v.add_child(l)
+	if p.get("blessed", false):
+		v.add_child(Game.make_label("✨ На тобі благословення: +25% шкоди в наступному підземеллі.", 17, Game.C_GOLD, 3))
+	var h := HBoxContainer.new()
+	h.alignment = BoxContainer.ALIGNMENT_CENTER
+	h.add_theme_constant_override("separation", 10)
+	v.add_child(h)
+	_button(h, "💖 Зцілення (безкоштовно)", func():
+		p.hp = Player.max_hp(p)
+		p.mp = Player.max_mp(p)
+		toast("Рани затяглися. Люмі шепоче: «Обережніше, будь ласка».", Color("#7dff9a")))
+	_button(h, "✨ Благословення — 30 💰", func():
+		if int(p.gold) < 30:
+			toast("Люмі приймає і молитви, але благословення — за пожертву.", Color("#ffb3b3"))
+			return
+		p.gold = int(p.gold) - 30
+		p.blessed = true
+		toast("✨ Благословення Люмі: +25% шкоди в наступному підземеллі!", Game.C_GOLD, 5.0)
+		open_temple(b))
+	var c := _button(h, "Вийти", close_overlay)
+	_show_overlay(pv[0], 0.35)
+	c.grab_focus.call_deferred()
+
+
+func open_shop(b: Dictionary, name: String) -> void:
+	var pv := _vbox_panel(name, 760)
+	var v: VBoxContainer = pv[1]
+	var l := Game.make_label({"Крамниця": "Продавчиня: «Усе потрібне для пригод! І трохи непотрібного — для настрою.»", "Алхімік": "Алхімік у паленій мантії: «Зілля свіжі! Ну, свіжіші за минулотижневі.»", "Магічна лавка": "Чарівниця: «Ефір, кристали, загадкові сяйливі штуки. Не облизувати.»"}.get(name, ""), 17, Color("#ffd6ec"))
+	l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	l.custom_minimum_size.x = 720
+	v.add_child(l)
+	_trade_row(v, b, [name, "Крамниця"] if name != "Магічна лавка" else [name])
+	var c := _button(v, "Вийти", close_overlay)
+	_show_overlay(pv[0], 0.35)
+	c.grab_focus.call_deferred()
+
+
+func open_market(b: Dictionary) -> void:
+	var p := Player.ensure(Game.state)
+	var pv := _vbox_panel("Ринок", 760)
+	var v: VBoxContainer = pv[1]
+	var l := Game.make_label("Гамір, запах спецій і крик «Свіжа риба! Учорашня, але свіжа!». Тут купують руду й речі.", 17, Color("#ffd6ec"))
+	l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	l.custom_minimum_size.x = 720
+	v.add_child(l)
+	var h := HBoxContainer.new()
+	h.alignment = BoxContainer.ALIGNMENT_CENTER
+	h.add_theme_constant_override("separation", 10)
+	v.add_child(h)
+	_button(h, "⛏️ Продати руду (%d 💰)" % Player.ore_value(p), func():
+		var got := Player.sell_ore(p)
+		toast("Руду продано за %d 💰." % got if got > 0 else "Руди немає.", Game.C_GOLD)
+		open_market(b))
+	_button(h, "🎒 Продати речі", func(): open_inventory(b))
+	var c := _button(h, "Вийти", close_overlay)
+	_show_overlay(pv[0], 0.35)
+	c.grab_focus.call_deferred()
