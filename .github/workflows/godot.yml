@@ -42,6 +42,8 @@ jobs:
         run: |
           godot --headless --path . -s tools/gen_test.gd 2>&1 | tee /tmp/gen.log
           grep -q "баронств" /tmp/gen.log
+          godot --headless --path . -s tools/sim_test.gd 2>&1 | tee -a /tmp/gen.log
+          grep -q "після відновлення" /tmp/gen.log
           ! grep -E "SCRIPT ERROR|Parse Error" /tmp/gen.log
 
       - name: Збірка Windows .exe

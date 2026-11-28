@@ -80,6 +80,17 @@ const CULT_REALM := {
 	"demon": ["Темне царство", "Володар Демонів", "Володарка Демонів", "демони", "Темрява. Вогонь. Знижки на душі."],
 }
 
+const RACE_KEY := {
+	"elven": "elf", "fey": "elf", "darkelf": "darkelf", "dwarven": "dwarf", "orc": "orc", "goblin": "goblin",
+	"beast": "beast", "halfling": "halfling", "dragonkin": "dragonkin", "demon": "demon",
+}
+
+const HERO_CLASSES := {
+	"swordsman": "Мечник", "mage": "Маг", "archer": "Лучник", "priest": "Жрець", "rogue": "Розбійник",
+	"paladin": "Паладин", "berserker": "Берсерк", "bard": "Бард", "monk": "Монах", "samurai": "Самурай",
+	"ninja": "Ніндзя", "summoner": "Призивач", "battle_chef": "Бойовий кухар",
+}
+
 const REALM_COLORS := [
 	Color("#e8b931"), Color("#c0392b"), Color("#2e86de"), Color("#27ae60"), Color("#8e44ad"),
 	Color("#e67e22"), Color("#16a085"), Color("#d35400"), Color("#2980b9"), Color("#c2185b"),

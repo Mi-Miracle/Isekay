@@ -62,7 +62,7 @@ func _draw() -> void:
 			continue
 		var big: bool = b.type in ["capital", "city"]
 		if not show_small and not big:
-			var rc: Color = wd.realms[b.realm].color
+			var rc: Color = wd.realms[b.owner].color
 			draw_circle(p, cell * 0.38 * k, Color(0.1, 0.06, 0.12, 0.8))
 			draw_circle(p, cell * 0.26 * k, rc.lightened(0.2))
 			continue
@@ -95,7 +95,7 @@ func _tower(p: Vector2, w: float, h: float, wall: Color, roof: Color) -> void:
 
 func _draw_settlement(p: Vector2, b: Dictionary, k: float) -> void:
 	var u := cell * k * 1.5
-	var rc: Color = wd.realms[b.realm].color
+	var rc: Color = wd.realms[b.owner].color
 	var roof := rc.darkened(0.1)
 	var wall := Color("#f4ead8")
 	var stone := Color("#cfc6d6")
@@ -159,13 +159,17 @@ func _draw_dungeon(p: Vector2, d: Dictionary, k: float) -> void:
 ## Шар написів у координатах екрана (поверх мапи, під інтерфейсом).
 class LabelLayer extends Node2D:
 	var markers: MarkersLayer
+	var extra: Node2D
 
 	func _draw() -> void:
 		if markers == null:
 			return
 		var xf := markers.get_viewport().get_canvas_transform()
 		var font: Font = Game.ui_font
-		for l in markers.labels:
+		var all: Array = markers.labels.duplicate()
+		if extra != null:
+			all.append_array(extra.labels)
+		for l in all:
 			var fs: int = l[2]
 			var sp: Vector2 = xf * (l[0] as Vector2)
 			var w := font.get_string_size(l[1], HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x

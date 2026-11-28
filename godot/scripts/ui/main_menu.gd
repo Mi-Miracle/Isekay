@@ -85,7 +85,7 @@ func _ready() -> void:
 	credit.position = Vector2(-500, -60)
 	credit.size = Vector2(1000, 34)
 	add_child(credit)
-	var ver := Game.make_label("v%s · Godot-версія (етап 1)" % Game.VERSION, 16, Color(1, 1, 1, 0.65), 4)
+	var ver := Game.make_label("v%s · Godot-версія (етап 2)" % Game.VERSION, 16, Color(1, 1, 1, 0.65), 4)
 	ver.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
 	ver.position = Vector2(-360, -34)
 	ver.size = Vector2(345, 24)
@@ -123,7 +123,22 @@ func _on_update(version: String, url: String) -> void:
 	_update_btn.add_theme_color_override("font_color", Game.C_GOLD)
 	for c in _update_btn.pressed.get_connections():
 		_update_btn.pressed.disconnect(c.callable)
-	_update_btn.pressed.connect(func(): OS.shell_open(url))
+	_update_btn.pressed.connect(func():
+		if not Game.can_self_update():
+			OS.shell_open(url)
+			return
+		_update_btn.disabled = true
+		_update_btn.text = "Завантаження… 0%"
+		Game.download_update(func(f: float): _update_btn.text = "Завантаження… %d%%" % int(f * 100),
+			func(ok: bool, msg: String):
+				if ok:
+					_update_btn.text = "Перезапуск…"
+					await get_tree().create_timer(0.4).timeout
+					Game.apply_update(msg)
+				else:
+					_update_btn.disabled = false
+					_update_btn.text = "✨ Оновлення v%s (ще раз)" % version
+					_goddess.text = "Люмі: «%s. Спробуй ще раз або завантаж вручну зі сторінки релізів.»" % msg))
 
 
 func _process(_delta: float) -> void:

@@ -15,6 +15,9 @@
 | E / Enter | увійти в поселення, оглянути підземелля |
 | M | мапа світу (клік — прокласти шлях) |
 | Tab | політична мапа |
+| K | королівства: правителі, казна, війни, союзи |
+| J | хроніка світу |
+| T | почекати день |
 | F5 | зберегти |
 | F10 | чіт: показати всю мапу |
 | F11 | повний екран |
@@ -24,11 +27,15 @@
 ```bash
 godot --path godot                                   # відкрити/запустити
 godot --headless --path godot -s tools/gen_test.gd   # швидка перевірка генератора
+godot --headless --path godot -s tools/sim_test.gd   # 400 днів політики + збереження/відновлення
 # автотест зі скріншотами (Linux):
 ISEKAY_SHOTS=/tmp/shots xvfb-run -a -s "-screen 0 1600x900x24" godot --path godot --rendering-driver opengl3 -- --selftest
 # + ISEKAY_REVEALALL=1 — додаткові скріншоти всієї мапи
 godot --headless --path godot --export-release "Windows Desktop" Dyvosvit.exe
 ```
+Самооновлення: `Game.check_updates()` шукає випуски `godot-v*` з `.exe`, `download_update()` качає в `user://update/`, `apply_update()` запускає PowerShell, що чекає закриття гри, підміняє `.exe` і перезапускає.
+Увага: `:=` з виразом типу Variant (наприклад `P.armies.filter(...)`) — помилка розбору в Godot; пишіть `var x = ...` або явний тип.
+
 Реліз: підняти `config/version` у `project.godot` і `VERSION` у `scripts/core/game.gd`, оновити `RELEASE_NOTES.md`, push у `main` — GitHub Actions (`.github/workflows/godot.yml`) збере `.exe` і опублікує випуск `godot-v<версія>`.
 
 ## Структура
@@ -39,6 +46,9 @@ godot --headless --path godot --export-release "Windows Desktop" Dyvosvit.exe
 | `scripts/core/defs.gd` | довідкові дані: рельєф, культури й імена, держави, поселення, пам'ятки, підземелля |
 | `scripts/core/world_gen.gd` | генерація світу 540×370 (порт `src/js/world.js`): рельєф (FastNoiseLite), річки, баронства, королівства → герцогства → графства, дороги (AStarGrid2D), пам'ятки, підземелля, небезпека |
 | `scripts/core/world_data.gd` | дані світу + пошук шляху для героя |
+| `scripts/sim/politics.gd` | ШІ королівств (порт `politics.js`): економіка, дипломатія, війни, армії, облоги, династії, катастрофи, демони й орди; стан `P` — у сейві (`state.politics`) |
+| `scripts/sim/heroes.gd` | мандрівні НПС-герої й суперники-ісекайники |
+| `scripts/world/armies_layer.gd` | армії, герої та битви на мапі |
 | `scripts/world/world.gd` | сцена мапи: генерація у потоці, рух героя, камера, туман, день/ніч, близькість до поселень, автотест |
 | `scripts/world/hud.gd` | інтерфейс: картка місця, годинник, міні-мапа, банери, пауза, вікна поселень/підземель, мапа світу |
 | `scripts/world/markers_layer.gd` | значки поселень/підземель і чіткі написи |

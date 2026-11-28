@@ -649,6 +649,7 @@ func _make_realms(wd: WorldData, rng: Rng, seed_in: int) -> void:
 			"color": Color("#5a0f14") if rg.kind == "demon" else Defs.REALM_COLORS[ri % Defs.REALM_COLORS.size()],
 			"capital": capital, "is_empire": rg.kind == "empire", "is_demon": rg.kind == "demon",
 			"liege": empire_id if rg.kind == "vassal" else -1, "kind": rg.kind, "duchies": [],
+			"race_key": Defs.RACE_KEY.get(rg.culture, "human"),
 		}
 		wd.realms.append(R)
 		var dp := _partition(rng, rg.bs, maxi(1, roundi(rg.bs.size() / 8.0)), adj_of, pos_of)
@@ -723,6 +724,8 @@ func _make_realms(wd: WorldData, rng: Rng, seed_in: int) -> void:
 		B[c].dev = maxi(B[c].dev, 3)
 	for Bb in B:
 		Bb.is_port = Bb.coastal and Bb.type in ["port", "capital", "city", "hellfort"]
+		Bb.owner = Bb.realm
+		Bb.occ = -1
 	wd.by_land = by_land
 
 
@@ -862,7 +865,10 @@ func _build_roads(wd: WorldData, rng: Rng) -> void:
 			cells.append(c)
 			road[c] = maxi(road[c], 2 if major else 1)
 			astar.set_point_weight_scale(p, 0.35)
-		wd.roads.append({"a": a, "b": b, "path": cells, "major": major})
+		var rc := 0.0
+		for c in cells:
+			rc += 0.5 if road[c] else minf(cell_cost(terrain, river, c), 6.0) * 0.6
+		wd.roads.append({"a": a, "b": b, "path": cells, "major": major, "cost": rc})
 	wd.road = road
 	# для ходьби героя: дороги дешеві, ліс і гори дорожчі
 	wd.astar = astar
@@ -1002,6 +1008,16 @@ func _assign_danger(wd: WorldData, rng: Rng) -> void:
 			d.tier = 6
 			d.level = 36 if d.final else 30 + rng.rangei(0, 3)
 		d.floors = 5 if d.final else 1 + mini(4, d.tier)
+		var link := -1
+		var ld := INF
+		for b in B:
+			if b.land != wd.comp[d.cell]:
+				continue
+			var dl := Vector2(b.x - d.x, b.y - d.y).length()
+			if dl < ld:
+				ld = dl
+				link = b.id
+		d.link = link
 		var culture := "sea"
 		if d.barony >= 0:
 			culture = wd.realms[B[d.barony].realm].culture

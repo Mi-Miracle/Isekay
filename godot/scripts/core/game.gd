@@ -3,7 +3,7 @@ extends Node
 
 signal update_available(version: String, url: String)
 
-const VERSION := "0.1.1"
+const VERSION := "0.2.0"
 const SAVE_VERSION := 1
 const SAVE_PATH := "user://saves/slot1.json"
 const SETTINGS_PATH := "user://settings.cfg"
@@ -142,6 +142,10 @@ static func hour_of(minutes: float) -> float:
 	return fmod(minutes, 1440.0) / 60.0
 
 
+static func season_of_day(day: int) -> int:
+	return ((day / 30) % 12) / 3
+
+
 static func time_text(minutes: float) -> String:
 	var day := day_of(minutes)
 	var month := (day / 30) % 12
@@ -152,6 +156,10 @@ static func time_text(minutes: float) -> String:
 
 
 # ---------------------------------------------------------------- updates
+
+var update_info: Dictionary = {}
+var _dl: HTTPRequest
+
 
 func check_updates() -> void:
 	var req := HTTPRequest.new()
@@ -165,19 +173,86 @@ func check_updates() -> void:
 		if typeof(arr) != TYPE_ARRAY:
 			return
 		var best := VERSION
-		var url := ""
+		var info := {}
 		for r in arr:
 			var tag: String = str(r.get("tag_name", ""))
 			if not tag.begins_with(TAG_PREFIX):
 				continue
 			var v := tag.substr(TAG_PREFIX.length())
-			if _ver_gt(v, best):
-				best = v
-				url = str(r.get("html_url", ""))
-		if url != "":
-			update_available.emit(best, url))
+			if not _ver_gt(v, best):
+				continue
+			var exe := ""
+			var size := 0
+			for a in r.get("assets", []):
+				if str(a.get("name", "")).to_lower().ends_with(".exe"):
+					exe = str(a.get("browser_download_url", ""))
+					size = int(a.get("size", 0))
+			best = v
+			info = {"version": v, "url": str(r.get("html_url", "")), "exe": exe, "size": size}
+		if not info.is_empty():
+			update_info = info
+			update_available.emit(info.version, info.url))
 	if req.request(REPO_RELEASES, ["User-Agent: Dyvosvit-Godot", "Accept: application/vnd.github+json"]) != OK:
 		req.queue_free()
+
+
+## Чи вмію я сам замінити свій .exe (лише зібрана гра під Windows).
+func can_self_update() -> bool:
+	return OS.has_feature("windows") and OS.has_feature("template") and update_info.get("exe", "") != ""
+
+
+## Завантажує новий .exe. progress(частка 0..1), done(ok: bool, повідомлення).
+func download_update(progress: Callable, done: Callable) -> void:
+	if not can_self_update():
+		done.call(false, "Самооновлення недоступне")
+		return
+	DirAccess.make_dir_recursive_absolute("user://update")
+	var target := ProjectSettings.globalize_path("user://update/Dyvosvit-new.exe")
+	if FileAccess.file_exists(target):
+		DirAccess.remove_absolute(target)
+	_dl = HTTPRequest.new()
+	_dl.use_threads = true
+	_dl.max_redirects = 10
+	_dl.download_file = target
+	_dl.download_chunk_size = 262144
+	add_child(_dl)
+	var total := float(update_info.get("size", 0))
+	var tmr := Timer.new()
+	tmr.wait_time = 0.2
+	tmr.autostart = true
+	add_child(tmr)
+	tmr.timeout.connect(func():
+		if is_instance_valid(_dl):
+			var sz := float(_dl.get_body_size()) if _dl.get_body_size() > 0 else total
+			if sz > 0:
+				progress.call(clampf(_dl.get_downloaded_bytes() / sz, 0.0, 1.0)))
+	_dl.request_completed.connect(func(result: int, code: int, _h, _b):
+		tmr.queue_free()
+		_dl.queue_free()
+		if result != HTTPRequest.RESULT_SUCCESS or code != 200:
+			done.call(false, "Не вдалося завантажити (код %d)" % code)
+			return
+		var f := FileAccess.open(target, FileAccess.READ)
+		var got := f.get_length() if f else 0
+		if f:
+			f.close()
+		if got < 1000000 or (total > 0 and absf(got - total) > 16):
+			done.call(false, "Файл завантажився не повністю")
+			return
+		done.call(true, target))
+	if _dl.request(str(update_info.exe), ["User-Agent: Dyvosvit-Godot"]) != OK:
+		done.call(false, "Не вдалося почати завантаження")
+
+
+## Запускає PowerShell, який дочекається закриття гри, підмінить .exe і запустить нову версію.
+func apply_update(new_file: String) -> void:
+	var exe := OS.get_executable_path()
+	var q := func(p: String) -> String: return "'" + p.replace("'", "''") + "'"
+	var ps := "$ErrorActionPreference='Stop'; $p=%d; while (Get-Process -Id $p -ErrorAction SilentlyContinue) { Start-Sleep -Milliseconds 300 }; Start-Sleep -Milliseconds 400; try { Move-Item -LiteralPath %s -Destination %s -Force; Start-Process -FilePath %s } catch { Start-Process %s }" % [
+		OS.get_process_id(), q.call(new_file), q.call(exe), q.call(exe), q.call(str(update_info.get("url", "https://github.com/Mi-Miracle/Isekay/releases")))]
+	var b64 := Marshalls.raw_to_base64(ps.to_utf16_buffer())
+	OS.create_process("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-EncodedCommand", b64])
+	get_tree().quit()
 
 
 static func _ver_gt(a: String, b: String) -> bool:

@@ -4,7 +4,7 @@ extends Node2D
 
 const CELL := 16.0
 const WALK_CELLS_PER_SEC := 3.2
-const MINUTES_PER_CELL := 10.0
+const MINUTES_PER_CELL := 20.0
 const REVEAL := 7
 
 var wd: WorldData
@@ -21,6 +21,11 @@ var hero: Hero
 var cam: Camera2D
 var daynight: CanvasModulate
 var hud: Hud
+var pol: Politics
+var armies_layer: ArmiesLayer
+var _realm_tex: ImageTexture
+var _realm_img_tex: ImageTexture
+var _seen_seq := 0
 
 var _terrain_mat: ShaderMaterial
 var _realm_mix := 0.0
@@ -60,6 +65,14 @@ func _on_generated(data: WorldData) -> void:
 	_thread.wait_to_finish()
 	wd = data
 	Game.world = wd
+	pol = Politics.new(wd)
+	if Game.state.has("politics") and Game.state.politics is Dictionary:
+		pol.restore(Game.state.politics)
+	else:
+		pol.init_state()
+	if not Game.state.has("day_ticked"):
+		Game.state.day_ticked = Game.day_of(Game.state.minutes)
+	_seen_seq = int(pol.P.get("seq", 0))
 	_build_scene()
 	_ready_done = true
 	hud.hide_loading()
@@ -91,13 +104,8 @@ func _build_scene() -> void:
 		data[i * 4 + 2] = 255 if wd.river[i] else 0
 		data[i * 4 + 3] = 255
 	var data_tex := ImageTexture.create_from_image(Image.create_from_data(W, H, false, Image.FORMAT_RGBA8, data))
-	# держави
-	var realm := PackedByteArray()
-	realm.resize(W * H)
-	for i in W * H:
-		var b := wd.cell_barony[i]
-		realm[i] = (wd.baronies[b].realm + 1) if b >= 0 and Defs.is_land(wd.terrain[i]) else 0
-	var realm_tex := ImageTexture.create_from_image(Image.create_from_data(W, H, false, Image.FORMAT_R8, realm))
+	# держави (хто контролює землю — з урахуванням окупації)
+	_realm_tex = ImageTexture.create_from_image(Image.create_from_data(W, H, false, Image.FORMAT_R8, _realm_bytes()))
 	var rc_img := Image.create(maxi(1, wd.realms.size()), 1, false, Image.FORMAT_RGBA8)
 	for r in wd.realms:
 		rc_img.set_pixel(r.id, 0, r.color)
@@ -110,7 +118,7 @@ func _build_scene() -> void:
 	_terrain_mat = ShaderMaterial.new()
 	_terrain_mat.shader = load("res://shaders/terrain.gdshader")
 	_terrain_mat.set_shader_parameter("data_tex", data_tex)
-	_terrain_mat.set_shader_parameter("realm_tex", realm_tex)
+	_terrain_mat.set_shader_parameter("realm_tex", _realm_tex)
 	_terrain_mat.set_shader_parameter("realm_col", rc_tex)
 	_terrain_mat.set_shader_parameter("realm_count", float(maxi(1, wd.realms.size())))
 	_terrain_mat.set_shader_parameter("size", Vector2(W, H))
@@ -140,6 +148,11 @@ func _build_scene() -> void:
 	lab.markers = markers
 	lab_cl.add_child(lab)
 	markers.label_layer = lab
+
+	armies_layer = ArmiesLayer.new()
+	armies_layer.world = self
+	add_child(armies_layer)
+	lab.extra = armies_layer
 
 	path_layer = PathLayer.new()
 	path_layer.world = self
@@ -195,7 +208,6 @@ func _build_minimap() -> void:
 	const COL := ["#1d4e89", "#2f7fc1", "#e8d9a0", "#8fcf5a", "#3f8f3a", "#a7b85e", "#8d8174", "#f1f4f8", "#e9c46a", "#c9d6d3", "#5c7a3e", "#5a2a26", "#2e7d32"]
 	var cols: Array = COL.map(func(c): return Color(c))
 	var img := Image.create(Defs.W, Defs.H, false, Image.FORMAT_RGBA8)
-	var realm_img := Image.create(Defs.W, Defs.H, false, Image.FORMAT_RGBA8)
 	for i in Defs.W * Defs.H:
 		var x := i % Defs.W
 		var y := i / Defs.W
@@ -206,16 +218,48 @@ func _build_minimap() -> void:
 			c = c.lerp(Color("#7a4b2a"), 0.7)
 		c.a = 1.0 if Defs.is_land(wd.terrain[i]) else 0.5
 		img.set_pixel(x, y, c)
-		var b := wd.cell_barony[i]
-		if b >= 0 and Defs.is_land(wd.terrain[i]):
-			realm_img.set_pixel(x, y, wd.realms[wd.baronies[b].realm].color)
+	_realm_img_tex = ImageTexture.create_from_image(_realm_image())
 	var mat := ShaderMaterial.new()
 	mat.shader = load("res://shaders/minimap.gdshader")
 	mat.set_shader_parameter("fog_tex", _fog_tex)
-	mat.set_shader_parameter("realm_img", ImageTexture.create_from_image(realm_img))
+	mat.set_shader_parameter("realm_img", _realm_img_tex)
 	hud.minimap.texture = ImageTexture.create_from_image(img)
 	hud.minimap.material = mat
 	hud.map_mat = mat
+
+
+func _ctrl_of_cell(i: int) -> int:
+	var b := wd.cell_barony[i]
+	if b < 0 or not Defs.is_land(wd.terrain[i]):
+		return -1
+	var B: Dictionary = wd.baronies[b]
+	return int(B.occ) if int(B.occ) >= 0 else int(B.owner)
+
+
+func _realm_bytes() -> PackedByteArray:
+	var realm := PackedByteArray()
+	realm.resize(Defs.W * Defs.H)
+	for i in Defs.W * Defs.H:
+		realm[i] = _ctrl_of_cell(i) + 1
+	return realm
+
+
+func _realm_image() -> Image:
+	var img := Image.create(Defs.W, Defs.H, false, Image.FORMAT_RGBA8)
+	var cols: Array = wd.realms.map(func(r): return r.color)
+	for i in Defs.W * Defs.H:
+		var c := _ctrl_of_cell(i)
+		if c >= 0:
+			img.set_pixel(i % Defs.W, i / Defs.W, cols[c])
+	return img
+
+
+## Кордони змінилися (війна, повстання) — оновити мапу й міні-мапу.
+func _refresh_realms() -> void:
+	_realm_tex.update(Image.create_from_data(Defs.W, Defs.H, false, Image.FORMAT_R8, _realm_bytes()))
+	_realm_img_tex.update(_realm_image())
+	pol.owner_dirty = false
+	_last_barony = -2
 
 
 # ---------------------------------------------------------------- helpers for HUD
@@ -246,7 +290,7 @@ func describe_cell(c: Vector2i) -> String:
 	var s: String = Defs.TERRAIN_NAME[wd.terrain[i]]
 	var b := wd.barony_at(c)
 	if not b.is_empty() and Defs.is_land(wd.terrain[i]):
-		s = "%s · %s · %s" % [b.name, wd.realms[b.realm].full_name, s]
+		s = "%s · %s · %s" % [b.name, wd.realms[b.owner].full_name, s]
 	var lm := wd.landmark_at(c)
 	if not lm.is_empty():
 		s += " · " + lm.name
@@ -293,6 +337,7 @@ func reveal_all() -> void:
 func save() -> void:
 	if wd == null:
 		return
+	Game.state.politics = pol.serialize()
 	if Game.save_game(fog, hero_cell()):
 		hud.toast("Гру збережено ✨", Game.C_GOLD)
 
@@ -316,12 +361,67 @@ func _process(delta: float) -> void:
 	markers.queue_redraw()
 	path_layer.queue_redraw()
 	_update_daynight()
+	_tick_days()
+	armies_layer.queue_redraw()
 	hud.set_clock(Game.time_text(Game.state.minutes))
 	_update_near()
 	_autosave_t += delta
 	if _autosave_t > 180.0 and Game.settings.auto_save:
 		_autosave_t = 0.0
 		save()
+
+
+## Минув день (або кілька) — світ живе далі.
+func _tick_days() -> void:
+	var today := Game.day_of(Game.state.minutes)
+	var n := 0
+	while int(Game.state.day_ticked) < today and n < 40:
+		Game.state.day_ticked = int(Game.state.day_ticked) + 1
+		pol.tick(int(Game.state.day_ticked))
+		n += 1
+	if n > 0:
+		if pol.owner_dirty:
+			_refresh_realms()
+		_announce_news()
+
+
+## Нові записи хроніки: важливі — тостом, решта — у стрічку новин.
+func _announce_news() -> void:
+	var seq := int(pol.P.get("seq", 0))
+	if seq == _seen_seq:
+		return
+	var fresh: Array = pol.P.chronicle.filter(func(e): return int(e.get("n", 0)) > _seen_seq)
+	_seen_seq = seq
+	var here := wd.barony_at(Vector2i(hero_cell()))
+	var my_realm := int(here.owner) if not here.is_empty() else -1
+	var shown := 0
+	for i in range(fresh.size() - 1, -1, -1):
+		var e: Dictionary = fresh[i]
+		var important: bool = e.type in ["war", "peace", "dynasty"] or (my_realm >= 0 and e.realms.has(my_realm) and e.type in ["siege", "battle", "disaster"])
+		if important and shown < 2:
+			hud.toast(e.text, _news_color(e.type), 7.0)
+			shown += 1
+	hud.update_news(pol.P.chronicle.slice(0, 3))
+
+
+static func _news_color(t: String) -> Color:
+	match t:
+		"war", "battle", "siege":
+			return Color("#ff9a9a")
+		"peace", "diplomacy":
+			return Color("#a8f0c0")
+		"dynasty":
+			return Color("#ffd36e")
+		"disaster":
+			return Color("#ffb37a")
+		"hero":
+			return Color("#9fd8ff")
+	return Color.WHITE
+
+
+func wait_day() -> void:
+	Game.state.minutes = float(Game.state.minutes) + 1440.0
+	hud.toast("Минув день. Ти сидів біля дороги й рахував ворон: %d." % randi_range(3, 99), Color("#d9c8ff"))
 
 
 func _move_hero(delta: float) -> void:
@@ -402,7 +502,7 @@ func _update_location(force: bool) -> void:
 	var c := Vector2i(hero_cell())
 	var b := wd.barony_at(c)
 	var bid: int = b.id if not b.is_empty() else -1
-	var rid: int = b.realm if not b.is_empty() else -1
+	var rid: int = int(b.owner) if not b.is_empty() else -1
 	var lm := wd.landmark_at(c)
 	var lid: int = lm.id if not lm.is_empty() else -1
 	var tname: String = Defs.TERRAIN_NAME[wd.terrain_at(c)]
@@ -414,6 +514,8 @@ func _update_location(force: bool) -> void:
 			var dcol := "спокійно" if b.danger < 4 else ("неспокійно" if b.danger < 10 else ("небезпечно" if b.danger < 20 else "смертельно"))
 			var sub: String = "Баронство %s · %s" % [b.name, R.full_name]
 			var info: String = "%s · небезпека %d (%s)" % [tname, b.danger, dcol]
+			if int(b.occ) >= 0:
+				info += "\n🏴 Окуповано: " + (wd.realms[b.occ].full_name if not pol.is_demon(int(b.occ)) else "сили Темряви")
 			if not lm.is_empty():
 				info += "\n✦ " + lm.name
 			hud.set_location(b.name, sub, info)
@@ -515,6 +617,12 @@ func _unhandled_input(event: InputEvent) -> void:
 					hud.open_dungeon(_near)
 			KEY_F5:
 				save()
+			KEY_T:
+				wait_day()
+			KEY_J:
+				hud.open_chronicle()
+			KEY_K:
+				hud.open_kingdoms()
 			KEY_F10:
 				reveal_all()
 				hud.toast("Чіт: Люмі показала всю мапу 👀", Game.C_ACCENT)
@@ -616,6 +724,43 @@ func _selftest() -> void:
 	var ok_load := Game.load_game()
 	var hc: Array = Game.state.get("hero_cell", [])
 	Selftest.step("save_load", ok_load and hc.size() == 2 and Vector2(hc[0], hc[1]).distance_to(saved_cell) < 0.01 and Game.decode_fog().size() == Defs.W * Defs.H, "")
+	Selftest.step("politics_saved", Game.state.get("politics") is Dictionary and Game.state.politics.P.realms.size() == wd.realms.size(), "")
+	# світ живе: 90 днів симуляції
+	var seq0 := int(pol.P.get("seq", 0))
+	var tt := Time.get_ticks_msec()
+	for i in 90:
+		Game.state.minutes = float(Game.state.minutes) + 1440.0
+		_tick_days()
+	var wars_seen = pol.P.chronicle.filter(func(e): return e.type == "war").size()
+	Selftest.step("world_lives", int(pol.P.day) >= 90 and int(pol.P.get("seq", 0)) > seq0 + 20, "день %d, подій +%d, воєнних %d, армій %d, %d мс" % [pol.P.day, int(pol.P.seq) - seq0, wars_seen, pol.P.armies.size(), Time.get_ticks_msec() - tt])
+	await tree.create_timer(1.0).timeout
+	Selftest.shot(self, "12_news")
+	hud.open_kingdoms()
+	await tree.create_timer(0.8).timeout
+	Selftest.shot(self, "13_kingdoms")
+	hud.open_chronicle(1)
+	await tree.create_timer(0.8).timeout
+	Selftest.shot(self, "14_chronicle_wars")
+	hud.close_overlay()
+	if OS.get_environment("ISEKAY_REVEALALL") == "1":
+		reveal_all()
+		var busiest: Dictionary = {}
+		if not pol.P.armies.is_empty():
+			busiest = wd.baronies[int(pol.P.armies[0].node)]
+		for a in pol.P.armies:
+			if not pol.is_demon(int(a.realm)) and not a.patrol:
+				busiest = wd.baronies[int(a.node)]
+				break
+		if not busiest.is_empty():
+			hero.position = Vector2(busiest.x + 0.5, busiest.y + 4.0) * CELL
+		Game.state.minutes = float(Game.state.minutes) - fmod(float(Game.state.minutes), 1440.0) + 12 * 60
+		_zoom_target = 0.9
+		await tree.create_timer(1.5).timeout
+		Selftest.shot(self, "15_armies")
+		_realm_target = 1.0
+		_zoom_target = 0.32
+		await tree.create_timer(1.5).timeout
+		Selftest.shot(self, "16_realms_after_90_days")
 	Selftest.finish(tree)
 
 
