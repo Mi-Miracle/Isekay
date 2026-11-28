@@ -19,7 +19,7 @@
     for (const kid of kids.flat(Infinity)) { if (kid === null || kid === undefined || kid === false) continue; el.appendChild(kid instanceof Node ? kid : document.createTextNode(String(kid))); }
     return el;
   }
-  const UI = { G: null, modalStack: [] };
+  const UI = { G: null, modalStack: [], quickAnim: (() => { try { return localStorage.dyvo_quickanim === '1'; } catch (e) { return false; } })() };
 
   function modal(opts) {
     const root = $('#modal-root'); $('#overlay').classList.remove('hidden');
@@ -129,36 +129,9 @@
       el.appendChild(h('button', { class: 'btn primary enter-town', title: 'Мапа поселення: заклади стоять як будівлі (клавіша E)', onclick: () => ISK.estate.open('town', B.id) }, `🚪 Увійти в ${B.name}`));
       const ev = ISK.life && ISK.life.eventAt(G, B.id);
       if (ev) el.appendChild(h('div', { class: 'quest' }, { festival: '🎉 Ярмарок! Ціни в крамницях нижчі.', goblin_market: '👺 Гоблінський базар: дивні товари, підозрілі гобліни.', tournament: '🏆 Лицарський турнір! Слава переможцям.', dragon: '🐉 Над містом кружляє дракон. Не виходь без шолома.' }[ev.key] || '✨ Тут щось відбувається!'));
-      const svcs = h('div', { class: 'svc-grid' });
-      for (const s of st.services) { const S = SVC[s]; svcs.appendChild(h('div', { class: 'svc', onclick: () => { A().play('click'); ISK.panels.openService(s, B); } }, h('span', { class: 'i' }, S.icon), S.name)); }
-      if (p.house && p.house.barony === B.id) svcs.appendChild(h('div', { class: 'svc hl', onclick: () => ISK.estate.open('house') }, h('span', { class: 'i' }, '🏡'), 'Мій дім'));
-      if (p.holdings.includes(B.id)) svcs.appendChild(h('div', { class: 'svc hl', onclick: () => ISK.estate.open('land', B.id) }, h('span', { class: 'i' }, '🏰'), 'Мої землі'));
-      if (['capital', 'city', 'town', 'port', 'fortress'].includes(B.type) && !ISK.politics.isDemon(G.P, B.owner)) svcs.appendChild(h('div', { class: 'svc', onclick: () => ISK.panels.cartographer(B.id) }, h('span', { class: 'i' }, '🗺️'), 'Картограф'));
-      if (st.services.includes('guild') && !ISK.politics.isDemon(G.P, B.owner)) svcs.appendChild(h('div', { class: 'svc', title: `Телепорт між відвіданими містами з гільдією (з рангу ${ISK.data.GUILD_RANKS[GM().PORTAL_RANK].r})`, onclick: () => ISK.nav.portals() }, h('span', { class: 'i' }, '🌀'), 'Портал гільдії'));
-      if (GM().hasTower(B) && !ISK.politics.isDemon(G.P, B.owner)) svcs.appendChild(h('div', { class: 'svc' + (GM().nav(p).towers[B.id] ? '' : ' hl'), title: 'Залізти на вежу й роздивитися околиці', onclick: () => ISK.nav.tower(B.id) }, h('span', { class: 'i' }, '🗼'), 'Оглядова вежа'));
-      if (B.type === 'port') svcs.appendChild(h('div', { class: 'svc', onclick: () => ISK.panels2.shipyard(B) }, h('span', { class: 'i' }, '⚓'), 'Верф і море'));
-      if (ISK.life && ISK.life.lordsAt(G, B.id).length && !ISK.politics.isDemon(G.P, B.owner)) svcs.appendChild(h('div', { class: 'svc', onclick: () => ISK.panels2.lords(B.id) }, h('span', { class: 'i' }, '👑'), 'Двір лордів'));
-      if (st.services.length || p.house) { el.appendChild(h('div', { class: 'loc-section' }, 'Заклади')); el.appendChild(svcs); }
-      el.appendChild(h('div', { class: 'loc-section' }, 'Дії'));
-      const acts = h('div', { class: 'svc-grid' });
-      // v5.2: збір ресурсів — лише в природі (стежками до лісосік, шахт, лугів, озер)
-      const spots = (w.graph['b:' + B.id] || []).filter((e) => e.to[0] === 'r');
-      if (spots.length) acts.appendChild(h('div', { class: 'svc hl', title: 'Ресурси збирають у природі: ліс, шахта, луг, озеро. Обери, куди йти.', onclick: () => ISK.panels.spotsNear(B.id) }, h('span', { class: 'i' }, '🧺'), `Угіддя поруч (${spots.length})`));
-      acts.appendChild(h('div', { class: 'svc', onclick: () => ISK.panels.explore() }, h('span', { class: 'i' }, '🌲'), 'Полювати'));
-      acts.appendChild(h('div', { class: 'svc', onclick: () => ISK.panels.talk(B) }, h('span', { class: 'i' }, '💬'), 'Поговорити'));
-      acts.appendChild(h('div', { class: 'svc', onclick: () => ISK.panels.campfire() }, h('span', { class: 'i' }, '🔥'), 'Табір'));
-      acts.appendChild(h('div', { class: 'svc', onclick: () => ISK.panels.waitDays() }, h('span', { class: 'i' }, '⏳'), 'Чекати'));
-      acts.appendChild(h('div', { class: 'svc', onclick: () => ISK.panels2.army() }, h('span', { class: 'i' }, '⚔️'), 'Військо' + (p.army && ISK.life.armyCount(p) ? ` (${ISK.life.armyCount(p)})` : '')));
-      acts.appendChild(h('div', { class: 'svc', onclick: () => ISK.panels2.family() }, h('span', { class: 'i' }, '💞'), 'Родина'));
+      el.appendChild(h('div', { class: 'muted', style: { marginTop: '6px', fontSize: '12px' } }, 'Крамниці, таверна, гільдія та інші заклади — всередині поселення.'));
       const hostile = G.P.armies.filter((a) => a.node === B.id && ISK.politics.isDemon(G.P, a.realm));
-      for (const a of hostile) acts.appendChild(h('div', { class: 'svc danger', onclick: () => ISK.panels.attackArmy(a.id) }, h('span', { class: 'i' }, a.icon || '😈'), 'В бій з ордою!'));
-      el.appendChild(acts);
-      const heroes = ISK.heroes.at(G.P, 'b:' + B.id);
-      if (heroes.length) {
-        el.appendChild(h('div', { class: 'loc-section' }, 'Герої тут'));
-        for (const hh of heroes.slice(0, 4)) el.appendChild(h('div', { class: 'item', style: { padding: '6px' } }, h('div', { class: 'ic' }, hh.icon), h('div', { style: { flex: 1 } }, h('div', { class: 'nm' }, `${hh.name} · рів. ${hh.lvl}`), h('div', { class: 'ds' }, `${ISK.data.CLASSES[hh.cls].name} · ${ISK.data.RACES[hh.race] ? ISK.data.RACES[hh.race].name : hh.race} · ⭐${hh.fame}${hh.rival ? ' · ісекайник!' : ''}`)),
-          h('div', { class: 'acts' }, h('button', { class: 'btn small', onclick: () => ISK.panels.heroTalk(hh.id) }, '💬'), h('button', { class: 'btn small', onclick: () => ISK.panels.heroSpar(hh.id) }, '⚔️'), h('button', { class: 'btn small primary', onclick: () => ISK.panels.heroRecruit(hh.id) }, '🤝'))));
-      }
+      if (hostile.length) { const acts = h('div', { class: 'svc-grid', style: { marginTop: '8px' } }); for (const a of hostile) acts.appendChild(h('div', { class: 'svc danger', onclick: () => ISK.panels.attackArmy(a.id) }, h('span', { class: 'i' }, a.icon || '😈'), 'В бій з ордою!')); el.appendChild(acts); }
     } else if (hr.kind === 'res') {
       const Rn = hr.Rn, S2 = ISK.data.RESOURCE_SITES[Rn.key], left = GM().rnodeLeft(G, Rn.id); const prof = ISK.data.PROFESSIONS[S2.prof];
       el.appendChild(h('div', { class: 'row' }, h('div', { style: { fontSize: '34px' } }, S2.icon), h('div', null, h('h3', null, S2.name), h('div', { class: 'loc-sub' }, `Угіддя біля ${hr.B.name} · ${prof ? prof.icon + ' ' + prof.name : ''}`))));
@@ -271,9 +244,14 @@
       if (enc && enc.type === 'combat' && leg.kind !== 'sea' && Math.random() < (leg.kind === 'air' ? 0.75 : hurry ? 0.15 : 0.5)) enc = null; // частину бійок тепер дають видимі монстри; у польоті — рідше, у поспіху — частіше
       $('#travel-text').textContent = `${coach ? '🐎 Поштова карета' : leg.kind === 'sea' ? '⛵ Морем' : leg.kind === 'air' ? ISK.data.MOUNTS[p.mount].icon + ' Політ' : hurry ? '🏃 Поспіхом' : '🚶 Подорож'} до ${nodeName(target)} · ${GM().dateStr(G.time)}`;
       // v5.7: пішки герой іде дуже повільно й плавно (клітинка за клітинкою); верхи, морем і в польоті — як раніше
-      const onFoot = p.mount === 'feet' && !coach && leg.kind === 'land' && !UI.fastTravel;
-      const stride = onFoot ? 1 : Math.max(1, Math.round(PL().travelSpeed(p)));
-      let spent = 0; const stepMs = UI.fastTravel ? 4 : onFoot ? (hurry ? FOOT_MS * 0.7 : FOOT_MS) : Math.max(8, Math.min(leg.kind === 'sea' ? 14 : 24, 2600 / steps));
+      // v5.9: будь-який рух (пішки, верхи, у польоті, морем) — плавно клітинка за клітинкою; верхи швидше, але не «за секунду»
+      const onFoot = !UI.fastTravel;
+      const stride = 1;
+      const spd = Math.max(1, PL().travelSpeed(p));
+      let stepMs = UI.fastTravel ? 4 : coach ? 260 : leg.kind === 'sea' ? SEA_MS : Math.max(MOUNT_MIN_MS, FOOT_MS / spd);
+      if (!UI.fastTravel && hurry && leg.kind === 'land') stepMs *= 0.7;
+      if (!UI.fastTravel && UI.quickAnim) stepMs /= 2.5;
+      let spent = 0;
       for (let s = 0; s < steps; s += stride) {
         const tgt = days * Math.min(1, (s + stride) / steps); if (tgt - spent > 0.02) { showNews(GM().passTime(G, tgt - spent)); spent = tgt; }
         const px = ISK.render.cellToPx(leg.path[s]);
@@ -295,6 +273,8 @@
     const firstVisit = p.location[0] === 'b' && !GM().nav(p).visited[p.location];
     const evs = GM().arrive(G, p.location); endTravel();
     if (ISK.nav) ISK.nav.banner(p.location, firstVisit);
+    // v5.9: легендарні супутники можуть з'явитися просто по прибуттю
+    if (ISK.bondsUI) { const hr0 = GM().here(G); await ISK.bondsUI.trigger(hr0.kind === 'res' ? 'res' : 'arrive', { type: hr0.kind === 'barony' ? hr0.B.type : undefined }); }
     for (const e of evs) {
       if (e.type === 'quest') toast(e.text, 'good');
       if (e.type === 'bounty') {
@@ -306,7 +286,9 @@
     checkMainQuest(); refresh();
   }
   // ---- v5.1: WASD — герой іде до сусіднього поселення в обраному напрямку (затиснув — іде далі) ----
-  const FOOT_MS = 480; // мс на клітинку пішки
+  const FOOT_MS = 620; // мс на клітинку пішки (v5.9: повільніше)
+  const MOUNT_MIN_MS = 190; // найшвидший транспорт — не швидше за це
+  const SEA_MS = 150; // морем
   const WASD = { KeyW: [0, -1], KeyS: [0, 1], KeyA: [-1, 0], KeyD: [1, 0] };
   function heldDir() {
     const R = ISK.render.R; let x = 0, y = 0;
@@ -473,7 +455,7 @@
       if (['KeyQ', 'KeyE', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code) && !UI.modalStack.length && (e.ctrlKey || !['KeyQ', 'KeyE'].includes(e.code))) { if (!e.ctrlKey) return; R.keys.add(e.code); ISK.render.freeCam(); e.preventDefault(); return; }
       if (e.key === 'Escape') { if (!closeTop()) ISK.panels.open('system'); return; }
       if (UI.modalStack.length) return;
-      const byCode = { KeyC: 'character', KeyI: 'inventory', KeyK: 'skills', KeyP: 'professions', KeyJ: 'quests', KeyR: 'realms', KeyH: 'chronicle', KeyT: 'party', KeyY: 'achievements' };
+      const byCode = { KeyC: 'character', KeyI: 'inventory', KeyK: 'skills', KeyP: 'professions', KeyJ: 'quests', KeyR: 'realms', KeyH: 'chronicle', KeyT: 'party', KeyY: 'achievements', KeyU: 'legends', KeyL: 'clan' };
       if (byCode[e.code]) ISK.panels.open(byCode[e.code]);
       if (e.code === 'Space') { e.preventDefault(); setSpeed(UI.timeSpeed ? 0 : 1); return; }
       if (e.code === 'KeyG') { $('#hl-toggle').click(); return; }
@@ -536,6 +518,14 @@
     for (const b of btns) items.push({ icon: '▸', label: b.textContent.trim().slice(0, 34) || b.title || 'Дія', fn: () => b.click() });
     ISK.panels2.contextMenu(e.clientX, e.clientY, items);
   });
-  Object.assign(UI, { fightMonster, showMonster, setSpeed, h, $, modal, closeTop, closeAll, confirm: confirmBox, alert: alertBox, toast, cutin, sparkle, levelUp, refresh, renderLocation, showInfo, startTravel, walkDir, sleep, bindMap, loop, showScreen, startGame, showNews, checkMainQuest, biomeAt, nodeName, SVC });
+  // v5.9: список НПС-героїв у поселенні (раніше був на панелі локації)
+  function heroesHere(B) {
+    const list = ISK.heroes.at(UI.G.P, 'b:' + B.id);
+    const box = h('div', null, list.length ? null : h('div', { class: 'muted' }, 'Зараз у місті немає мандрівних героїв.'));
+    for (const hh of list.slice(0, 8)) box.appendChild(h('div', { class: 'item', style: { padding: '6px' } }, h('div', { class: 'ic' }, hh.icon), h('div', { style: { flex: 1 } }, h('div', { class: 'nm' }, `${hh.name} · рів. ${hh.lvl}`), h('div', { class: 'ds' }, `${ISK.data.CLASSES[hh.cls] ? ISK.data.CLASSES[hh.cls].name : hh.cls} · ${ISK.data.RACES[hh.race] ? ISK.data.RACES[hh.race].name : hh.race} · ⭐${hh.fame}${hh.rival ? ' · ісекайник!' : ''}`)),
+      h('div', { class: 'acts' }, h('button', { class: 'btn small', onclick: () => ISK.panels.heroTalk(hh.id) }, '💬'), h('button', { class: 'btn small', onclick: () => ISK.panels.heroSpar(hh.id) }, '⚔️'), h('button', { class: 'btn small primary', onclick: () => ISK.panels.heroRecruit(hh.id) }, '🤝'))));
+    modal('🧭 Герої в місті', box);
+  }
+  Object.assign(UI, { heroesHere, fightMonster, showMonster, setSpeed, h, $, modal, closeTop, closeAll, confirm: confirmBox, alert: alertBox, toast, cutin, sparkle, levelUp, refresh, renderLocation, showInfo, startTravel, walkDir, sleep, bindMap, loop, showScreen, startGame, showNews, checkMainQuest, biomeAt, nodeName, SVC });
   ISK.ui = UI;
 })();

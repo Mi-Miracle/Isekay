@@ -26,7 +26,7 @@
     return h('div', { class: 'item r' + (it.rarity || 0) }, h('div', { class: 'ic' }, it.icon), h('div', { style: { minWidth: 0 } }, h('div', { class: 'nm' }, it.name), h('div', { class: 'ds' }, extra || itemDesc(it))), count > 1 ? h('div', { class: 'cnt' }, '×' + count) : null, acts && acts.length ? h('div', { class: 'acts' }, acts) : null);
   }
 
-  function open(name) { if (UI().modalStack.length) UI().closeAll(); ({ character, inventory, skills, professions, quests, realms, chronicle, system, party, achievements }[name] || (() => {}))(); }
+  function open(name) { if (UI().modalStack.length) UI().closeAll(); ({ character, inventory, skills, professions, quests, realms, chronicle, system, party, achievements }[name] || (ISK.bondsUI && ISK.bondsUI[name]) || (() => {}))(); }
 
   // ---------------- Character ----------------
   // v5.8: клік по слоту спорядження — список того, що можна вдягти саме сюди
@@ -245,7 +245,7 @@
     const p = G().player;
     UI().modal({ title: 'Загін, пітомці, транспорт', icon: '👥', size: 'mid', body: () => {
       const w = h('div', { class: 'col' });
-      w.appendChild(h('h4', null, `Товариші (${p.party.length}/3)`));
+      w.appendChild(h('h4', null, `Товариші (${p.party.length}/${ISK.bonds ? ISK.bonds.partyCap(p) : 3})`, ISK.bondsUI ? h('button', { class: 'btn small', style: { marginLeft: '10px' }, onclick: () => { UI().closeAll(); ISK.bondsUI.legends(); } }, '💘 Серця') : null));
       if (!p.party.length) w.appendChild(h('div', { class: 'muted' }, 'Найми товаришів у таверні. Удвох веселіше, утрьох — ще й безпечніше.'));
       for (const c of p.party) { const st = PL().companionStats(c); w.appendChild(h('div', { class: 'item' }, SP().img(SP().forCompanion(c), 40), h('div', { style: { flex: 1 } }, h('div', { class: 'nm' }, `${c.name} — ${c.roleName}, рів. ${c.lvl}`), h('div', { class: 'ds' }, `${c.traitName} · ❤️ ${c.hp ?? st.maxHp}/${st.maxHp} · ⚔️ ${st.atk} · платня ${c.wage}🪙/день · «${c.line}»`)), h('div', { class: 'acts' }, h('button', { class: 'btn small ghost', onclick: async () => { if (await UI().confirm(`Відпустити ${c.name}?`)) { p.party = p.party.filter((x) => x !== c); reopen(party); } } }, 'Відпустити')))); }
       w.appendChild(h('h4', null, 'Пітомці'));
@@ -293,7 +293,7 @@
       h('div', { class: 'field' }, h('label', null, 'Складність гри'), h('div', { class: 'row wrap' }, Object.entries(ISK.combat.DIFF).map(([k, d]) => h('button', { class: 'btn small' + ((UI().G && UI().G.difficulty) === k ? ' primary' : ''), title: d.desc, onclick: () => { if (!UI().G) return; UI().G.difficulty = k; ISK.difficulty = k; UI().toast(`Складність: ${d.name}. ${d.desc}`, 'good'); reopen(settings); } }, d.name)))),
       h('div', { class: 'field' }, h('label', null, 'Бойова система'), h('div', { class: 'row wrap' }, [['action', '⚔️ Екшен (реальний час)', 'Арена як у сучасних іграх: рух, комбо, перекати, парирування.'], ['turn', '🎲 Покроковий (легкий)', 'Класичні ходи: є час подумати і попити чаю.']].map(([k, n, t]) => h('button', { class: 'btn small' + (ISK.combatUI.mode() === k ? ' primary' : ''), title: t, onclick: () => { ISK.combatUI.setMode(k); UI().toast(`Бій: ${n}. ${t}`, 'good'); reopen(settings); } }, n)))),
       h('div', { class: 'field' }, h('label', null, '📡 Twitch-чат (глядачі впливають на гру)'), h('div', { class: 'row', style: { gap: '6px' } }, (() => { const inp = h('input', { value: (ISK.twitch && ISK.twitch.channel()) || 'mi_miracle', style: { width: '160px' } }); return [inp, h('button', { class: 'btn small primary', onclick: () => { ISK.twitch.connect(inp.value.trim()); reopen(settings); } }, ISK.twitch && ISK.twitch.connected() ? '🔄 Перепідключити' : '🔌 Підключити'), ISK.twitch && ISK.twitch.connected() ? h('button', { class: 'btn small ghost', onclick: () => { ISK.twitch.disconnect(); reopen(settings); } }, 'Вимкнути') : null]; })()), h('div', { class: 'muted', style: { fontSize: '12px' } }, 'Команди: !герой · !подарунок · !лікуй · !орда (3 голоси) · !війна (5 голосів) · !погода [дощ/сніг/буря/туман/ясно] · !жарт · !допомога')),
-      h('label', { class: 'row' }, h('input', { type: 'checkbox', checked: !!UI().fastTravel, onchange: (e) => { UI().fastTravel = e.target.checked; } }), 'Швидка анімація подорожей'),
+      h('label', { class: 'row' }, h('input', { type: 'checkbox', checked: !!UI().quickAnim, onchange: (e) => { UI().quickAnim = e.target.checked; try { localStorage.dyvo_quickanim = e.target.checked ? '1' : ''; } catch (_) {} } }), 'Пришвидшена анімація подорожей (×2.5)'),
       h('div', { class: 'muted', style: { fontSize: '12px' } }, 'F11 — повноекранний режим. Оновлення гри встановлюються автоматично при запуску.'),
       h('button', { class: 'btn ghost', onclick: () => { UI().closeAll(); cheats(); } }, '🧪 Чіт-меню (для тестування) · клавіша ` або F10')) });
   }
@@ -444,7 +444,7 @@
           h('button', { class: 'btn pink', onclick: () => ISK.minigames.dice() }, '🎲 Кості'),
           h('button', { class: 'btn', onclick: () => cooking() }, '🍳 Кухня'))) },
       { id: 'hire', label: '👥 Найманці', render: () => {
-        const w = h('div', { class: 'col' }, h('div', { class: 'muted' }, `Товариші б\'ються поруч і ростуть у рівнях. Щоденна платня. Загін: ${p.party.length}/3.`));
+        const w = h('div', { class: 'col' }, h('div', { class: 'muted' }, `Товариші б\'ються поруч і ростуть у рівнях. Щоденна платня. Загін: ${p.party.length}/${ISK.bonds ? ISK.bonds.partyCap(p) : 3}.`));
         for (const c of GM().hireOptions(g, B.id)) w.appendChild(h('div', { class: 'item' }, SP().img(SP().forCompanion(c), 44), h('div', { style: { flex: 1 } }, h('div', { class: 'nm' }, `${c.name} — ${c.roleName}, рів. ${c.lvl}`), h('div', { class: 'ds' }, `${c.traitName}: «${c.line}» · платня ${Math.round(c.wage * (p.cheat === 'harem' ? 0.5 : 1))}🪙/день`)),
           h('div', { class: 'acts' }, h('button', { class: 'btn small primary', onclick: () => { const e = GM().hire(g, c); if (e) UI().toast(e, 'bad'); else { A().play('coin'); UI().toast(`🤝 ${c.name} приєднується до загону!`, 'epic'); reopen(() => tavern(B)); } } }, `Найняти ${Math.round(c.fee * (p.cheat === 'harem' ? 0.5 : 1))}🪙`))));
         return w;

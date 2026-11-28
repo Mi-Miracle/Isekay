@@ -188,7 +188,9 @@
           for (const c of res.compUps) msg += `\n🤝 ${c.name}: рівень ${c.lvl}!`;
           if (res.xr.ups.length) UI().levelUp(p.level);
           await UI().alert(['Перемога!', 'Чиста перемога!', 'Ворог повержений!', 'Ти — легенда! (локальна)'][Math.floor(Math.random() * 4)], msg, '🏆');
-          UI().showNews([]); UI().refresh(); resolve('win');
+          UI().showNews([]); UI().refresh();
+          if (ISK.bondsUI && !(opts && opts.noLegend)) await ISK.bondsUI.trigger('win', { hpFrac: p.hp / PL().maxHp(p) });
+          resolve('win');
         } else if (b.over === 'flee') { UI().refresh(); resolve('flee'); }
         else {
           A().play('lose');

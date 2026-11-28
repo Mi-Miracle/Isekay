@@ -155,6 +155,7 @@
       POL().tick(G.world, G.P, d);
       for (const c of G.P.chronicle) { if (c === n0) break; news.push(c); }
       dailyPlayer(G, d);
+      if (ISK.bonds) ISK.bonds.daily(G, d);
       if (ISK.life) ISK.life.daily(G, d);
       moveMonsters(G); if (d % 3 === 0) spawnMonsters(G);
     }
@@ -817,7 +818,8 @@
   }
   function hire(G, c) {
     const p = G.player; const fee = Math.round(c.fee * (p.cheat === 'harem' ? 0.5 : 1));
-    if (p.party.length >= 3) return 'У загоні максимум 3 товариші';
+    const cap = ISK.bonds ? ISK.bonds.partyCap(p) : 3;
+    if (p.party.length >= cap) return `У загоні максимум ${cap} товариші`;
     if (p.gold < fee) return 'Недостатньо золота';
     p.gold -= fee; p.party.push({ ...c, hp: undefined }); unlock(G, 'party');
     G.hires = Object.fromEntries(Object.entries(G.hires).map(([k, v]) => [k, v.filter((x) => x.id !== c.id)]));
@@ -825,7 +827,8 @@
   }
   function recruitHero(G, heroId) {
     const p = G.player, h = (G.P.heroes || []).find((x) => x.id === heroId); if (!h || !h.alive) return 'Героя тут немає';
-    if (p.party.length >= 3) return 'Загін повний (макс. 3)';
+    const cap = ISK.bonds ? ISK.bonds.partyCap(p) : 3;
+    if (p.party.length >= cap) return `Загін повний (макс. ${cap})`;
     if (p.fame < h.lvl * 10) return `Герой не вірить у тебе. Потрібно ⭐${h.lvl * 10} слави.`;
     if ((h.rel || 0) < 1) return 'Спершу заслужи повагу: переможи в дружньому спарингу.';
     h.joined = true; p.party.push(ISK.heroes.asCompanion(h)); unlock(G, 'party');
@@ -970,6 +973,7 @@
   // ---------------- Combat results ----------------
   function applyRewards(G, b) {
     const p = G.player; const r = b.rewards; if (!r) return null;
+    if (ISK.bonds) ISK.bonds.boostRewards(G, r);
     p.gold += r.gold;
     const xr = PL().addXp(p, r.xp);
     const cr = PL().addClassXp(p, Math.round(r.xp * 0.9));
@@ -981,6 +985,7 @@
     if (p.food) { p.food.battles--; if (p.food.battles <= 0) p.food = null; }
     if (p.spouse && p.spouse.kind === 'healer') p.hp = Math.min(PL().maxHp(p), p.hp + Math.round(PL().maxHp(p) * 0.25));
     for (const c of p.party) c.affection = (c.affection || 0) + 1;
+    if (ISK.bonds) ISK.bonds.onWin(G);
     for (const q of p.quests) if (q.type === 'duel' && b.opts.questId === q.id) q.progress = 1;
     checkAchievements(G);
     return { xr, cr, petUp, compUps, fame };

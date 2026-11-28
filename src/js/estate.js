@@ -326,7 +326,7 @@
   function makeWalkers(kind, bid) {
     const G = UI().G, p = G.player;
     const start = kind === 'town' ? (st.town.port ? [2.4 * T, (st.town.my) * T] : [(st.town.mx + 0.5) * T, (ROWS - 3.4) * T]) : kind === 'home' ? [(COLS / 2 - 0.6) * T, (ROWS - 2.6) * T] : [15 * T, 11 * T];
-    const out = [{ who: 'hero', sprite: SP().hero(p), x: start[0], y: start[1], tx: start[0], ty: start[1], size: 40, speed: 2.6 }];
+    const out = [{ who: 'hero', sprite: SP().hero(p), x: start[0], y: start[1], tx: start[0], ty: start[1], size: 40, speed: 1.8 }];
     const add = (sprite, size, label) => { const [x, y] = wanderPoint(kind); out.push({ sprite, size, label, x, y, tx: 0, ty: 0, speed: 0.6 + Math.random() * 0.6, wander: true }); };
     if (kind !== 'town') {
       if (p.activePet >= 0 && p.pets[p.activePet]) add(SP().forPet(p.pets[p.activePet].key), 26, p.pets[p.activePet].name);
@@ -361,7 +361,8 @@
     if (kind === 'house') btns.push(H('button', { class: 'btn small', onclick: () => go('home') }, '🚪 У дім'), H('button', { class: 'btn small', onclick: () => ISK.panels.house() }, '📜 Прибудови'));
     if (kind === 'home') btns.push(H('button', { class: 'btn small', onclick: () => ISK.panels.house() }, '📜 Прибудови'));
     if (kind === 'land') btns.push(H('button', { class: 'btn small', onclick: () => ISK.panels.land(bid) }, '📜 Керування'));
-    if (kind !== 'town') btns.push(H('button', { class: 'btn small', onclick: () => ISK.panels2.army() }, '⚔️ Військо'), H('button', { class: 'btn small', onclick: () => ISK.panels2.family() }, '💞 Родина'));
+    if (kind === 'town') { const B = UI().G.world.baronies[bid]; btns.push(H('button', { class: 'btn small', onclick: () => ISK.panels.talk(B) }, '💬 Поговорити'), H('button', { class: 'btn small', onclick: () => UI().heroesHere(B) }, '🧭 Герої'), H('button', { class: 'btn small', onclick: () => ISK.panels.campfire() }, '🔥 Табір'), H('button', { class: 'btn small', onclick: () => ISK.panels.waitDays() }, '⏳ Чекати')); }
+    btns.push(H('button', { class: 'btn small', onclick: () => ISK.panels2.army() }, '⚔️ Військо'), H('button', { class: 'btn small', onclick: () => ISK.panels2.family() }, '💞 Родина'));
     btns.push(H('button', { class: 'btn small primary', onclick: close }, '🗺️ На мапу світу'));
     const bar = H('div', { class: 'estate-bar' }, H('div', { class: 'estate-title' }, TITLES[kind](bid)), H('div', { class: 'spacer' }), ...btns);
     const DEF_HINT = kind === 'town' ? 'Клікни будівлю — герой підійде й увійде. WASD — ходити, E — увійти поруч, коліщатко — масштаб, Esc — вихід.' : kind === 'home' ? 'Клікай меблі: ліжко — поспати, піч — готувати, комора — забрати продукти. Двері внизу — на подвір\'я.' : 'Клікай по будівлях і грядках — герой підійде. WASD — ходити, E — дія поруч, коліщатко — масштаб.';

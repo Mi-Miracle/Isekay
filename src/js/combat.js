@@ -254,6 +254,19 @@
       if (allyHp(a, p) <= 0) continue;
       if (a.kind === 'comp') {
         const c = a.ref; const t = pick(alive(b));
+        // v5.9: фірмовий прийом легендарного супутника
+        if (c.legend && ISK.bonds && chance(c.sig === 2 ? 0.26 : 0.18)) {
+          const sg = ISK.bonds.signature(c);
+          if (sg) {
+            ev.push({ kind: 'text', text: `${sg.icon} ${a.name}: «${sg.name}!»` });
+            if (sg.heal) partyHeal(b, p, Math.round(a.atk * sg.heal * sg.mul), ev, `${a.icon} ${a.name} — ${sg.name}`);
+            if (sg.buff) b.buffs.atk = { amt: 0.3, turns: 2 };
+            if (sg.power) { const ts = sg.target === 'all' ? alive(b) : [t]; for (const e of ts) for (let k = 0; k < (sg.hits || 1); k++) if (e.hp > 0) hitEnemy(b, e, a.atk * sg.power * sg.mul, { elem: sg.elem || null, crit: chance(0.2) }, ev, 'comp:' + a.name); }
+            if (sg.stun) for (const e of (sg.target === 'all' ? alive(b) : [t])) if (e.hp > 0 && chance(sg.stun)) { e.status = e.status || {}; e.status.stun = 1; }
+            if (sg.burn) for (const e of alive(b)) if (chance(0.5)) { e.status = e.status || {}; e.status.burn = 2; }
+            continue;
+          }
+        }
         const low = aliveAllies(b, p).find((x) => allyHp(x, p) < (x.kind === 'player' ? d.maxHp : x.maxHp) * 0.45);
         if (c.role === 'healer' && low && chance(0.7)) { partyHeal(b, p, Math.round(a.atk * 1.6), ev, `${a.icon} ${a.name} лікує команду`); continue; }
         if (c.role === 'mage' && chance(0.4)) { ev.push({ kind: 'text', text: `${a.icon} ${a.name}: «Вогняна куля!»` }); for (const e of alive(b)) hitEnemy(b, e, a.atk * 1.1, { elem: 'fire' }, ev, 'comp'); continue; }

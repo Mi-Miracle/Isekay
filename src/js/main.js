@@ -317,6 +317,30 @@
         const l1 = ISK.combat.mobLvl(5, 1), l50 = ISK.combat.mobLvl(5, 50); if (!(l50 > l1)) errors.push('mob level does not grow');
         console.log('mob lvl 5 @hero1 =', l1, '@hero50 =', l50);
       });
+      await step('v59_bonds_clan', async () => {
+        const g = G4(); const p = g.player; UI.closeAll(); const B = ISK.bonds;
+        const town = g.world.baronies.find((b) => b.type === 'capital' && !ISK.politics.isDemon(g.P, b.owner)); ISK.game.arrive(g, 'b:' + town.id); UI.refresh(); await UI.sleep(300); await shot('59a_loc_panel_enter_only');
+        if (document.querySelectorAll('#location-panel .svc').length) errors.push('location panel still has services');
+        ISK.estate.open('town', town.id); await UI.sleep(900); await shot('59b_town_toolbar'); ISK.estate.close();
+        p.level = Math.max(p.level, 15); p.flags.legendCool = 0;
+        while (p.party.length) p.party.pop();
+        globalThis.ISK_AUTOPLAY = 1; await ISK.bondsUI.trigger('arrive', { force: 'ariel' }); globalThis.ISK_AUTOPLAY = 0; await UI.sleep(200);
+        if (!B.st(p, 'ariel')) errors.push('legend meet failed');
+        for (const id of ['nyx', 'miu', 'koharu']) { B.meet(g, id); }
+        B.addBond(g, 'nyx', 50); B.join(g, 'nyx');
+        ISK.bondsUI.legends(); await UI.sleep(500); await shot('59c_legends_panel'); UI.closeAll();
+        const st = ISK.story.overlayStage('radial-gradient(circle at 50% 30%, rgba(255,215,235,.93), rgba(120,70,160,.88))'); ISK.story.setPortrait(st, ISK.bondsUI.sprite('miu'));
+        st.appendChild(UI.h('div', { class: 'dialog' }, UI.h('div', { class: 'speaker' }, 'Міу'), UI.h('div', { class: 'text' }, ISK.data.LEGENDS.miu.intro[3].text))); await shot('59d_legend_scene'); st.remove();
+        p.guild.registered = true; p.guild.rank = Math.max(1, p.guild.rank); p.gold = Math.max(p.gold, 20000);
+        ISK.bondsUI.clan(); await UI.sleep(300); await shot('59e_clan_found'); UI.closeAll();
+        if (!p.clan) { const e = B.foundClan(g, { name: 'Нічні Сови', icon: '🦉', motto: 'Не спимо — фармимо!' }); if (e) errors.push('clan found: ' + e); }
+        for (const c of B.candidates(g).slice(0, 3)) B.recruitMember(g, c.id); B.deposit(g, 4000); B.upgradeHall(g, 'barracks'); B.addClanXp(g, 900);
+        ISK.bondsUI.clan('main'); await UI.sleep(300); await shot('59f_clan_main'); UI.closeAll();
+        ISK.bondsUI.clan('missions'); await UI.sleep(300); await shot('59g_clan_contracts'); UI.closeAll();
+        p.classes.primary = p.classes.primary || 'samurai'; ISK.panels.open('skills'); await UI.sleep(200); UI.closeAll();
+        if (!ISK.data.CLASSES.samurai || ISK.data.allSkillsOf('ninja').length < 15) errors.push('new classes missing');
+        console.log('v59 party cap', B.partyCap(p), 'clan lvl', p.clan && p.clan.lvl);
+      });
       await step('v54_depths', async () => {
         const g = G4(); const p = g.player; UI.closeAll(); const DP = ISK.depths;
         p.hp = ISK.player.maxHp(p); p.level = Math.max(p.level, 20);

@@ -128,7 +128,7 @@
     if (spec.wraps) { for (let y = hy + 1; y < 13; y += 2) px(4, y, '#e8e4d0', 8, 1); }
     if (spec.crown) { px(5, hy - 2, '#f2c94c', 6, 1); px(5, hy - 3, '#f2c94c'); px(7, hy - 3, '#f2c94c'); px(10, hy - 3, '#f2c94c'); px(8, hy - 2, '#e03050'); }
     // weapon
-    const wpn = spec.weapon;
+    const wpn = { katana: 'sword', greatsword: 'sword', rapier: 'sword', wand: 'staff', lute: 'holy', warhammer: 'mace', halberd: 'spear', scythe: 'spear', claws: 'knuckles', crossbow: 'bow' }[spec.weapon] || spec.weapon;
     if (wpn === 'sword' || wpn === 'axe') { px(13, 3, '#dfe6f0', 1, 8); px(12, 10, '#c8a03a', 3, 1); px(13, 11, '#6a4a2a', 1, 2); if (wpn === 'axe') px(14, 3, '#b8c0cc', 2, 3); }
     if (wpn === 'staff' || wpn === 'holy') { px(13, 2, '#7a5a2a', 1, 12); px(12, 1, wpn === 'holy' ? '#fff6a0' : '#9a5aff', 3, 2); }
     if (wpn === 'bow') { px(13, 4, '#8a5a2a', 1, 8); px(14, 3, '#8a5a2a'); px(14, 12, '#8a5a2a'); px(12, 5, '#e8e8e8', 1, 6); }

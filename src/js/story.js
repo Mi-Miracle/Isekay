@@ -43,14 +43,15 @@
   // ---------- Dialog ----------
   function dialog(lines, opts = {}) {
     return (async () => {
-      const stage = opts.stage || $('#story-stage');
+      const stage = opts.stage || $('#story-stage'); let res;
       for (const line of lines) {
         const L = typeof line === 'string' ? { text: line } : line;
         if (L.bg) $('#story-bg').className = L.bg;
         if (L.fx) await L.fx();
         if (L.portrait !== undefined) setPortrait(stage, L.portrait);
-        await say(stage, L.who || opts.who || 'Оповідач', L.text, L.choices);
+        res = await say(stage, L.who || opts.who || 'Оповідач', L.text, L.choices);
       }
+      return res;
     })();
   }
   function setPortrait(stage, p) {
@@ -214,5 +215,5 @@
     ISK.game.checkAchievements(G); UI().checkMainQuest(); UI().refresh();
   }
 
-  ISK.story = { titleBg, titleRefresh, newGameFlow, dialog, goddessCall, ending, npcTalk };
+  ISK.story = { titleBg, titleRefresh, newGameFlow, dialog, goddessCall, ending, npcTalk, overlayStage, setPortrait };
 })();

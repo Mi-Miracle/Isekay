@@ -157,7 +157,7 @@
   // ---- player interaction helpers ----
   const at = (P, node) => (P.heroes || []).filter((h) => h.alive && !h.joined && !h.path.length && 'b:' + h.node === node);
   const line = (h) => (h.bio && Math.random() < 0.4 ? h.bio : LINES[Math.floor(Math.random() * LINES.length)]);
-  const ROLE_OF = { swordsman: 'warrior', paladin: 'warrior', berserker: 'warrior', monk: 'warrior', lancer: 'warrior', archer: 'archer', mage: 'mage', priest: 'healer', bard: 'healer', rogue: 'rogue' };
+  const ROLE_OF = { swordsman: 'warrior', paladin: 'warrior', berserker: 'warrior', monk: 'warrior', lancer: 'warrior', archer: 'archer', mage: 'mage', priest: 'healer', bard: 'healer', rogue: 'rogue', samurai: 'warrior', summoner: 'mage', warlock: 'mage', ninja: 'rogue', battle_chef: 'warrior', alchemist: 'healer', jack: 'rogue' };
   function asCompanion(h) {
     return { id: 'hero' + h.id, heroId: h.id, name: h.name, gender: h.female ? 'f' : 'm', role: ROLE_OF[h.cls] || 'warrior', roleName: D().CLASSES[h.cls].name, icon: h.icon, lvl: h.lvl, xp: 0, wage: 0, fee: 0, trait: 'brave', traitName: 'Герой', line: line(h), race: h.race, hero: true };
   }

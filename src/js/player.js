@@ -217,7 +217,8 @@
   function companionStats(c) {
     const k = c.lvl;
     const base = { warrior: [1.2, 1.0, 1.3], mage: [0.8, 1.3, 0.8], healer: [0.9, 0.7, 1.0], archer: [0.9, 1.15, 0.9], rogue: [0.85, 1.2, 0.85] }[c.role] || [1, 1, 1];
-    return { maxHp: Math.round((60 + k * 22) * base[0]), atk: Math.round((8 + k * 3.4) * base[1]), def: Math.round((3 + k * 1.3) * base[2]), speed: 9 + k * 0.4 };
+    const L = ISK.bonds ? ISK.bonds.companionMul(c) : 1; // v5.9: легенди сильніші й ростуть із сюжетом
+    return { maxHp: Math.round((60 + k * 22) * base[0] * L), atk: Math.round((8 + k * 3.4) * base[1] * L), def: Math.round((3 + k * 1.3) * base[2] * L), speed: 9 + k * 0.4 };
   }
   function petStats(p, pet) {
     const P = D().PETS[pet.key]; const k = pet.lvl;
