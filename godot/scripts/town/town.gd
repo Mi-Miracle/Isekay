@@ -83,6 +83,8 @@ func _layout() -> void:
 		names.push_front("Мій дім")
 	if int(Estate.land().get("barony", -1)) == int(b.id):
 		names.push_front("Мої землі")
+	if not names.has("Гавань") and Travel.is_harbor(world.wd, b):
+		names.append("Гавань")
 	if not names.has("Маєтки") and b.type in ["town", "city", "capital", "port"]:
 		names.append("Маєтки")
 	var bw := 7 if b.type == "capital" else 6

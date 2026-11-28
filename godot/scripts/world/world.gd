@@ -372,7 +372,7 @@ func _process(delta: float) -> void:
 	_tick_days()
 	armies_layer.queue_redraw()
 	hud.set_clock(Game.time_text(Game.state.minutes))
-	hud.set_player(Player.short(Player.ensure(Game.state)))
+	hud.set_player(Player.short(Player.ensure(Game.state)) + ((" · " + str(Travel.mount().icon)) if Travel.riding() else ""))
 	_update_near()
 	_autosave_t += delta
 	if _autosave_t > 180.0 and Game.settings.auto_save:
@@ -514,6 +514,37 @@ func _on_dungeon_done(st: Dictionary, dinfo: Dictionary) -> void:
 	save()
 
 
+## Плавання з порту from до to: вийти з міста, «пропливти» (час, подія), зійти на берег і зайти в місто.
+func sail_to(from: Dictionary, to: Dictionary) -> String:
+	var res := Travel.sail(wd, from, to)
+	if res.has("err"):
+		return res.err
+	_path.clear()
+	if town != null:
+		town.leave()
+	hud.close_overlay()
+	var start := Vector2(to.x + 0.5, to.y + 2.6)
+	if not wd.walkable(Vector2i(start)):
+		start = Vector2(to.x + 0.5, to.y + 0.5)
+		for d in [Vector2(0, 1.6), Vector2(1.6, 0), Vector2(-1.6, 0), Vector2(0, -1.6), Vector2(1.6, 1.6), Vector2(-1.6, 1.6)]:
+			if wd.walkable(Vector2i(start + d)):
+				start += d
+				break
+	hero.position = start * CELL
+	cam.position = hero.position
+	cam.reset_smoothing()
+	_last_cell = Vector2i(-1, -1)
+	_reveal(true)
+	_update_location(true)
+	_tick_days()
+	hud.set_clock(Game.time_text(Game.state.minutes))
+	hud.set_player(Player.short(Player.ensure(Game.state)))
+	hud.toast(res.text, Color("#bfe6ff"), 6.0)
+	hud.banner("⛵ %s" % to.name, "Пливли %.1f дн. за %d 💰 · %s" % [res.days, res.fare, wd.realms[to.owner].full_name])
+	enter_town.call_deferred(to)
+	return ""
+
+
 func wait_day() -> void:
 	Game.state.minutes = float(Game.state.minutes) + 1440.0
 	hud.toast("Минув день. Ти сидів біля дороги й рахував ворон: %d." % randi_range(3, 99), Color("#d9c8ff"))
@@ -539,8 +570,11 @@ func _move_hero(delta: float) -> void:
 		hero.moving = false
 		return
 	var c := Vector2i(hero.position / CELL)
-	var sp := maxf(0.25, wd.speed_at(c))
-	var cells := WALK_CELLS_PER_SEC * sp * (1.75 if hero.running else 1.0) * delta
+	var ground := maxf(0.25, wd.speed_at(c))
+	var rides := Travel.riding()
+	hero.mount = Travel.mount().get("color", Color.TRANSPARENT) if rides else Color.TRANSPARENT
+	var sp := ground * Travel.speed_mult(ground)
+	var cells := WALK_CELLS_PER_SEC * sp * ((1.35 if rides else 1.75) if hero.running else 1.0) * delta
 	var step := dir * cells * CELL
 	var np := hero.position + step
 	var moved := false
@@ -703,6 +737,8 @@ func _unhandled_input(event: InputEvent) -> void:
 				save()
 			KEY_T:
 				wait_day()
+			KEY_X:
+				hud.toast(Travel.toggle_ride(), Color("#ffe6b3"))
 			KEY_J:
 				hud.open_chronicle()
 			KEY_I:
@@ -976,6 +1012,53 @@ func _selftest() -> void:
 		while dungeon != null:
 			await tree.process_frame
 		Selftest.step("mining", Player.ore_value(pl) > ore0, "руда на %d 💰" % Player.ore_value(pl))
+	# стайня й гавань
+	var plx := Player.ensure(Game.state)
+	plx.gold = int(plx.gold) + 6000
+	plx.lvl = maxi(int(plx.lvl), 15)
+	var berr := Travel.buy_mount("horse")
+	Selftest.step("stable", berr == "" and Travel.riding() and Travel.speed_mult(1.0) > 1.5 and Travel.speed_mult(0.3) < Travel.speed_mult(1.0), berr)
+	var hb0: Dictionary = {}
+	for bb in Travel.harbors(wd):
+		if wd.comp[int(bb.y) * Defs.W + int(bb.x)] == wd.main_land:
+			hb0 = bb
+			break
+	if not hb0.is_empty():
+		hero.position = Vector2(hb0.x + 0.5, hb0.y + 3.5) * CELL
+		_zoom_target = 3.0
+		var tp := Vector2(hb0.x + 0.5, hb0.y + 3.5)
+		for dx in range(1, 12):
+			if wd.walkable(Vector2i(tp + Vector2(dx, 0))):
+				go_to_cell(Vector2i(tp + Vector2(dx, 0)))
+		await tree.create_timer(1.2).timeout
+		Selftest.shot(self, "22_riding")
+		_path.clear()
+		hud.open_stable(hb0)
+		await tree.create_timer(0.6).timeout
+		Selftest.shot(self, "23_stable")
+		hud.open_harbor(hb0)
+		await tree.create_timer(0.6).timeout
+		Selftest.shot(self, "24_harbor")
+		var rts := Travel.routes(wd, hb0)
+		var dest: Dictionary = {}
+		for r in rts:
+			if r.other:
+				dest = r.b
+				break
+		if dest.is_empty() and not rts.is_empty():
+			dest = rts[0].b
+		var g0 := int(plx.gold)
+		var m0 := float(Game.state.minutes)
+		var serr := sail_to(hb0, dest) if not dest.is_empty() else "немає маршрутів"
+		var t_end2 := Time.get_ticks_msec() + 5000
+		while town == null and Time.get_ticks_msec() < t_end2:
+			await tree.process_frame
+		await tree.create_timer(1.0).timeout
+		Selftest.step("voyage", serr == "" and hero_cell().distance_to(Vector2(dest.x, dest.y)) < 4.0 and float(Game.state.minutes) > m0 + 600.0 and town != null, "%s → %s, маршрутів %d, золото %d → %d %s" % [hb0.name, dest.get("name", "-"), rts.size(), g0, int(plx.gold), serr])
+		Selftest.shot(town if town != null else self, "25_after_voyage")
+		if town != null:
+			town.leave()
+		await tree.process_frame
 	if OS.get_environment("ISEKAY_REVEALALL") == "1":
 		reveal_all()
 		var busiest: Dictionary = {}

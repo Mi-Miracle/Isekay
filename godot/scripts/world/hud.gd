@@ -156,7 +156,7 @@ func _build_hud() -> void:
 	_prompt.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_root.add_child(_prompt)
 
-	_hints = Game.make_label("WASD — рух · Shift — біг · ЛКМ — іти сюди · E — дія · I — спорядження · H — дім · L — землі · M — мапа · Tab — держави · K — королівства · J — хроніка · T — чекати день · F5 — зберегти · Esc — меню", 15, Color(1, 1, 1, 0.75), 4)
+	_hints = Game.make_label("WASD — рух · Shift — біг · ЛКМ — іти сюди · E — дія · I — спорядження · H — дім · L — землі · M — мапа · Tab — держави · K — королівства · J — хроніка · X — верхи · T — чекати день · F5 — зберегти · Esc — меню", 15, Color(1, 1, 1, 0.75), 4)
 	_hints.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
 	_hints.position = Vector2(18, -34)
 	_root.add_child(_hints)
@@ -962,13 +962,15 @@ func open_service(b: Dictionary, name: String) -> void:
 			open_land(b)
 		"Маєтки":
 			open_estate_agent(b)
+		"Стайня":
+			open_stable(b)
+		"Гавань":
+			open_harbor(b)
 		_:
 			var jokes := {
 				"Наставник": "Наставник дивиться на тебе і зітхає: «Нові прийоми — в наступному оновленні. Поки що тренуй терпіння.»",
 				"Арена": "На арені сьогодні вихідний. Гладіатори грають у карти.",
 				"Колізей": "Колізей ремонтують після вчорашнього бою з драконом. Приходь пізніше.",
-				"Стайня": "Коні є, але Люмі каже: «Спершу навчися ходити». Їзда верхи — згодом.",
-				"Гавань": "Кораблі є. Капітани п'яні. Плавання — в одному з наступних оновлень.",
 			}
 			_simple_panel(name, jokes.get(name, "Тут поки зачинено."), b)
 
@@ -1228,6 +1230,65 @@ func _err(msg: String) -> bool:
 		toast(msg, Color("#ffb3b3"))
 		return true
 	return false
+
+
+func open_stable(b: Dictionary) -> void:
+	var t := Travel.st()
+	var p := Player.ensure(Game.state)
+	var pv := _vbox_panel("Стайня · %s" % b.name, 940)
+	var v: VBoxContainer = pv[1]
+	_info(v, "Конюх жує соломинку: «Верхи — вдвічі швидше. Пішки — вдвічі романтичніше. Обирай.»", 17, Color("#ffe6b3"))
+	_info(v, "💰 %d · На мапі: X — сісти верхи / злізти. Дорогою тварини мчать, у лісі й горах повільніші." % int(p.gold), 16, Game.C_GOLD)
+	for id in Travel.MOUNTS:
+		var M: Dictionary = Travel.MOUNTS[id]
+		var own: bool = t.mounts.has(id)
+		var cur: bool = own and str(t.mount) == id
+		var head := "%s %s — швидкість ×%.2f (бездоріжжя ×%.2f)" % [M.icon, M.name, float(M.speed), float(M.rough)]
+		if M.has("lvl"):
+			head += " · від %d рівня" % int(M.lvl)
+		_info(v, head + ("  ✅ зараз твій" if cur else ""), 17, Color.WHITE if own else Color(1, 1, 1, 0.9))
+		_info(v, M.desc, 15, Color(1, 1, 1, 0.65))
+		var r := _row(v)
+		if not own:
+			_small_btn(r, "Купити за %d 💰" % int(M.cost), func():
+				if not _err(Travel.buy_mount(id)):
+					toast("%s Тепер у тебе є %s! Ти вже верхи (X — злізти)." % [M.icon, M.name], Game.C_GOLD, 5.0)
+					open_stable(b), int(p.gold) < int(M.cost) or int(p.lvl) < int(M.get("lvl", 1)))
+		elif not cur:
+			_small_btn(r, "Осідлати", func():
+				Travel.choose_mount(id)
+				toast("%s Осідлано: %s." % [M.icon, M.name], Color("#ffe6b3"))
+				open_stable(b))
+	var c := _button(v, "Вийти", close_overlay)
+	_show_overlay(pv[0], 0.35)
+	c.grab_focus.call_deferred()
+
+
+func open_harbor(b: Dictionary) -> void:
+	var wd: WorldData = world.wd
+	var p := Player.ensure(Game.state)
+	var pv := _vbox_panel("Гавань · %s" % b.name, 980)
+	var v: VBoxContainer = pv[1]
+	if not Travel.is_harbor(wd, b):
+		_info(v, "Кораблів тут немає. Тільки чайки, і ті пішки.", 17)
+	else:
+		_info(v, "Капітан у капелюсі з папугою: «Квиток туди — платиш. Назад — теж платиш. Кракен — безкоштовно.»", 17, Color("#bfe6ff"))
+		_info(v, "💰 %d · Час у морі минає, як і на суші. По дорозі можуть статися пригоди." % int(p.gold), 16, Game.C_GOLD)
+		var routes := Travel.routes(wd, b)
+		if routes.is_empty():
+			_info(v, "Жодного іншого порту в Дивосвіті. Підозріло.", 16, Color("#ffb3b3"))
+		for r in routes:
+			var to: Dictionary = r.b
+			var known: bool = world.fog[int(to.y) * Defs.W + int(to.x)] > 0
+			var nm: String = to.name if known else "невідомий порт"
+			var where: String = wd.realms[to.owner].full_name if known else "на %s" % r.dir
+			var line := "⛵ %s (%s)%s — %.1f дн. · %d 💰" % [nm, where, " · 🏝️ інший берег" if r.other else "", float(r.days), int(r.fare)]
+			var row := _row(v)
+			_small_btn(row, line, func():
+				_err(world.sail_to(b, to)), int(p.gold) < int(r.fare))
+	var c := _button(v, "Вийти", close_overlay)
+	_show_overlay(pv[0], 0.35)
+	c.grab_focus.call_deferred()
 
 
 func open_estate_agent(b: Dictionary) -> void:

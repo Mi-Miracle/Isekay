@@ -20,6 +20,7 @@
 | I | спорядження |
 | H | мій дім (город, прибудови, ремесла) |
 | L | мої землі (будівлі, поселенці, казна) |
+| X | сісти верхи / злізти (тварину купують у «Стайні») |
 | T | почекати день |
 | F5 | зберегти |
 | F10 | чіт: показати всю мапу |
@@ -62,6 +63,7 @@ godot --headless --path godot --export-release "Windows Desktop" Dyvosvit.exe
 | `scripts/dungeon/dungeon.gd` | сцена підземелля/шахти: екшен-бій, ШІ ворогів (melee/swoop/lunge/ranged/slam, боси з фазами), туман із лінією зору, лут, бот для автотесту |
 | `scripts/core/guild.gd` | гільдія: дошка завдань (`clear/hunt/ore/visit`), активні квести, події `Guild.event(kind, target)`, здача, ранги F→S (`state.guild`) |
 | `scripts/town/town.gd` | сцена поселення: розкладка будівель за `Defs.SETTLEMENT[type].services`, мешканці, герої, взаємодія (E → `hud.open_service`) |
+| `scripts/core/travel.gd` | стайня (`MOUNTS`, `speed_mult`, X — `toggle_ride`) і гавань (`harbors`, `routes`, `sail` з морськими подіями `SEA_EVENTS`); стан `state.travel`; `world.sail_to(from, to)` переносить героя й заходить у місто |
 | `scripts/core/estate.gd` | дім (рівні, прибудови, город, скриня, сон), професії й ремесла (алхімія, ковальство), власні землі (хутір → замок, будівлі, поселенці, щоденний тік `land_daily`) |
 | `scripts/world/world.gd` | сцена мапи: генерація у потоці, рух героя, камера, туман, день/ніч, близькість до поселень, автотест |
 | `scripts/world/hud.gd` | інтерфейс: картка місця, годинник, міні-мапа, банери, пауза, вікна поселень/підземель, мапа світу |
