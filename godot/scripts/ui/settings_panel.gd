@@ -18,9 +18,8 @@ func _ready() -> void:
 	_toggle(v, "Вертикальна синхронізація", "vsync")
 	_toggle(v, "Показувати FPS", "show_fps")
 	_toggle(v, "Автозбереження", "auto_save")
-	var note := Game.make_label("Гучність і звук з'являться разом із музикою в наступних етапах.", 16, Color(1, 1, 1, 0.6))
-	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	v.add_child(note)
+	_slider(v, "🎵 Музика", "music_vol")
+	_slider(v, "🔔 Звуки", "sfx_vol")
 	var back := Button.new()
 	back.text = "Готово"
 	back.pressed.connect(func():
@@ -40,6 +39,34 @@ func _toggle(parent: Control, text: String, key: String) -> void:
 		Game.settings[key] = on
 		Game.save_settings())
 	parent.add_child(cb)
+
+
+func _slider(parent: Control, text: String, key: String) -> void:
+	var h := HBoxContainer.new()
+	h.add_theme_constant_override("separation", 12)
+	var l := Game.make_label(text, 21, Color.WHITE)
+	l.custom_minimum_size.x = 150
+	h.add_child(l)
+	var s := HSlider.new()
+	s.min_value = 0.0
+	s.max_value = 1.0
+	s.step = 0.05
+	s.value = float(Game.settings.get(key, 0.7))
+	s.custom_minimum_size = Vector2(240, 28)
+	s.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	s.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	var pct := Game.make_label("%d%%" % int(s.value * 100), 19, Color(1, 1, 1, 0.75))
+	pct.custom_minimum_size.x = 60
+	s.value_changed.connect(func(x: float):
+		Game.settings[key] = x
+		pct.text = "%d%%" % int(x * 100)
+		Audio.apply_volume()
+		if key == "sfx_vol":
+			Audio.sfx("coin"))
+	s.drag_ended.connect(func(_c): Game.save_settings())
+	h.add_child(s)
+	h.add_child(pct)
+	parent.add_child(h)
 
 
 func _unhandled_input(event: InputEvent) -> void:

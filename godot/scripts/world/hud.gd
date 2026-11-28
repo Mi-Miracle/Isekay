@@ -315,12 +315,31 @@ func _show_overlay(content: Control, dim: float = 0.55, center: bool = true) -> 
 	else:
 		_overlay.add_child(content)
 	get_tree().paused = true
+	Audio.sfx("open", -6.0)
+
+
+var _music_back := ""
+
+
+## Окрема музика, поки відкрите це вікно (таверна, дім); після закриття повертається попередня.
+func _overlay_music(name: String) -> void:
+	if _music_back == "":
+		_music_back = Audio.track
+	Audio.music(name)
+
+
+func _restore_music() -> void:
+	if _music_back != "" and not is_instance_valid(_overlay):
+		Audio.music(_music_back)
+		_music_back = ""
 
 
 func close_overlay() -> void:
 	if is_instance_valid(_overlay):
 		_overlay.queue_free()
 	_overlay = null
+	if _music_back != "":
+		_restore_music.call_deferred()
 	get_tree().paused = false
 
 
@@ -1029,6 +1048,7 @@ func open_guild(b: Dictionary) -> void:
 				if Guild.ready(q):
 					var txt := Guild.turn_in(i)
 					toast("📋 %s: %s" % [q.name, txt], Game.C_GOLD, 6.0)
+					Audio.sfx("quest")
 				else:
 					g.active.remove_at(i)
 				open_guild(b))
@@ -1126,6 +1146,7 @@ func open_tavern(b: Dictionary) -> void:
 		open_tavern(b))
 	var c := _button(h, "Вийти", close_overlay)
 	_show_overlay(pv[0], 0.35)
+	_overlay_music("tavern")
 	c.grab_focus.call_deferred()
 
 
@@ -1227,6 +1248,7 @@ func _info(v: Control, text: String, size := 17, col := Color.WHITE) -> Label:
 
 func _err(msg: String) -> bool:
 	if msg != "":
+		Audio.sfx("error")
 		toast(msg, Color("#ffb3b3"))
 		return true
 	return false
@@ -1253,6 +1275,7 @@ func open_stable(b: Dictionary) -> void:
 			_small_btn(r, "Купити за %d 💰" % int(M.cost), func():
 				if not _err(Travel.buy_mount(id)):
 					toast("%s Тепер у тебе є %s! Ти вже верхи (X — злізти)." % [M.icon, M.name], Game.C_GOLD, 5.0)
+					Audio.sfx("horse")
 					open_stable(b), int(p.gold) < int(M.cost) or int(p.lvl) < int(M.get("lvl", 1)))
 		elif not cur:
 			_small_btn(r, "Осідлати", func():
@@ -1379,6 +1402,7 @@ func open_house(b: Dictionary) -> void:
 					open_house(b))
 	var c := _button(v, "Вийти", close_overlay)
 	_show_overlay(pv[0], 0.4)
+	_overlay_music("home")
 	c.grab_focus.call_deferred()
 
 

@@ -51,6 +51,8 @@ var realm_col := Color.WHITE
 func setup(w, barony: Dictionary) -> void:
 	world = w
 	b = barony
+	Audio.music("town")
+	Audio.sfx("door")
 	realm_col = world.wd.realms[b.owner].color
 	match b.type:
 		"village":

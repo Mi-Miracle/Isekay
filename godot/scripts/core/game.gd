@@ -3,7 +3,7 @@ extends Node
 
 signal update_available(version: String, url: String)
 
-const VERSION := "0.7.0"
+const VERSION := "0.8.0"
 const SAVE_VERSION := 1
 const SAVE_PATH := "user://saves/slot1.json"
 const SETTINGS_PATH := "user://settings.cfg"
@@ -11,7 +11,7 @@ const CREDIT := "Розробник: Mi-Miracle · Twitch: mi_miracle"
 const REPO_RELEASES := "https://api.github.com/repos/Mi-Miracle/Isekay/releases?per_page=20"
 const TAG_PREFIX := "godot-v"
 
-var settings := {"fullscreen": false, "vsync": true, "show_fps": false, "auto_save": true}
+var settings := {"fullscreen": false, "vsync": true, "show_fps": false, "auto_save": true, "music_vol": 0.55, "sfx_vol": 0.8}
 
 ## Поточна гра. hero_cell — позиція героя в клітинках (дробова).
 var state: Dictionary = {}

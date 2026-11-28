@@ -144,6 +144,9 @@ func _load_floor(n: int) -> void:
 	map_layer.queue_redraw()
 	var title := "%s · рівень %d" % [info.name, n] if info.kind == "mine" else "%s · поверх %d/%d" % [info.name, n, info.floors]
 	_say("%s%s" % [title, " — тут сидить бос!" if L.boss else ""], 3.0)
+	Audio.music("boss" if L.boss else "dark")
+	if n > 1:
+		Audio.sfx("stairs")
 
 
 func _make_enemy(sp: Dictionary) -> Dictionary:
@@ -275,6 +278,7 @@ func attack() -> void:
 		return
 	var B: Dictionary = C.basic
 	atk_cd = float(B.cd) / (1.25 if rage_t > 0 else 1.0)
+	Audio.sfx("swing", -2.0, 0.12)
 	var hit := false
 	if B.type == "projectile":
 		_shoot(facing, float(B.speed), float(B.power), float(B.r), Color(B.col), int(B.pierce))
@@ -294,6 +298,7 @@ func dash(dir: Vector2) -> void:
 		return
 	dash_cd = 0.75
 	dash_t = 0.17
+	Audio.sfx("dash", -3.0)
 	dash_dir = dir.normalized()
 	invuln = 0.3
 	fx.append({"type": "dust", "pos": hero.position, "t": 0.35})
@@ -314,6 +319,7 @@ func cast_skill(i: int) -> void:
 		return
 	p.mp = float(p.mp) - float(S.mp)
 	skill_cd[i] = float(S.cd)
+	Audio.sfx("magic")
 	var col := Color(S.get("col", "#ffffff"))
 	var mouse := get_global_mouse_position() if not bot else hero.position + facing * 140.0
 	match S.type:
@@ -398,6 +404,7 @@ func drink_potion() -> void:
 		return
 	p.potions = int(p.potions) - 1
 	p.hp = minf(Player.max_hp(p), float(p.hp) + Player.max_hp(p) * 0.45)
+	Audio.sfx("potion")
 	_float_text(hero.position + Vector2(0, -40), "+зілля", Color("#7dff9a"))
 
 
@@ -407,6 +414,7 @@ func drink_ether() -> void:
 		return
 	p.ethers = int(p.ethers) - 1
 	p.mp = minf(Player.max_mp(p), float(p.mp) + Player.max_mp(p) * 0.6)
+	Audio.sfx("potion", 0.0, 0.0)
 	_float_text(hero.position + Vector2(0, -40), "+ефір", Color("#7ad7ff"))
 
 
@@ -452,6 +460,7 @@ func interact() -> void:
 	for c in L.chests:
 		if not c.open and Vector2(ht).distance_to(Vector2(c.pos)) < 1.6:
 			c.open = true
+			Audio.sfx("chest")
 			var g: int = c.gold
 			p.gold = int(p.gold) + g
 			stats.gold += g
@@ -478,6 +487,7 @@ func _damage_enemy(e: Dictionary, dmg: float, knock: Vector2, crit: bool = false
 	if not e.boss:
 		e.vel += knock
 	stats.dmg_dealt += dmg
+	Audio.sfx("crit" if crit else "hit", -1.0, 0.15)
 	_float_text(e.pos + Vector2(randf_range(-8, 8), -30 * float(e.size)), ("%d!" if crit else "%d") % int(dmg), Color("#ffd36e") if crit else Color.WHITE)
 	if float(e.hp) <= 0:
 		_kill(e)
@@ -485,6 +495,9 @@ func _damage_enemy(e: Dictionary, dmg: float, knock: Vector2, crit: bool = false
 
 func _kill(e: Dictionary) -> void:
 	stats.kills += 1
+	Audio.sfx("kill", -2.0, 0.12)
+	if e.boss:
+		Audio.sfx("roar", 2.0, 0.0)
 	p.kills = int(p.kills) + 1
 	var xp: int = int(e.xp * (1.2 if p.get("rested", false) else 1.0))
 	stats.xp += xp
@@ -512,6 +525,7 @@ func _hurt_hero(dmg: float) -> void:
 	p.hp = float(p.hp) - real
 	invuln = 0.55
 	hurt_flash = 0.18
+	Audio.sfx("hurt")
 	_float_text(hero.position + Vector2(0, -44), "-%d" % int(real), Color("#ff7a7a"))
 	cam.offset = Vector2(randf_range(-5, 5), randf_range(-5, 5))
 	get_tree().create_timer(0.08).timeout.connect(func(): if is_instance_valid(cam): cam.offset = Vector2.ZERO)
@@ -641,6 +655,7 @@ func _boss_burst(e: Dictionary) -> void:
 	var half: bool = float(e.hp) < float(e.max) * 0.5
 	if half and int(e.phase) == 1:
 		e.phase = 2
+		Audio.sfx("roar", 3.0, 0.0)
 		_say("😡 %s розлютився! Друга фаза!" % e.name, 2.0)
 	var n := 16 if half else 10
 	var off := randf() * TAU
@@ -724,6 +739,7 @@ func _pickup() -> void:
 func _on_boss_dead() -> void:
 	floor_cleared = true
 	stats.cleared = true
+	Audio.sfx("quest")
 	for q in Guild.event("clear", int(info.id)):
 		_float_text(hero.position + Vector2(0, -80), "📋 %s ✅" % q.name, Game.C_GOLD)
 	var first: bool = not p.cleared.has(int(info.id))
@@ -752,6 +768,7 @@ func _near_veins(radius: float) -> Array:
 func _mine_vein(c: Vector2i) -> void:
 	var v: Dictionary = L.veins[c]
 	v.hits = int(v.hits) - 1
+	Audio.sfx("mine", -2.0, 0.1)
 	fx.append({"type": "spark", "pos": (Vector2(c) + Vector2(0.5, 0.5)) * TILE, "t": 0.25, "col": Player.ORES[v.ore].color})
 	if int(v.hits) > 0:
 		return

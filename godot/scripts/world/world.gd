@@ -45,6 +45,9 @@ var _last_landmark := -2
 var _near: Dictionary = {}
 var _near_kind := ""
 var _autosave_t := 0.0
+var _mood_t := 0.0
+var _mood_pending := ""
+var _mood_n := 0
 
 
 func _ready() -> void:
@@ -81,6 +84,8 @@ func _on_generated(data: WorldData) -> void:
 	_ready_done = true
 	hud.hide_loading()
 	_update_location(true)
+	Audio.resync()
+	_world_music(true)
 	if Game.state.get("intro_done", false) == false:
 		Game.state.intro_done = true
 		hud.banner("Ласкаво просимо до Дивосвіту", "%s, вантажівка-кун зробила свою справу. Люмі передає привіт і нагадує: M — мапа, Esc — меню." % Game.state.hero_name)
@@ -374,6 +379,10 @@ func _process(delta: float) -> void:
 	hud.set_clock(Game.time_text(Game.state.minutes))
 	hud.set_player(Player.short(Player.ensure(Game.state)) + ((" · " + str(Travel.mount().icon)) if Travel.riding() else ""))
 	_update_near()
+	_mood_t += delta
+	if _mood_t > 1.0:
+		_mood_t = 0.0
+		_world_music(false)
 	_autosave_t += delta
 	if _autosave_t > 180.0 and Game.settings.auto_save:
 		_autosave_t = 0.0
@@ -464,6 +473,8 @@ func _on_town_done() -> void:
 	set_process(true)
 	hud.set_town_mode(false)
 	cam.make_current()
+	Audio.sfx("door")
+	_world_music(true)
 
 
 func enter_dungeon(dinfo: Dictionary) -> void:
@@ -494,6 +505,7 @@ func _on_dungeon_done(st: Dictionary, dinfo: Dictionary) -> void:
 	_lab_cl.visible = true
 	set_process(true)
 	cam.make_current()
+	_world_music(true)
 	var p := Player.ensure(Game.state)
 	p.blessed = false
 	p.elixir = false
@@ -539,6 +551,7 @@ func sail_to(from: Dictionary, to: Dictionary) -> String:
 	_tick_days()
 	hud.set_clock(Game.time_text(Game.state.minutes))
 	hud.set_player(Player.short(Player.ensure(Game.state)))
+	Audio.sfx("sail")
 	hud.toast(res.text, Color("#bfe6ff"), 6.0)
 	hud.banner("⛵ %s" % to.name, "Пливли %.1f дн. за %d 💰 · %s" % [res.days, res.fare, wd.realms[to.owner].full_name])
 	enter_town.call_deferred(to)
@@ -605,6 +618,43 @@ func _move_hero(delta: float) -> void:
 		_last_cell = nc
 		_reveal(false)
 		_update_location(false)
+
+
+## Музика мапи за місцевістю довкола героя (більшість клітинок у радіусі 3). Перемикається,
+## лише коли новий настрій тримається кілька секунд, щоб не смикалась на межі лісу.
+func _world_music(now: bool) -> void:
+	if town != null or dungeon != null or wd == null:
+		return
+	var c := Vector2i(hero_cell())
+	var b := wd.barony_at(c)
+	var demon: bool = not b.is_empty() and pol.is_demon(int(b.owner))
+	var votes := {}
+	for y in range(-3, 4):
+		for x in range(-3, 4):
+			var t := wd.terrain_at(c + Vector2i(x, y))
+			if Defs.is_land(t):
+				var m := Audio.world_mood(t, demon)
+				votes[m] = int(votes.get(m, 0)) + 1
+	var best := "field"
+	var bn := 0
+	for m in votes:
+		if int(votes[m]) > bn:
+			bn = int(votes[m])
+			best = m
+	if now or Audio.track == "" or Audio.track == "title":
+		Audio.music(best)
+		_mood_pending = ""
+		return
+	if best == Audio.track:
+		_mood_pending = ""
+		return
+	if best != _mood_pending:
+		_mood_pending = best
+		_mood_n = 0
+	_mood_n += 1
+	if _mood_n >= 3:
+		Audio.music(best)
+		_mood_pending = ""
 
 
 func _reveal(force: bool) -> void:
@@ -739,6 +789,8 @@ func _unhandled_input(event: InputEvent) -> void:
 				wait_day()
 			KEY_X:
 				hud.toast(Travel.toggle_ride(), Color("#ffe6b3"))
+				if Travel.riding():
+					Audio.sfx("horse")
 			KEY_J:
 				hud.open_chronicle()
 			KEY_I:
@@ -764,6 +816,14 @@ func _unhandled_input(event: InputEvent) -> void:
 func _selftest() -> void:
 	var tree := get_tree()
 	Selftest.step("world_generated", wd.baronies.size() > 200 and wd.realms.size() > 5, wd.stats())
+	var missing: Array = []
+	for nm in ["swing", "dash", "hit", "crit", "hurt", "kill", "coin", "buy", "levelup", "quest", "click", "open", "error", "door", "chest", "mine", "potion", "magic", "sail", "roar", "stairs", "horse"]:
+		if not ResourceLoader.exists(Audio.SFX_DIR + nm + ".wav"):
+			missing.append(nm)
+	for nm in ["title", "field", "forest", "desert", "winter", "town", "tavern", "home", "dark", "battle", "boss", "sea", "demon"]:
+		if not ResourceLoader.exists(Audio.MUSIC_DIR + nm + ".ogg"):
+			missing.append(nm)
+	Selftest.step("audio_world", missing.is_empty() and Audio.track in ["field", "forest", "desert", "winter", "demon"], "трек %s, бракує: %s" % [Audio.track, missing])
 	await tree.create_timer(2.0).timeout
 	Selftest.shot(self, "02_world_start")
 	var sb: Dictionary = wd.baronies[wd.start_barony]
@@ -869,10 +929,13 @@ func _selftest() -> void:
 	Selftest.shot(self, "04g_land")
 	hud.close_overlay()
 	var n_bld := town.buildings.size()
+	await tree.process_frame
+	await tree.process_frame
+	var town_track := Audio.track
 	town.leave()
 	while town != null:
 		await tree.process_frame
-	Selftest.step("town", n_bld >= 3, "%d будівель" % n_bld)
+	Selftest.step("town", n_bld >= 3 and town_track == "town", "%d будівель, музика %s → %s" % [n_bld, town_track, Audio.track])
 	_zoom_target = 0.6
 	toggle_realms()
 	await tree.create_timer(1.5).timeout
@@ -965,6 +1028,7 @@ func _selftest() -> void:
 	enter_dungeon(dungeon_info(dsel))
 	await tree.create_timer(4.0).timeout
 	Selftest.shot(dungeon, "17_dungeon_fight")
+	Selftest.step("audio_dungeon", Audio.track in ["dark", "boss"], Audio.track)
 	await tree.create_timer(8.0).timeout
 	Selftest.shot(dungeon, "18_dungeon_later")
 	if dungeon != null:

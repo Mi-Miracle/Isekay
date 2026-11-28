@@ -11,6 +11,7 @@ var _line_i := 0
 
 func _ready() -> void:
 	theme = Game.theme
+	Audio.music("title")
 	_bg = MenuBackground.new()
 	_bg.set_anchors_preset(Control.PRESET_FULL_RECT)
 	add_child(_bg)
