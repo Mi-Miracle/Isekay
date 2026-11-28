@@ -28,6 +28,7 @@ const THEMES := {
 	"fey": {"floor": Color("#5a4a70"), "wall": Color("#2c1f3d"), "tint": Color("#ffc4f0")},
 	"crystal": {"floor": Color("#4a5476"), "wall": Color("#1f2342"), "tint": Color("#d8d0ff")},
 	"minecave": {"floor": Color("#5a4b3e"), "wall": Color("#2a211a"), "tint": Color.WHITE},
+	"arena": {"floor": Color("#a08660"), "wall": Color("#4a3a52"), "tint": Color.WHITE},
 }
 
 const MONSTERS := {
@@ -61,6 +62,8 @@ static func generate(seed_v: int, opts: Dictionary) -> Dictionary:
 	L.tiles.resize(W * H)
 	if mine:
 		_caves(L, rng)
+	elif opts.get("ambush", {}).get("arena", false):
+		_arena(L)
 	else:
 		_rooms(L, rng)
 	var floor_i: int = opts.get("floor", 1)
@@ -100,10 +103,13 @@ static func generate(seed_v: int, opts: Dictionary) -> Dictionary:
 		L.boss = true
 		L.stairs = Vector2i(-1, -1)
 		var bpos: Vector2i = floor_cells.pop_back() if not floor_cells.is_empty() else far
+		if amb.get("arena", false):
+			bpos = far
+			floor_cells = [far + Vector2i(0, -3), far + Vector2i(0, 3), far + Vector2i(-2, -2)]
 		var bk: String = amb.get("boss_kind", pool[0])
 		L.spawns.append({"pos": bpos, "kind": bk, "lvl": lvl, "boss": true, "name": amb.get("boss_name", MONSTERS[bk].name)})
 		for i in mini(int(amb.get("n", 1)) - 1, floor_cells.size()):
-			L.spawns.append({"pos": floor_cells[i], "kind": bk if rng.chance(0.6) else pool[rng.rangei(0, pool.size() - 1)], "lvl": lvl, "boss": false})
+			L.spawns.append({"pos": floor_cells[i], "kind": bk if (rng.chance(0.6) or amb.get("arena", false)) else pool[rng.rangei(0, pool.size() - 1)], "lvl": lvl, "boss": false})
 		L.ambush = true
 		return L
 	var n_mobs := (10 if mine else 14) + floor_i * 2 + mini(8, lvl / 4)
@@ -160,6 +166,15 @@ static func _carve(L: Dictionary, r: Rect2i) -> void:
 		for x in range(r.position.x, r.end.x):
 			if x > 0 and y > 0 and x < W - 1 and y < H - 1:
 				L.tiles[y * W + x] = Tile.FLOOR
+
+
+## Арена Колізею: одна велика зала, герой ліворуч, суперник праворуч.
+static func _arena(L: Dictionary) -> void:
+	var r := Rect2i(12, 10, 32, 20)
+	_carve(L, r)
+	L.rooms = [r]
+	L.start = Vector2i(r.position.x + 3, r.get_center().y)
+	L.far = Vector2i(r.end.x - 4, r.get_center().y)
 
 
 static func _rooms(L: Dictionary, rng: Rng) -> void:

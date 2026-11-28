@@ -526,7 +526,11 @@ func _on_dungeon_done(st: Dictionary, dinfo: Dictionary) -> void:
 	p.blessed = false
 	p.elixir = false
 	p.rested = false
-	Game.state.minutes = float(Game.state.minutes) + 120.0 + 60.0 * st.kills / 4.0
+	Game.state.minutes = float(Game.state.minutes) + (30.0 if dinfo.has("colos") else 120.0 + 60.0 * st.kills / 4.0)
+	if dinfo.has("colos"):
+		_on_colos_done(st)
+		save()
+		return
 	if st.died:
 		var lost := int(int(p.gold) * 0.25)
 		p.gold = int(p.gold) - lost
@@ -565,6 +569,31 @@ func _on_dungeon_done(st: Dictionary, dinfo: Dictionary) -> void:
 	save()
 
 
+func _on_colos_done(st: Dictionary) -> void:
+	var p := Player.ensure(Game.state)
+	var run := colos_run
+	if run.is_empty():
+		return
+	var f := Colosseum.foe(run)
+	if st.died or not st.cleared:
+		Colosseum.lose(run)
+		colos_run = {}
+		p.hp = Player.max_hp(p) * 0.5
+		hud.banner("Вибув у раунді %d" % (int(run.round) + 1), "%s %s переміг. Натовп співчутливо свистить. Ніхто не помер — це ж шоу!" % [f.icon, f.name])
+		_colos_back()
+		return
+	Bonds.on_win(2.0)
+	if Colosseum.win_round(run):
+		var lines := Colosseum.finish(run)
+		var c := Colosseum.cup(run.cup)
+		colos_run = {}
+		Audio.sfx("levelup")
+		hud.banner("%s %s твій!" % [c.icon, c.name], " · ".join(PackedStringArray(lines)))
+		_colos_back()
+		return
+	hud.open_colos_round.call_deferred()
+
+
 ## Плавання з порту from до to: вийти з міста, «пропливти» (час, подія), зійти на берег і зайти в місто.
 func sail_to(from: Dictionary, to: Dictionary) -> String:
 	var res := Travel.sail(wd, from, to)
@@ -599,6 +628,44 @@ func sail_to(from: Dictionary, to: Dictionary) -> String:
 
 var _ambush_fx: Dictionary = {}
 var _chapter_id := ""
+var colos_run: Dictionary = {}
+var _colos_town: Dictionary = {}
+
+
+# ---------------------------------------------------------------- Колізей
+
+func start_cup(key: String, b: Dictionary) -> String:
+	var err := Colosseum.can_enter(key)
+	if err != "":
+		return err
+	colos_run = Colosseum.start(key)
+	_colos_town = b
+	colos_fight()
+	return ""
+
+
+func colos_fight() -> void:
+	var p := Player.ensure(Game.state)
+	p.hp = maxf(float(p.hp), Player.max_hp(p) * 0.3)
+	Audio.sfx("roar", -4.0, 0.0)
+	enter_dungeon(Colosseum.round_info(colos_run, wd.world_seed))
+
+
+## Здатися між раундами — без призу.
+func colos_give_up() -> void:
+	Colosseum.lose(colos_run)
+	colos_run = {}
+	hud.close_overlay()
+	hud.toast("🏳️ Ти вклонився публіці й пішов. Хтось кинув тобі вслід помідор. Співчутливо.", Color(1, 1, 1, 0.8), 5.0)
+	_colos_back()
+
+
+## Після турніру — назад у місто, де Колізей.
+func _colos_back() -> void:
+	if not _colos_town.is_empty():
+		var b := _colos_town
+		_colos_town = {}
+		enter_town.call_deferred(b)
 
 
 ## Бій із боса розділу історії легенди (легенда точно в загоні).
@@ -1267,7 +1334,11 @@ func _selftest() -> void:
 	hud.close_overlay()
 	pl.hp = Player.max_hp(pl)
 	enter_dungeon(dungeon_info(dsel))
-	await tree.create_timer(5.0).timeout
+	await tree.create_timer(2.0).timeout
+	var t_al := Time.get_ticks_msec() + 15000
+	while dungeon != null and dungeon.ally_hits == 0 and Time.get_ticks_msec() < t_al:
+		await tree.process_frame
+	await tree.create_timer(0.8).timeout
 	var n_al: int = dungeon.allies.size() if dungeon != null else 0
 	if dungeon != null:
 		Selftest.shot(dungeon, "36_allies")
@@ -1295,6 +1366,54 @@ func _selftest() -> void:
 	Selftest.shot(self, "37_chapter_done")
 	hud.close_overlay()
 	Selftest.step("legend_chapter", int(Bonds.known("ariel").ch) == 3 and int(Bonds.known("ariel").sig) == 2, "розділ %d, прийом %d, бій: ворогів %d" % [int(Bonds.known("ariel").ch), int(Bonds.known("ariel").sig), int(last_dungeon.kills)])
+	# Колізей
+	var capb: Dictionary = {}
+	for bb in wd.baronies:
+		if bb.type == "capital":
+			capb = bb
+			break
+	pl.lvl = maxi(int(pl.lvl), 12)
+	pl.gold = int(pl.gold) + 500
+	hud.open_colosseum(capb)
+	await tree.create_timer(0.6).timeout
+	Selftest.shot(self, "38_colosseum")
+	hud.close_overlay()
+	var g_before := int(pl.gold)
+	var cerr := start_cup("bronze", capb)
+	var rounds_won := 0
+	var shot_round := false
+	var shot_arena := false
+	var t_col := Time.get_ticks_msec() + 120000
+	while not colos_run.is_empty() and Time.get_ticks_msec() < t_col:
+		await tree.create_timer(0.4).timeout
+		if dungeon != null:
+			dungeon.invuln = 9999.0
+			dungeon.shield_t = 9999.0
+			if not shot_arena:
+				await tree.create_timer(1.0).timeout
+				if dungeon != null:
+					Selftest.shot(dungeon, "39_arena")
+				shot_arena = true
+			while dungeon != null and Time.get_ticks_msec() < t_col:
+				await tree.process_frame
+			rounds_won += 1
+		elif not colos_run.is_empty() and hud.is_modal():
+			if not shot_round:
+				Selftest.shot(self, "40_colos_round")
+				shot_round = true
+			hud.close_overlay()
+			colos_fight()
+	await tree.create_timer(1.0).timeout
+	Selftest.shot(town if town != null else self, "41_cup_won")
+	var titles: Array = Colosseum.st().titles
+	if town != null:
+		town.leave()
+		await tree.process_frame
+	var brng := RandomNumberGenerator.new()
+	brng.seed = 3
+	var gbet := int(pl.gold)
+	var bres := Colosseum.bet(Colosseum.bet_match(brng), 0, 50, brng)
+	Selftest.step("colosseum", cerr == "" and titles.has("Новачок арени") and rounds_won >= 3 and int(pl.gold) != gbet and not bres.has("err") and Colosseum.can_enter("bronze") != "", "раундів %d, титули %s, золото %d → %d, ставка: %s" % [rounds_won, titles, g_before, int(pl.gold), "виграш %d" % int(bres.gain) if bres.get("won", false) else "програш"])
 	await tree.create_timer(0.8).timeout
 	Selftest.shot(self, "33_after_depths")
 	# стайня й гавань

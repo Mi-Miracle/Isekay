@@ -997,13 +997,14 @@ func open_service(b: Dictionary, name: String) -> void:
 			open_estate_agent(b)
 		"Стайня":
 			open_stable(b)
+		"Колізей":
+			open_colosseum(b)
 		"Гавань":
 			open_harbor(b)
 		_:
 			var jokes := {
 				"Наставник": "Наставник дивиться на тебе і зітхає: «Нові прийоми — в наступному оновленні. Поки що тренуй терпіння.»",
 				"Арена": "На арені сьогодні вихідний. Гладіатори грають у карти.",
-				"Колізей": "Колізей ремонтують після вчорашнього бою з драконом. Приходь пізніше.",
 			}
 			_simple_panel(name, jokes.get(name, "Тут поки зачинено."), b)
 
@@ -1266,6 +1267,90 @@ func _err(msg: String) -> bool:
 		toast(msg, Color("#ffb3b3"))
 		return true
 	return false
+
+
+# ---------------------------------------------------------------- Колізей
+
+func open_colosseum(b: Dictionary) -> void:
+	var s := Colosseum.st()
+	var p := Player.ensure(Game.state)
+	var pv := _vbox_panel("🏟️ Колізей · %s" % b.name, 980)
+	var v: VBoxContainer = pv[1]
+	_info(v, "Розпорядник у золотому плащі: «Пісок, кров, слава! Ну, переважно пісок.»", 17, Color("#ffe6b3"))
+	var tt := Colosseum.best_title()
+	_info(v, "💰 %d · Рів. %d · Кубків здобуто: %d%s" % [int(p.gold), int(p.lvl), int(s.wins), (" · Титул: «%s»" % tt) if tt != "" else ""], 16, Game.C_GOLD)
+	_info(v, "Між раундами відновлюється 40% ❤ і ✦. Поразка не вбиває — просто вибуваєш без призу. Легенди із загону б'ються поруч.", 15, Color(1, 1, 1, 0.6))
+	for c in Colosseum.CUPS:
+		var err := Colosseum.can_enter(c.key)
+		var r := _row(v)
+		_small_btn(r, "%s %s — %d раунд(и) · з %d рів. · внесок %d 💰 → приз %d 💰" % [c.icon, c.name, c.lvl_add.size(), int(c.min_lvl), int(c.fee), int(c.prize)], func():
+			if not _err(world.start_cup(c.key, b)):
+				pass, err != "")
+		if err != "" and int(p.lvl) >= int(c.min_lvl):
+			_info(v, err, 14, Color(1, 1, 1, 0.5))
+	var br := _row(v)
+	_small_btn(br, "🎰 Ставки на бої гладіаторів", func(): open_bets(b))
+	var c2 := _button(v, "Вийти", close_overlay)
+	_show_overlay(pv[0], 0.4)
+	c2.grab_focus.call_deferred()
+
+
+## Між раундами: хто наступний, продовжити чи здатися.
+func open_colos_round() -> void:
+	var run: Dictionary = world.colos_run
+	if run.is_empty():
+		return
+	var c := Colosseum.cup(run.cup)
+	var f := Colosseum.foe(run)
+	var p := Player.ensure(Game.state)
+	var pv := _vbox_panel("%s Раунд %d/%d" % [c.icon, int(run.round) + 1, Colosseum.rounds(run)], 820)
+	var v: VBoxContainer = pv[1]
+	_info(v, "Натовп реве! Ти переміг і трохи віддихався (+40% ❤ і ✦).", 17, Color("#ffe6b3"))
+	_info(v, "Наступний суперник: %s %s%s" % [f.icon, f.name, " — ФІНАЛ!" if int(run.round) == Colosseum.rounds(run) - 1 else ""], 22, Game.C_GOLD)
+	_info(v, "«%s»" % f.line, 18, Color("#ffd6ec"))
+	_info(v, "❤ %d/%d · ✦ %d · 🧪 %d" % [int(p.hp), int(Player.max_hp(p)), int(p.mp), int(p.potions)], 16, Color.WHITE)
+	var h := _row(v)
+	var go := _small_btn(h, "⚔️ На арену!", func():
+		close_overlay()
+		world.colos_fight())
+	_small_btn(h, "🏳️ Здатися (без призу)", world.colos_give_up)
+	_show_overlay(pv[0], 0.5)
+	go.grab_focus.call_deferred()
+
+
+## Ставки: два гладіатори, коефіцієнти, до 3 ставок на день.
+func open_bets(b: Dictionary, m: Dictionary = {}) -> void:
+	if m.is_empty():
+		m = Colosseum.bet_match()
+	var s := Colosseum.st()
+	var p := Player.ensure(Game.state)
+	var left := Colosseum.BETS_PER_DAY - (int(s.bets) if int(s.bet_day) == Colosseum.today() else 0)
+	var pv := _vbox_panel("🎰 Ставки", 900)
+	var v: VBoxContainer = pv[1]
+	_info(v, "Букмекер-гоблін шепоче: «Чесна гра! Майже. Ну, чесніша, ніж у тітки Глашки.»", 16, Color("#ffe6b3"))
+	_info(v, "💰 %d · ставок сьогодні лишилось: %d" % [int(p.gold), left], 16, Game.C_GOLD)
+	var sides := [[m.a, float(m.pa)], [m.b, 1.0 - float(m.pa)]]
+	for i in 2:
+		var g: Dictionary = sides[i][0]
+		var ch: float = sides[i][1]
+		_info(v, "%s %s — шанс %d%%, виплата ×%.2f · «%s»" % [g.icon, g.name, int(ch * 100), Colosseum.payout(ch), g.line], 17, Color.WHITE)
+		var r := _row(v)
+		for amt in Colosseum.BETS:
+			_small_btn(r, "%d 💰 на %s" % [amt, g.name.split(" ")[0]], func():
+				var res := Colosseum.bet(m, i, amt)
+				if _err(str(res.get("err", ""))):
+					return
+				if res.won:
+					toast("🎉 Переміг %s %s! Ти виграв %d 💰." % [res.winner.icon, res.winner.name, int(res.gain)], Game.C_GOLD, 5.0)
+					Audio.sfx("quest")
+				else:
+					toast("😩 Переміг %s %s. Твої %d 💰 пішли на корм левам." % [res.winner.icon, res.winner.name, amt], Color("#ffb3b3"), 5.0)
+				open_bets(b), left <= 0 or int(p.gold) < amt)
+	var h := _row(v)
+	_small_btn(h, "🔄 Інша пара", func(): open_bets(b))
+	var c := _small_btn(h, "Назад", func(): open_colosseum(b))
+	_show_overlay(pv[0], 0.4)
+	c.grab_focus.call_deferred()
 
 
 # ---------------------------------------------------------------- легенди-супутники

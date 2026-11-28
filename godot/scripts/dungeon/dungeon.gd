@@ -155,6 +155,8 @@ func _load_floor(n: int) -> void:
 	_last_tile = Vector2i(-99, -99)
 	map_layer.queue_redraw()
 	var title := "%s · рівень %d" % [info.name, n] if info.kind == "mine" else "%s · поверх %d/%d" % [info.name, n, info.floors]
+	if info.has("colos"):
+		title = "%s — %s виходить на пісок! Натовп реве!" % [info.name, info.ambush.boss_name]
 	if info.kind == "depths":
 		var dp := depths_state()
 		dp.max = maxi(int(dp.max), n)
@@ -560,13 +562,16 @@ func _update_allies(delta: float) -> void:
 		if float(a.sig_cd) <= 0.0:
 			a.sig_cd = 14.0
 			var S: Dictionary = a.sig
-			var pw := float(S.power) * float(a.sig_mult)
+			# серійні прийоми (hits) — сумарна сила; лікувальні (heal) — частка здоров'я героя
+			var pw := float(S.get("power", 1.0)) * float(S.get("hits", 1)) * float(a.sig_mult)
+			if S.has("heal") and S.target != "party":
+				p.hp = minf(Player.max_hp(p), float(p.hp) + Player.max_hp(p) * 0.08 * float(S.heal))
 			match str(S.target):
 				"all":
 					_area_hit(tgt.pos, TILE * 2.6, float(a.atk) / maxf(1.0, hero_atk()) * pw * 0.8, 200.0)
 					fx.append({"type": "ring", "pos": tgt.pos, "t": 0.45, "r": TILE * 2.6, "col": Color("#ffd6ec")})
 				"party":
-					var h := Player.max_hp(p) * 0.25 * float(a.sig_mult)
+					var h := Player.max_hp(p) * 0.16 * float(S.get("heal", 1.2)) * float(a.sig_mult)
 					p.hp = minf(Player.max_hp(p), float(p.hp) + h)
 					p.mp = minf(Player.max_mp(p), float(p.mp) + Player.max_mp(p) * 0.2)
 					fx.append({"type": "ring", "pos": hero.position, "t": 0.5, "r": TILE * 1.6, "col": Color("#9dffb0")})
@@ -880,7 +885,7 @@ func _on_boss_dead() -> void:
 		return
 	stats.cleared = true
 	if info.has("ambush"):
-		_say("🏆 Засідку відбито! Повертаємось на дорогу…", 2.5)
+		_say("🏆 Перемога! Натовп реве й кидає квіти (і один чобіт)." if info.has("colos") else "🏆 Засідку відбито! Повертаємось на дорогу…", 2.5)
 		get_tree().create_timer(2.5).timeout.connect(func(): if not done: leave(false))
 		return
 	for q in Guild.event("clear", int(info.id)):
@@ -1193,6 +1198,8 @@ func _build_ui() -> void:
 
 func _update_ui() -> void:
 	_top.text = "%s · рівень %d" % [info.name, floor_i] if info.kind == "mine" else "%s · поверх %d/%d" % [info.name, floor_i, int(info.floors)]
+	if info.has("colos"):
+		_top.text = str(info.name)
 	if info.kind == "depths":
 		_top.text = "%s · рівень %d/100 · 🏁 %d" % [info.name, floor_i, int(depths_state().best)]
 	_hp_bar.max_value = Player.max_hp(p)
