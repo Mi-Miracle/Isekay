@@ -1,5 +1,5 @@
 ## Підземелля й шахти: екшен-бій у реальному часі просто на рівні.
-## WASD — рух, ЛКМ/Пробіл — удар, Shift/ПКМ — ривок, Q — магічний снаряд, R/1 — зілля, 2 — ефір,
+## WASD — рух, ЛКМ/Пробіл — удар, Shift/ПКМ — ривок, Q/F/V — навички класу, R/1 — зілля, 2 — ефір,
 ## E — скриня/сходи/вихід/жила, Esc — пауза.
 class_name Dungeon
 extends Node2D
@@ -37,7 +37,11 @@ var atk_cd := 0.0
 var dash_cd := 0.0
 var dash_t := 0.0
 var dash_dir := Vector2.ZERO
-var bolt_cd := 0.0
+var skill_cd := [0.0, 0.0, 0.0]
+var rage_t := 0.0
+var shield_t := 0.0
+var zones: Array = []          # відкладені удари й хмари {pos, r, dmg, t, every, next, col, kind}
+var C: Dictionary              # клас героя
 var invuln := 0.0
 var hurt_flash := 0.0
 var facing := Vector2.RIGHT
@@ -45,7 +49,7 @@ var paused := false
 var done := false
 var boss_ref = null
 var floor_cleared := false
-var stats := {"kills": 0, "gold": 0, "xp": 0, "ore": {}, "dmg_dealt": 0.0, "cleared": false, "died": false}
+var stats := {"kills": 0, "gold": 0, "xp": 0, "ore": {}, "dmg_dealt": 0.0, "cleared": false, "died": false, "items": []}
 var bot := false               # автотест: герой воює сам
 
 # інтерфейс
@@ -65,6 +69,7 @@ func setup(dinfo: Dictionary) -> void:
 	info = dinfo
 	p = Player.ensure(Game.state)
 	theme_d = DungeonGen.theme_of("minecave" if info.kind == "mine" else info.dtype)
+	C = Player.cls(p)
 	for k in DungeonGen.MONSTERS:
 		_tex[k] = load("res://assets/art/monsters/%s.png" % k)
 
@@ -167,8 +172,14 @@ func _process(delta: float) -> void:
 	delta = minf(delta, 0.05)
 	atk_cd = maxf(0, atk_cd - delta)
 	dash_cd = maxf(0, dash_cd - delta)
-	bolt_cd = maxf(0, bolt_cd - delta)
+	for i in 3:
+		skill_cd[i] = maxf(0, float(skill_cd[i]) - delta)
+	rage_t = maxf(0, rage_t - delta)
+	shield_t = maxf(0, shield_t - delta)
+	if shield_t > 0:
+		invuln = maxf(invuln, 0.05)
 	invuln = maxf(0, invuln - delta)
+	_update_zones(delta)
 	hurt_flash = maxf(0, hurt_flash - delta)
 	if bot:
 		_bot(delta)
@@ -205,7 +216,7 @@ func _hero_input(delta: float) -> void:
 
 
 func _move_hero(dir: Vector2, delta: float) -> void:
-	var v := dir * HERO_SPEED
+	var v := dir * HERO_SPEED * float(C.speed) * (1.2 if rage_t > 0 else 1.0)
 	if dash_t > 0:
 		dash_t -= delta
 		v = dash_dir * 540.0
@@ -216,22 +227,59 @@ func _move_hero(dir: Vector2, delta: float) -> void:
 		hero.facing = signf(facing.x)
 
 
-func attack() -> void:
-	if atk_cd > 0:
-		return
-	atk_cd = 0.36
-	var reach := 58.0
-	fx.append({"type": "slash", "pos": hero.position, "dir": facing, "t": 0.18})
+func hero_atk() -> float:
+	return Player.atk(p) * (1.6 if rage_t > 0 else 1.0)
+
+
+func _hit(e: Dictionary, power: float, knock: Vector2) -> void:
+	var crit := randf() < Player.crit(p)
+	_damage_enemy(e, hero_atk() * power * randf_range(0.9, 1.1) * (1.8 if crit else 1.0), knock, crit)
+
+
+## Удар по дузі перед героєм. Повертає, чи когось зачепило.
+func _arc_hit(reach: float, arc: float, power: float, knock: float = 160.0) -> bool:
+	fx.append({"type": "slash", "pos": hero.position, "dir": facing, "t": 0.18, "r": reach - 12})
 	var hit := false
 	for e in enemies:
 		if float(e.hp) <= 0:
 			continue
 		var to: Vector2 = e.pos - hero.position
 		var rr: float = reach + 14 * float(e.size)
-		if to.length() < rr and (to.length() < 18 or facing.angle_to(to.normalized()) < 1.05 and facing.angle_to(to.normalized()) > -1.05):
-			var crit := randf() < 0.12
-			_damage_enemy(e, Player.atk(p) * randf_range(0.9, 1.1) * (1.8 if crit else 1.0), to.normalized() * 160.0, crit)
+		var ang := absf(facing.angle_to(to.normalized()))
+		if to.length() < rr and (to.length() < 18 or ang < arc):
+			_hit(e, power, to.normalized() * knock)
 			hit = true
+	return hit
+
+
+func _area_hit(center: Vector2, radius: float, power: float, knock: float = 120.0, slow: float = 0.0) -> int:
+	var n := 0
+	for e in enemies:
+		if float(e.hp) <= 0:
+			continue
+		var to: Vector2 = e.pos - center
+		if to.length() < radius + 12 * float(e.size):
+			_hit(e, power, to.normalized() * knock)
+			if slow > 0:
+				e.slow = slow
+			n += 1
+	return n
+
+
+func _shoot(dir: Vector2, spd: float, power: float, r: float, col: Color, pierce: int = 0, explode: float = 0.0) -> void:
+	shots.append({"pos": hero.position + dir * 16 + Vector2(0, -14), "vel": dir * spd, "dmg": power, "from_hero": true, "r": r, "t": 1.5, "col": col, "pierce": pierce, "explode": explode})
+
+
+func attack() -> void:
+	if atk_cd > 0:
+		return
+	var B: Dictionary = C.basic
+	atk_cd = float(B.cd) / (1.25 if rage_t > 0 else 1.0)
+	var hit := false
+	if B.type == "projectile":
+		_shoot(facing, float(B.speed), float(B.power), float(B.r), Color(B.col), int(B.pierce))
+	else:
+		hit = _arc_hit(float(B.reach), float(B.arc), float(B.power))
 	for c in _near_veins(1.4):
 		_mine_vein(c)
 		hit = true
@@ -251,14 +299,95 @@ func dash(dir: Vector2) -> void:
 	fx.append({"type": "dust", "pos": hero.position, "t": 0.35})
 
 
-func cast_bolt() -> void:
-	if bolt_cd > 0 or float(p.mp) < 12:
-		if float(p.mp) < 12:
-			_say("Мана скінчилась. Люмі радить ефір (2).", 1.5)
+func cast_skill(i: int) -> void:
+	var sk: Array = C.skills
+	if i >= sk.size():
 		return
-	bolt_cd = 0.45
-	p.mp = float(p.mp) - 12
-	shots.append({"pos": hero.position + facing * 16, "vel": facing * 430.0, "dmg": Player.atk(p) * 1.6, "from_hero": true, "r": 7.0, "t": 1.4, "col": Color("#7ad7ff"), "pierce": 1})
+	var S: Dictionary = sk[i]
+	if int(p.lvl) < int(S.lvl):
+		_say("«%s» відкриється на %d рівні." % [S.name, int(S.lvl)], 1.4)
+		return
+	if float(skill_cd[i]) > 0:
+		return
+	if float(p.mp) < float(S.mp):
+		_say("Мана скінчилась. Люмі радить ефір (2).", 1.4)
+		return
+	p.mp = float(p.mp) - float(S.mp)
+	skill_cd[i] = float(S.cd)
+	var col := Color(S.get("col", "#ffffff"))
+	var mouse := get_global_mouse_position() if not bot else hero.position + facing * 140.0
+	match S.type:
+		"arc":
+			_arc_hit(float(S.reach), float(S.arc), float(S.power), float(S.get("knock", 160)))
+			fx.append({"type": "ring", "pos": hero.position + facing * 30, "t": 0.3, "r": float(S.reach), "col": Color("#ffffff")})
+		"nova":
+			_area_hit(hero.position, float(S.radius), float(S.power), 220.0, float(S.get("slow", 0.0)))
+			fx.append({"type": "ring", "pos": hero.position, "t": 0.4, "r": float(S.radius), "col": col})
+		"projectile":
+			_shoot(facing, float(S.speed), float(S.power), float(S.r), col, int(S.get("pierce", 0)), float(S.get("explode", 0.0)))
+		"fan":
+			var n: int = S.count
+			for k in n:
+				var a := (k - (n - 1) / 2.0) * float(S.spread) / maxf(1, n - 1) * 2.0
+				_shoot(facing.rotated(a), float(S.speed), float(S.power), 5.0, col)
+		"aoe_at":
+			var ticks: int = S.get("ticks", 1)
+			zones.append({"pos": mouse, "r": float(S.radius), "power": float(S.power), "t": 0.35 + ticks * 0.3, "every": 0.3, "next": 0.35, "col": col, "kind": "rain", "left": ticks})
+		"meteor":
+			zones.append({"pos": mouse, "r": float(S.radius), "power": float(S.power), "t": float(S.delay) + 0.05, "every": 99.0, "next": float(S.delay), "col": col, "kind": "meteor", "left": 1})
+		"cloud":
+			zones.append({"pos": mouse, "r": float(S.radius), "power": float(S.power), "t": float(S.time), "every": 0.5, "next": 0.2, "col": col, "kind": "cloud", "left": 999})
+		"heal":
+			p.hp = minf(Player.max_hp(p), float(p.hp) + Player.max_hp(p) * float(S.amount))
+			fx.append({"type": "ring", "pos": hero.position, "t": 0.5, "r": 60.0, "col": col})
+			_float_text(hero.position + Vector2(0, -50), "+%d%% ❤" % int(float(S.amount) * 100), Color("#7dff9a"))
+		"shield":
+			shield_t = float(S.time)
+			p.hp = minf(Player.max_hp(p), float(p.hp) + Player.max_hp(p) * float(S.amount))
+		"buff":
+			rage_t = float(S.time)
+			_say("😤 ЛЮТЬ!", 1.0)
+		"blink", "charge":
+			var target := mouse
+			var dirv := (target - hero.position)
+			var dist := minf(dirv.length(), float(S.range))
+			dirv = dirv.normalized() if dirv.length() > 1 else facing
+			var from := hero.position
+			var to := from
+			var steps := int(dist / 8.0)
+			for k in steps:
+				var nxt := from + dirv * 8.0 * (k + 1)
+				if not _free(nxt, HERO_R):
+					break
+				to = nxt
+			for e in enemies:
+				if float(e.hp) <= 0:
+					continue
+				var q: Vector2 = Geometry2D.get_closest_point_to_segment(e.pos, from, to)
+				if (q - e.pos).length() < 26 * float(e.size):
+					_hit(e, float(S.power), dirv * 200.0)
+			hero.position = to
+			invuln = maxf(invuln, 0.3)
+			fx.append({"type": "trail", "pos": from, "to": to, "t": 0.3, "col": col})
+	fx.append({"type": "text", "pos": hero.position + Vector2(-10, -64), "t": 0.8, "text": S.name, "col": col})
+
+
+func _update_zones(delta: float) -> void:
+	var keep: Array = []
+	for z in zones:
+		z.t = float(z.t) - delta
+		z.next = float(z.next) - delta
+		if float(z.next) <= 0 and int(z.left) > 0:
+			z.next = float(z.every)
+			z.left = int(z.left) - 1
+			_area_hit(z.pos, float(z.r), float(z.power), 60.0 if z.kind != "meteor" else 260.0)
+			if z.kind == "meteor":
+				fx.append({"type": "ring", "pos": z.pos, "t": 0.5, "r": float(z.r), "col": z.col})
+				cam.offset = Vector2(randf_range(-6, 6), randf_range(-6, 6))
+				get_tree().create_timer(0.1).timeout.connect(func(): if is_instance_valid(cam): cam.offset = Vector2.ZERO)
+		if float(z.t) > 0:
+			keep.append(z)
+	zones = keep
 
 
 func drink_potion() -> void:
@@ -290,7 +419,13 @@ func _unhandled_input(event: InputEvent) -> void:
 				_toggle_pause()
 			KEY_Q:
 				if not paused:
-					cast_bolt()
+					cast_skill(0)
+			KEY_F:
+				if not paused:
+					cast_skill(1)
+			KEY_V:
+				if not paused:
+					cast_skill(2)
 			KEY_R, KEY_1:
 				if not paused:
 					drink_potion()
@@ -302,7 +437,7 @@ func _unhandled_input(event: InputEvent) -> void:
 					interact()
 		get_viewport().set_input_as_handled()
 	elif event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_MIDDLE:
-		cast_bolt()
+		cast_skill(0)
 
 
 func interact() -> void:
@@ -324,6 +459,8 @@ func interact() -> void:
 			if c.potion:
 				p.potions = int(p.potions) + 1
 				txt += " +🧪"
+			if randf() < 0.4:
+				drops.append({"pos": (Vector2(c.pos) + Vector2(0.5, 1.2)) * TILE, "kind": "item", "item": Items.make(str(p.cls), int(info.level) + floor_i - 1, Items.roll_rarity(0.05))})
 			_float_text((Vector2(c.pos) + Vector2(0.5, 0)) * TILE, txt, Game.C_GOLD)
 			map_layer.queue_redraw()
 			return
@@ -361,6 +498,9 @@ func _kill(e: Dictionary) -> void:
 		drops.append({"pos": e.pos, "kind": "gold", "n": randi_range(3, 9) * int(e.lvl) * (10 if e.boss else 1)})
 	if randf() < (1.0 if e.boss else 0.06):
 		drops.append({"pos": e.pos + Vector2(12, 0), "kind": "potion", "n": 1})
+	if randf() < (1.0 if e.boss else 0.035):
+		var rar := maxi(2, Items.roll_rarity(0.1)) if e.boss else Items.roll_rarity()
+		drops.append({"pos": e.pos + Vector2(-12, 6), "kind": "item", "item": Items.make(str(p.cls), int(e.lvl), rar)})
 
 
 func _hurt_hero(dmg: float) -> void:
@@ -401,6 +541,9 @@ func _update_enemies(delta: float) -> void:
 			e.face = signf(to.x)
 		var want := Vector2.ZERO
 		var spd: float = e.speed
+		if float(e.get("slow", 0.0)) > 0:
+			e.slow = float(e.slow) - delta
+			spd *= 0.4
 		match e.state:
 			"idle", "chase":
 				e.state = "chase"
@@ -517,8 +660,16 @@ func _update_shots(delta: float) -> void:
 		var alive := true
 		if s.from_hero:
 			for e in enemies:
-				if float(e.hp) > 0 and (e.pos - s.pos).length() < 16 * float(e.size) + s.r:
-					_damage_enemy(e, s.dmg, s.vel.normalized() * 120.0)
+				if float(e.hp) > 0 and (e.pos - s.pos).length() < 16 * float(e.size) + s.r and not s.get("hit", {}).has(enemies.find(e)):
+					if not s.has("hit"):
+						s.hit = {}
+					s.hit[enemies.find(e)] = true
+					if float(s.get("explode", 0.0)) > 0:
+						_area_hit(s.pos, float(s.explode), float(s.dmg), 180.0)
+						fx.append({"type": "ring", "pos": s.pos, "t": 0.35, "r": float(s.explode), "col": s.col})
+						alive = false
+						break
+					_hit(e, float(s.dmg), s.vel.normalized() * 120.0)
 					s.pierce = int(s.pierce) - 1
 					if int(s.pierce) < 0:
 						alive = false
@@ -553,6 +704,13 @@ func _pickup() -> void:
 				p.gold = int(p.gold) + int(d.n)
 				stats.gold += int(d.n)
 				_float_text(hero.position + Vector2(0, -36), "+%d 💰" % int(d.n), Game.C_GOLD)
+			elif d.kind == "item":
+				if Player.give_item(p, d.item):
+					stats.items.append(d.item.name)
+					_float_text(hero.position + Vector2(0, -52), d.item.name, Items.RARITY[int(d.item.rarity)].col)
+				else:
+					_say("Торба повна! Продай щось у кузні.", 1.5)
+					keep.append(d)
 			else:
 				p.potions = int(p.potions) + int(d.n)
 				_float_text(hero.position + Vector2(0, -36), "+🧪", Color("#7dff9a"))
@@ -742,8 +900,8 @@ func _bot(delta: float) -> void:
 				dir = facing
 		else:
 			attack()
-		if bd < 150 and float(p.mp) > 30:
-			cast_bolt()
+		if bd < 160:
+			cast_skill(randi() % 3)
 	if float(p.hp) < Player.max_hp(p) * 0.35:
 		drink_potion()
 	_move_hero(dir, delta)
@@ -827,7 +985,7 @@ func _build_ui() -> void:
 	_msg.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_msg.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	root.add_child(_msg)
-	var hints := Game.make_label("WASD — рух · ЛКМ/Пробіл — удар · Shift/ПКМ — ривок · Q — магія · R — зілля · 2 — ефір · E — дія · Esc — пауза", 15, Color(1, 1, 1, 0.75), 4)
+	var hints := Game.make_label("WASD — рух · ЛКМ/Пробіл — удар · Shift/ПКМ — ривок · Q/F/V — навички · R — зілля · 2 — ефір · E — дія · Esc — пауза", 15, Color(1, 1, 1, 0.75), 4)
 	hints.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
 	hints.position = Vector2(18, -34)
 	root.add_child(hints)
@@ -866,7 +1024,20 @@ func _update_ui() -> void:
 	_xp_bar.value = int(p.xp)
 	_stat.text = "Рів. %d · ❤ %d/%d · ✦ %d/%d · 💰 %d · 🧪 %d · 💧 %d" % [int(p.lvl), int(p.hp), int(Player.max_hp(p)), int(p.mp), int(Player.max_mp(p)), int(p.gold), int(p.potions), int(p.ethers)]
 	var alive := enemies.filter(func(e): return float(e.hp) > 0).size()
-	_cd_label.text = "Ворогів: %d · Ривок %s · Магія %s" % [alive, "✔" if dash_cd <= 0 else "%.1f" % dash_cd, "✔" if bolt_cd <= 0 and float(p.mp) >= 12 else "…"]
+	var parts: Array = ["Ворогів: %d" % alive, "Ривок %s" % ("✔" if dash_cd <= 0 else "%.1f" % dash_cd)]
+	for i in C.skills.size():
+		var S: Dictionary = C.skills[i]
+		var st: String
+		if int(p.lvl) < int(S.lvl):
+			st = "🔒%d" % int(S.lvl)
+		elif float(skill_cd[i]) > 0:
+			st = "%.1f" % float(skill_cd[i])
+		elif float(p.mp) < float(S.mp):
+			st = "✦"
+		else:
+			st = "✔"
+		parts.append("%s %s %s" % [Classes.KEYS[i], S.name, st])
+	_cd_label.text = " · ".join(PackedStringArray(parts))
 	var show_boss: bool = boss_ref != null and float(boss_ref.hp) > 0 and boss_ref.aggro
 	_boss_bar.visible = show_boss
 	_boss_name.visible = show_boss
@@ -938,6 +1109,10 @@ class EntLayer extends Node2D:
 			if dr.kind == "gold":
 				draw_circle(dr.pos, 6, Color("#ffd36e"))
 				draw_circle(dr.pos, 3.5, Color("#fff2b0"))
+			elif dr.kind == "item":
+				var rc: Color = Items.RARITY[int(dr.item.rarity)].col
+				draw_circle(dr.pos, 12 + 2 * sin(t * 5.0), Color(rc, 0.3))
+				draw_rect(Rect2(dr.pos - Vector2(6, 6), Vector2(12, 12)), rc)
 			else:
 				draw_circle(dr.pos, 7, Color("#7dff9a"))
 		var order: Array = d.enemies.filter(func(e): return float(e.hp) > 0)
@@ -978,6 +1153,25 @@ class EntLayer extends Node2D:
 				var bw := 34.0 * float(e.size)
 				draw_rect(Rect2(e.pos + Vector2(-bw / 2, -hgt - 10), Vector2(bw, 4)), Color(0, 0, 0, 0.6))
 				draw_rect(Rect2(e.pos + Vector2(-bw / 2, -hgt - 10), Vector2(bw * float(e.hp) / float(e.max), 4)), Color("#ff5a7a"))
+		for z in d.zones:
+			var zc: Color = z.col
+			if z.kind == "meteor":
+				var k: float = clampf(1.0 - float(z.next) / 0.8, 0, 1)
+				draw_circle(z.pos, z.r, Color(1, 0.3, 0.2, 0.1 + 0.2 * k))
+				draw_arc(z.pos, z.r * k, 0, TAU, 40, Color(1, 0.5, 0.3, 0.9), 3.0)
+				draw_circle(z.pos + Vector2(0, -300 * (1 - k)), 14, Color(1, 0.6, 0.3))
+			else:
+				draw_circle(z.pos, z.r, Color(zc, 0.16))
+				draw_arc(z.pos, z.r, 0, TAU, 40, Color(zc, 0.6), 2.0)
+				if z.kind == "rain":
+					for i in 6:
+						var o = Vector2(randf_range(-1, 1), randf_range(-1, 1)) * z.r * 0.7
+						draw_line(z.pos + o + Vector2(-4, -14), z.pos + o, Color(zc, 0.9), 2.0)
+		if d.shield_t > 0:
+			draw_arc(d.hero.position + Vector2(0, -20), 36, 0, TAU, 40, Color(1, 0.9, 0.5, 0.8), 3.0, true)
+			draw_circle(d.hero.position + Vector2(0, -20), 34, Color(1, 0.9, 0.5, 0.12))
+		if d.rage_t > 0:
+			draw_circle(d.hero.position + Vector2(0, -20), 30 + 3 * sin(t * 14.0), Color(1, 0.2, 0.1, 0.16))
 		for s in d.shots:
 			draw_circle(s.pos, s.r + 4, Color(s.col, 0.3))
 			draw_circle(s.pos, s.r, s.col)
@@ -1004,12 +1198,18 @@ class EntLayer extends Node2D:
 						draw_line(f.pos + Vector2(-12 + i * 9, -12), f.pos + Vector2(-4 + i * 9, 12), Color(1, 0.4, 0.4, 0.9), 3.0)
 				"dust":
 					draw_circle(f.pos, 18 * (1 - float(f.t) / 0.35) + 4, Color(0.9, 0.85, 0.75, float(f.t)))
+				"ring":
+					var k: float = 1.0 - float(f.t) / 0.4
+					draw_circle(f.pos, f.r, Color(f.col, 0.18 * (1 - k)))
+					draw_arc(f.pos, f.r * (0.6 + 0.4 * k), 0, TAU, 48, Color(f.col, 0.9 * (1 - k)), 4.0, true)
+				"trail":
+					draw_line(f.pos, f.to, Color(f.col, float(f.t) / 0.3), 10.0, true)
 				"levelup":
 					draw_arc(d.hero.position, 30 + 50 * (1 - float(f.t)), 0, TAU, 40, Color(1, 0.85, 0.4, float(f.t)), 4.0)
 				"text":
 					var a: float = clampf(float(f.t) / 0.4, 0, 1)
-					draw_string_outline(font, f.pos - Vector2(30, 0), f.text, HORIZONTAL_ALIGNMENT_CENTER, 60, 16, 4, Color(0.1, 0.03, 0.12, a))
-					draw_string(font, f.pos - Vector2(30, 0), f.text, HORIZONTAL_ALIGNMENT_CENTER, 60, 16, Color(f.col, a))
+					draw_string_outline(font, f.pos - Vector2(120, 0), f.text, HORIZONTAL_ALIGNMENT_CENTER, 240, 16, 4, Color(0.1, 0.03, 0.12, a))
+					draw_string(font, f.pos - Vector2(120, 0), f.text, HORIZONTAL_ALIGNMENT_CENTER, 240, 16, Color(f.col, a))
 
 
 ## Туман: чорне там, де не бував, напівтемне — де бував, але зараз не бачиш.

@@ -187,9 +187,9 @@ func _on_continue() -> void:
 
 func _on_new() -> void:
 	var p := PanelContainer.new()
-	p.custom_minimum_size = Vector2(560, 0)
+	p.custom_minimum_size = Vector2(660, 0)
 	var v := VBoxContainer.new()
-	v.add_theme_constant_override("separation", 12)
+	v.add_theme_constant_override("separation", 10)
 	p.add_child(v)
 	var t := Game.make_label("Новий ісекай", 36, Game.C_GOLD, 8, Game.title_font)
 	t.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -206,6 +206,36 @@ func _on_new() -> void:
 	var seed_edit := LineEdit.new()
 	seed_edit.placeholder_text = "наприклад, 12345"
 	v.add_child(seed_edit)
+	v.add_child(Game.make_label("Ким тебе переродити?", 18, Game.C_GOLD, 4))
+	var grid := GridContainer.new()
+	grid.columns = 3
+	grid.add_theme_constant_override("h_separation", 8)
+	grid.add_theme_constant_override("v_separation", 8)
+	v.add_child(grid)
+	var desc := Game.make_label("", 16, Color(1, 1, 1, 0.8))
+	desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	desc.custom_minimum_size = Vector2(620, 70)
+	var chosen := {"cls": "swordsman"}
+	var btns: Array = []
+	var pick := func(k: String) -> void:
+		chosen.cls = k
+		var C: Dictionary = Classes.info(k)
+		var sk: Array = C.skills.map(func(x): return "%s (рів. %d)" % [x.name, int(x.lvl)])
+		desc.text = "%s %s — %s\n❤ %d · ✦ %d · атака %d · навички: %s" % [C.icon, C.name, C.desc, int(C.hp), int(C.mp), int(C.atk), ", ".join(PackedStringArray(sk))]
+		for b in btns:
+			b.button_pressed = b.get_meta("cls") == k
+	for k in Classes.CLASSES:
+		var C: Dictionary = Classes.CLASSES[k]
+		var b := Button.new()
+		b.toggle_mode = true
+		b.text = "%s %s" % [C.icon, C.name]
+		b.custom_minimum_size = Vector2(200, 46)
+		b.set_meta("cls", k)
+		b.pressed.connect(pick.bind(k))
+		grid.add_child(b)
+		btns.append(b)
+	v.add_child(desc)
+	pick.call("swordsman")
 	var h := HBoxContainer.new()
 	h.add_theme_constant_override("separation", 12)
 	v.add_child(h)
@@ -220,7 +250,7 @@ func _on_new() -> void:
 		var s := -1
 		if seed_edit.text.strip_edges().is_valid_int():
 			s = absi(int(seed_edit.text.strip_edges()))
-		Game.new_game(name_edit.text, s)
+		Game.new_game(name_edit.text, s, chosen.cls)
 		get_tree().change_scene_to_file("res://scenes/world.tscn"))
 	h.add_child(go)
 	name_edit.text_submitted.connect(func(_t): go.pressed.emit())
@@ -236,7 +266,8 @@ func _unhandled_input(event: InputEvent) -> void:
 func _selftest() -> void:
 	await get_tree().create_timer(1.5).timeout
 	Selftest.shot(self, "01_menu")
-	Game.new_game("Тестовий Герой", 12345)
+	var tc := OS.get_environment("ISEKAY_CLASS")
+	Game.new_game("Тестовий Герой", 12345, tc if tc != "" else "swordsman")
 	get_tree().change_scene_to_file("res://scenes/world.tscn")
 
 

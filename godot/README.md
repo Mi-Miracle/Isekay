@@ -23,7 +23,8 @@
 | F11 | повний екран |
 | Esc | пауза |
 
-**У підземеллі:** WASD — рух · ЛКМ/Пробіл — удар · Shift/ПКМ — ривок · Q (або середня кнопка) — магія · R/1 — зілля · 2 — ефір · E — скриня/сходи/вихід/жила · Esc — пауза.
+**У підземеллі:** WASD — рух · ЛКМ/Пробіл — удар · Shift/ПКМ — ривок · Q/F/V (Q також середня кнопка) — навички класу · R/1 — зілля · 2 — ефір · E — скриня/сходи/вихід/жила · Esc — пауза.
+На мапі: **I** — спорядження.
 
 ## Розробка
 ```bash
@@ -32,7 +33,7 @@ godot --headless --path godot -s tools/gen_test.gd   # швидка переві
 godot --headless --path godot -s tools/sim_test.gd   # 400 днів політики + збереження/відновлення
 # автотест зі скріншотами (Linux):
 ISEKAY_SHOTS=/tmp/shots xvfb-run -a -s "-screen 0 1600x900x24" godot --path godot --rendering-driver opengl3 -- --selftest
-# + ISEKAY_REVEALALL=1 — додаткові скріншоти всієї мапи
+# + ISEKAY_REVEALALL=1 — додаткові скріншоти всієї мапи; ISEKAY_CLASS=mage — клас героя в автотесті
 godot --headless --path godot --export-release "Windows Desktop" Dyvosvit.exe
 ```
 Самооновлення: `Game.check_updates()` шукає випуски `godot-v*` з `.exe`, `download_update()` качає в `user://update/`, `apply_update()` запускає PowerShell, що чекає закриття гри, підміняє `.exe` і перезапускає.
@@ -51,6 +52,8 @@ godot --headless --path godot --export-release "Windows Desktop" Dyvosvit.exe
 | `scripts/sim/politics.gd` | ШІ королівств (порт `politics.js`): економіка, дипломатія, війни, армії, облоги, династії, катастрофи, демони й орди; стан `P` — у сейві (`state.politics`) |
 | `scripts/sim/heroes.gd` | мандрівні НПС-герої й суперники-ісекайники |
 | `scripts/world/armies_layer.gd` | армії, герої та битви на мапі |
+| `scripts/core/classes.gd` | 6 класів: характеристики, звичайний удар (`basic`), навички (типи: arc, nova, projectile, fan, aoe_at, meteor, cloud, heal, shield, buff, blink, charge) |
+| `scripts/core/items.gd` | генерація спорядження (зброя/броня/прикраса, 5 рідкостей), опис, «сила» для порівняння |
 | `scripts/core/player.gd` | герой гравця (`state.player`): рівень, досвід, ❤/✦, золото, зілля, руда, зачищені підземелля |
 | `scripts/dungeon/dungeon_gen.gd` | рівні підземель (кімнати+коридори) і шахт (печери, жили), пули монстрів за типом підземелля, статистика монстрів |
 | `scripts/dungeon/dungeon.gd` | сцена підземелля/шахти: екшен-бій, ШІ ворогів (melee/swoop/lunge/ranged/slam, боси з фазами), туман із лінією зору, лут, бот для автотесту |

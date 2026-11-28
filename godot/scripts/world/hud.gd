@@ -111,8 +111,8 @@ func _build_hud() -> void:
 		cv.add_child(l)
 
 	var clock := _panel(Control.PRESET_TOP_RIGHT)
-	clock.custom_minimum_size = Vector2(330, 0)
-	_place(clock, 1.0, 0.0, Vector2(-16 - 330, 16), Vector2(330, 40))
+	clock.custom_minimum_size = Vector2(400, 0)
+	_place(clock, 1.0, 0.0, Vector2(-16 - 400, 16), Vector2(400, 40))
 	var cvb := VBoxContainer.new()
 	cvb.add_theme_constant_override("separation", 0)
 	clock.add_child(cvb)
@@ -154,7 +154,7 @@ func _build_hud() -> void:
 	_prompt.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_root.add_child(_prompt)
 
-	_hints = Game.make_label("WASD — рух · Shift — біг · ЛКМ — іти сюди · E — дія · M — мапа · Tab — держави · K — королівства · J — хроніка · T — чекати день · F5 — зберегти · Esc — меню", 15, Color(1, 1, 1, 0.75), 4)
+	_hints = Game.make_label("WASD — рух · Shift — біг · ЛКМ — іти сюди · E — дія · I — спорядження · M — мапа · Tab — держави · K — королівства · J — хроніка · T — чекати день · F5 — зберегти · Esc — меню", 15, Color(1, 1, 1, 0.75), 4)
 	_hints.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
 	_hints.position = Vector2(18, -34)
 	_root.add_child(_hints)
@@ -763,6 +763,17 @@ func _trade_row(v: VBoxContainer, b: Dictionary, services: Array) -> void:
 				toast("Руди немає. Ковалі розчаровані.", Color(1, 1, 1, 0.7))
 			refresh.call())
 		row.add_child(bo)
+	if services.has("Кузня"):
+		var bs := Button.new()
+		bs.text = "⚒️ Кузня"
+		bs.add_theme_font_size_override("font_size", 17)
+		bs.pressed.connect(func(): open_smith(b))
+		row.add_child(bs)
+	var bi := Button.new()
+	bi.text = "🎒 Спорядження"
+	bi.add_theme_font_size_override("font_size", 17)
+	bi.pressed.connect(func(): open_inventory(b))
+	row.add_child(bi)
 	if b.type == "mine":
 		var bm := Button.new()
 		bm.text = "⛏️ Спуститися в шахту"
@@ -770,3 +781,138 @@ func _trade_row(v: VBoxContainer, b: Dictionary, services: Array) -> void:
 		bm.pressed.connect(func(): world.enter_dungeon(world.mine_info(b)))
 		row.add_child(bm)
 	v.add_child(info)
+
+
+# ---------------------------------------------------------------- спорядження
+
+func _item_label(it, size: int = 17) -> Label:
+	if not (it is Dictionary):
+		return Game.make_label("— порожньо —", size, Color(1, 1, 1, 0.45), 3)
+	var l := Game.make_label("%s\n%s" % [it.name, Items.describe(it)], size, Items.RARITY[int(it.rarity)].col, 3)
+	l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	return l
+
+
+## Вікно спорядження. town — поселення, де можна продавати (або {}).
+func open_inventory(town: Dictionary = {}) -> void:
+	var p := Player.ensure(Game.state)
+	var pv := _vbox_panel("Спорядження", 1040)
+	var v: VBoxContainer = pv[1]
+	var C := Player.cls(p)
+	var st := Game.make_label("%s %s · рів. %d · ❤ %d · ✦ %d · атака %d · захист %d · крит %d%% · 💰 %d" % [C.icon, C.name, int(p.lvl), int(Player.max_hp(p)), int(Player.max_mp(p)), int(Player.atk(p)), int(Player.def(p)), int(round(Player.crit(p) * 100)), int(p.gold)], 18, Game.C_GOLD, 4)
+	st.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	v.add_child(st)
+	var hb := HBoxContainer.new()
+	hb.add_theme_constant_override("separation", 16)
+	v.add_child(hb)
+	var left := VBoxContainer.new()
+	left.custom_minimum_size = Vector2(360, 0)
+	left.add_theme_constant_override("separation", 8)
+	hb.add_child(left)
+	for slot in Items.SLOTS:
+		left.add_child(Game.make_label(Items.SLOT_NAME[slot], 16, Color(1, 1, 1, 0.6), 2))
+		var l := _item_label(p.gear[slot])
+		l.custom_minimum_size.x = 350
+		left.add_child(l)
+	var skl := Game.make_label("Навички: " + ", ".join(PackedStringArray(C.skills.map(func(x): return "%s %s%s" % [Classes.KEYS[C.skills.find(x)], x.name, "" if int(p.lvl) >= int(x.lvl) else " (рів. %d)" % int(x.lvl)]))), 15, Color(1, 1, 1, 0.7), 2)
+	skl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	skl.custom_minimum_size.x = 350
+	left.add_child(skl)
+	var sc := ScrollContainer.new()
+	sc.custom_minimum_size = Vector2(640, 480)
+	sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	hb.add_child(sc)
+	var lst := VBoxContainer.new()
+	lst.add_theme_constant_override("separation", 6)
+	sc.add_child(lst)
+	lst.add_child(Game.make_label("Торба (%d/%d)" % [p.bag.size(), Player.BAG_MAX], 16, Color(1, 1, 1, 0.6), 2))
+	if p.bag.is_empty():
+		lst.add_child(Game.make_label("Порожньо. Підземелля чекають!", 17, Color(1, 1, 1, 0.5)))
+	for i in p.bag.size():
+		var it: Dictionary = p.bag[i]
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 8)
+		lst.add_child(row)
+		var l := _item_label(it, 16)
+		l.custom_minimum_size.x = 380
+		l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		row.add_child(l)
+		var diff := Items.power(it) - Items.power(p.gear[it.slot])
+		var be := Button.new()
+		be.text = "Вдягти %s" % ("▲" if diff > 0 else ("▼" if diff < 0 else "="))
+		be.add_theme_font_size_override("font_size", 15)
+		be.add_theme_color_override("font_color", Color("#7dff9a") if diff > 0 else Color(1, 1, 1, 0.7))
+		be.pressed.connect(func():
+			Player.equip(p, i)
+			open_inventory(town))
+		row.add_child(be)
+		if not town.is_empty():
+			var bs := Button.new()
+			bs.text = "Продати %d💰" % int(int(it.price) * 0.4)
+			bs.add_theme_font_size_override("font_size", 15)
+			bs.pressed.connect(func():
+				Player.sell(p, i)
+				open_inventory(town))
+			row.add_child(bs)
+	var h := HBoxContainer.new()
+	h.alignment = BoxContainer.ALIGNMENT_CENTER
+	h.add_theme_constant_override("separation", 10)
+	v.add_child(h)
+	if not town.is_empty():
+		_button(h, "Назад у поселення", func(): open_settlement(town))
+	var close := _button(h, "Закрити", close_overlay)
+	_show_overlay(pv[0])
+	close.grab_focus.call_deferred()
+
+
+## Кузня: асортимент оновлюється щодня, залежить від поселення й рівня героя.
+func open_smith(b: Dictionary) -> void:
+	var p := Player.ensure(Game.state)
+	var day := int(Game.state.get("day_ticked", 0))
+	var key := "%d:%d" % [int(b.id), day]
+	if not Game.state.has("smith") or Game.state.smith.get("key", "") != key:
+		var stock: Array = []
+		seed(int(b.id) * 7919 + day * 131)
+		for i in 4:
+			var lvl := maxi(1, int(p.lvl) + randi_range(-1, 2))
+			stock.append(Items.make(str(p.cls), lvl, mini(3, Items.roll_rarity(0.03 * int(b.dev))), Items.SLOTS[i % 3]))
+		randomize()
+		Game.state.smith = {"key": key, "stock": stock}
+	var stock: Array = Game.state.smith.stock
+	var pv := _vbox_panel("Кузня · %s" % b.name, 900)
+	var v: VBoxContainer = pv[1]
+	var joke := Game.make_label("Коваль витирає руки об фартух: «Найкраща сталь у королівстві. Ну, у баронстві. Ну, на цій вулиці.»", 16, Color("#ffd6ec"))
+	joke.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	v.add_child(joke)
+	v.add_child(Game.make_label("💰 %d" % int(p.gold), 18, Game.C_GOLD, 3))
+	if stock.is_empty():
+		v.add_child(Game.make_label("Усе розкупили. Приходь завтра.", 17, Color(1, 1, 1, 0.6)))
+	for i in stock.size():
+		var it: Dictionary = stock[i]
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 10)
+		v.add_child(row)
+		var l := _item_label(it, 16)
+		l.custom_minimum_size.x = 600
+		row.add_child(l)
+		var diff := Items.power(it) - Items.power(p.gear[it.slot])
+		var bb := Button.new()
+		bb.text = "Купити %d💰 %s" % [int(it.price), "▲" if diff > 0 else ""]
+		bb.add_theme_font_size_override("font_size", 15)
+		bb.disabled = int(p.gold) < int(it.price)
+		bb.pressed.connect(func():
+			if Player.give_item(p, it):
+				p.gold = int(p.gold) - int(it.price)
+				stock.remove_at(i)
+				toast("Куплено: %s" % it.name, Items.RARITY[int(it.rarity)].col)
+				open_smith(b)
+			else:
+				toast("Торба повна!", Color("#ffb3b3")))
+		row.add_child(bb)
+	var h := HBoxContainer.new()
+	h.alignment = BoxContainer.ALIGNMENT_CENTER
+	h.add_theme_constant_override("separation", 10)
+	v.add_child(h)
+	_button(h, "🎒 Спорядження", func(): open_inventory(b))
+	_button(h, "Назад", func(): open_settlement(b))
+	_show_overlay(pv[0])

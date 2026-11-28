@@ -3,7 +3,7 @@ extends Node
 
 signal update_available(version: String, url: String)
 
-const VERSION := "0.3.0"
+const VERSION := "0.4.0"
 const SAVE_VERSION := 1
 const SAVE_PATH := "user://saves/slot1.json"
 const SETTINGS_PATH := "user://settings.cfg"
@@ -71,7 +71,7 @@ func _unhandled_input(event: InputEvent) -> void:
 
 # ---------------------------------------------------------------- game state
 
-func new_game(hero_name: String, world_seed: int = -1) -> void:
+func new_game(hero_name: String, world_seed: int = -1, cls: String = "swordsman") -> void:
 	if world_seed < 0:
 		world_seed = randi() & 0x7FFFFFFF
 	world = null
@@ -80,6 +80,11 @@ func new_game(hero_name: String, world_seed: int = -1) -> void:
 		"hero_cell": null, "minutes": 8 * 60.0, "fog": "", "steps": 0.0, "visited": [],
 		"created": Time.get_datetime_string_from_system(),
 	}
+	var p := Player.fresh()
+	p.cls = cls
+	p.hp = Player.max_hp(p)
+	p.mp = Player.max_mp(p)
+	state.player = p
 
 
 func has_save() -> bool:

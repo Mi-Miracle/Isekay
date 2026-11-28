@@ -14,7 +14,11 @@ const ORES := {
 
 
 static func fresh() -> Dictionary:
-	return {"lvl": 1, "xp": 0, "hp": 100.0, "mp": 40.0, "gold": 50, "potions": 3, "ethers": 1, "ore": {}, "kills": 0, "deaths": 0, "best": {}, "cleared": []}
+	return {"cls": "swordsman", "lvl": 1, "xp": 0, "hp": 100.0, "mp": 40.0, "gold": 50, "potions": 3, "ethers": 1, "ore": {}, "kills": 0, "deaths": 0, "best": {}, "cleared": [],
+		"gear": {"weapon": null, "armor": null, "trinket": null}, "bag": []}
+
+
+const BAG_MAX := 24
 
 
 static func ensure(state: Dictionary) -> Dictionary:
@@ -29,23 +33,76 @@ static func ensure(state: Dictionary) -> Dictionary:
 	p.gold = int(p.gold)
 	p.potions = int(p.potions)
 	p.ethers = int(p.ethers)
+	if not (p.gear is Dictionary):
+		p.gear = {"weapon": null, "armor": null, "trinket": null}
+	for k in ["weapon", "armor", "trinket"]:
+		if not p.gear.has(k):
+			p.gear[k] = null
 	return p
 
 
+static func cls(p: Dictionary) -> Dictionary:
+	return Classes.info(str(p.get("cls", "swordsman")))
+
+
+static func gear_sum(p: Dictionary, key: String) -> float:
+	var s := 0.0
+	for slot in p.gear:
+		var it = p.gear[slot]
+		if it is Dictionary:
+			s += float(it.get(key, 0.0))
+	return s
+
+
 static func max_hp(p: Dictionary) -> float:
-	return 100.0 + (int(p.lvl) - 1) * 18.0
+	var C := cls(p)
+	return float(C.hp) + (int(p.lvl) - 1) * float(C.hp_lvl) + gear_sum(p, "hp")
 
 
 static func max_mp(p: Dictionary) -> float:
-	return 40.0 + (int(p.lvl) - 1) * 6.0
+	var C := cls(p)
+	return float(C.mp) + (int(p.lvl) - 1) * float(C.mp_lvl) + gear_sum(p, "mp")
 
 
 static func atk(p: Dictionary) -> float:
-	return 12.0 + (int(p.lvl) - 1) * 3.2
+	var C := cls(p)
+	return float(C.atk) + (int(p.lvl) - 1) * float(C.atk_lvl) + gear_sum(p, "atk")
 
 
 static func def(p: Dictionary) -> float:
-	return 3.0 + (int(p.lvl) - 1) * 1.4
+	var C := cls(p)
+	return float(C.def) + (int(p.lvl) - 1) * float(C.def_lvl) + gear_sum(p, "def")
+
+
+static func crit(p: Dictionary) -> float:
+	return float(cls(p).crit) + gear_sum(p, "crit")
+
+
+## Додає річ у торбу. false — торба повна.
+static func give_item(p: Dictionary, it: Dictionary) -> bool:
+	if p.bag.size() >= BAG_MAX:
+		return false
+	p.bag.append(it)
+	return true
+
+
+static func equip(p: Dictionary, bag_i: int) -> void:
+	var it: Dictionary = p.bag[bag_i]
+	var old = p.gear.get(it.slot)
+	p.gear[it.slot] = it
+	p.bag.remove_at(bag_i)
+	if old is Dictionary:
+		p.bag.append(old)
+	p.hp = minf(float(p.hp), max_hp(p))
+	p.mp = minf(float(p.mp), max_mp(p))
+
+
+static func sell(p: Dictionary, bag_i: int) -> int:
+	var it: Dictionary = p.bag[bag_i]
+	var v := int(int(it.price) * 0.4)
+	p.gold = int(p.gold) + v
+	p.bag.remove_at(bag_i)
+	return v
 
 
 static func xp_need(lvl: int) -> int:
@@ -84,5 +141,9 @@ static func sell_ore(p: Dictionary) -> int:
 	return v
 
 
+static func short(p: Dictionary) -> String:
+	return "%s рів. %d · ❤ %d/%d · ✦ %d · 💰 %d · 🧪 %d" % [cls(p).icon, int(p.lvl), int(p.hp), int(max_hp(p)), int(p.mp), int(p.gold), int(p.potions)]
+
+
 static func summary(p: Dictionary) -> String:
-	return "Рів. %d · ❤ %d/%d · ✦ %d/%d · 💰 %d · 🧪 %d" % [int(p.lvl), int(p.hp), int(max_hp(p)), int(p.mp), int(max_mp(p)), int(p.gold), int(p.potions)]
+	return "%s %s · рів. %d · ❤ %d/%d · ✦ %d/%d · 💰 %d · 🧪 %d" % [cls(p).icon, cls(p).name, int(p.lvl), int(p.hp), int(max_hp(p)), int(p.mp), int(max_mp(p)), int(p.gold), int(p.potions)]

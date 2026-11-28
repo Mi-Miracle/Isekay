@@ -371,7 +371,7 @@ func _process(delta: float) -> void:
 	_tick_days()
 	armies_layer.queue_redraw()
 	hud.set_clock(Game.time_text(Game.state.minutes))
-	hud.set_player(Player.summary(Player.ensure(Game.state)))
+	hud.set_player(Player.short(Player.ensure(Game.state)))
 	_update_near()
 	_autosave_t += delta
 	if _autosave_t > 180.0 and Game.settings.auto_save:
@@ -682,6 +682,8 @@ func _unhandled_input(event: InputEvent) -> void:
 				wait_day()
 			KEY_J:
 				hud.open_chronicle()
+			KEY_I:
+				hud.open_inventory()
 			KEY_K:
 				hud.open_kingdoms()
 			KEY_F10:
@@ -825,6 +827,15 @@ func _selftest() -> void:
 		dungeon.leave(false)
 	while dungeon != null:
 		await tree.process_frame
+	var pl2 := Player.ensure(Game.state)
+	var atk0 := Player.atk(pl2)
+	Player.give_item(pl2, Items.make(str(pl2.cls), int(pl2.lvl), 3, "weapon"))
+	Player.equip(pl2, pl2.bag.size() - 1)
+	Selftest.step("gear", Player.atk(pl2) > atk0 and pl2.gear.weapon is Dictionary, "%s: атака %d → %d, предметів з підземелля: %d" % [pl2.cls, int(atk0), int(Player.atk(pl2)), last_dungeon.get("items", []).size()])
+	hud.open_inventory()
+	await tree.create_timer(0.6).timeout
+	Selftest.shot(self, "21_inventory")
+	hud.close_overlay()
 	Selftest.step("dungeon_combat", float(last_dungeon.get("dmg_dealt", 0)) > 0, "%s: ворогів %d, шкоди %d, золота %d, помер: %s" % [dsel.name, last_dungeon.kills, int(last_dungeon.dmg_dealt), last_dungeon.gold, str(last_dungeon.died)])
 	await tree.create_timer(0.6).timeout
 	Selftest.shot(self, "19_after_dungeon")
