@@ -50,7 +50,7 @@ static func on_walk(dist: float, rng: RandomNumberGenerator = null) -> Dictionar
 	if float(s.walk) < CHECK_CELLS:
 		return {}
 	s.walk = 0.0
-	if _roll(rng) > BASE_CHANCE * f * 2.0:
+	if _roll(rng) > BASE_CHANCE * f * 2.0 * (1.0 - Origin.mul(Game.state.player, "stealth")):
 		return {}
 	return pick("road", rng)
 

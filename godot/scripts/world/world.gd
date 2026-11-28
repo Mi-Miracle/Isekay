@@ -590,6 +590,15 @@ func _on_dungeon_done(st: Dictionary, dinfo: Dictionary) -> void:
 		_ambush_fx = {}
 	elif st.cleared:
 		hud.banner("Підземелля зачищено!", "%s: ворогів %d, золота %d, досвіду %d." % [dinfo.name, st.kills, st.gold, st.xp])
+		if dinfo.kind == "dungeon":
+			var art := Artifacts.in_dungeon(wd, int(dinfo.id))
+			if art != "" and Artifacts.give(p, art):
+				var A := Artifacts.get_art(art)
+				Audio.sfx("levelup")
+				hud.banner("%s Знайдено артефакт!" % A.icon, "«%s» — %s Слот «Артефакт»: спорядження (I) → 🔮 Артефакти." % [A.name, A.desc])
+			if str(dinfo.dtype) == "dragon" and not Pets.owned(p).has("dragon") and randf() < 0.25:
+				Pets.give(p, "dragon")
+				hud.toast("🥚 У гнізді боса лишилося яйце… З нього вилупився 🐲 Дракончик Іскорка! Тепер він твій.", Game.C_GOLD, 7.0)
 	if not st.died and (st.cleared or st.kills > 0):
 		Bonds.on_win(2.0 if st.cleared else 0.5)
 		for t in Clan.on_win(2.0 if st.cleared else 0.5):
@@ -1386,6 +1395,30 @@ func _selftest() -> void:
 		await tree.create_timer(0.4).timeout
 		Selftest.shot(self, "21e_jack")
 		hud.close_overlay()
+	# v0.19: пітомці й артефакти
+	pl2.gold = int(pl2.gold) + 2000
+	var perr := Pets.buy(pl2, "turtle")
+	var pal := Pets.ally(pl2, Player.atk(pl2))
+	var guard := Origin.mul(pl2, "guard")
+	var pup := false
+	for i in 20:
+		pup = Pets.add_xp(pl2, 1) or pup
+	var amap := Artifacts.map_for(wd)
+	var tr0 := Origin.mul(pl2, "travel")
+	var art_given := Artifacts.give(pl2, "art_compass")
+	var tr1 := Origin.mul(pl2, "travel")
+	Selftest.step("pets_artifacts", perr == "" and Pets.active(pl2) == "turtle" and not pal.is_empty() and guard > 0.05 and pup and amap.size() >= 10 and art_given and tr1 > tr0,
+		"пітомець %s рів. %d, захист %.2f, артефактів у підземеллях %d, подорожі %.2f → %.2f" % [Pets.active(pl2), Pets.lvl(pl2, "turtle"), guard, amap.size(), tr0, tr1])
+	hud.open_pet_shop(wd.baronies[0])
+	await tree.create_timer(0.4).timeout
+	Selftest.shot(self, "21f_pet_shop")
+	hud.open_artifacts()
+	await tree.create_timer(0.4).timeout
+	Selftest.shot(self, "21g_artifacts")
+	hud.open_inventory()
+	await tree.create_timer(0.4).timeout
+	Selftest.shot(self, "21h_inventory_pet")
+	hud.close_overlay()
 	# v0.17: дзвінок богині
 	var call := Goddess.make_call(pl2)
 	hud.open_goddess_call(call)
@@ -1506,7 +1539,7 @@ func _selftest() -> void:
 	while dungeon != null and dungeon.ally_hits == 0 and Time.get_ticks_msec() < t_al:
 		await tree.process_frame
 	await tree.create_timer(0.8).timeout
-	var n_al: int = dungeon.allies.size() if dungeon != null else 0
+	var n_al: int = dungeon.allies.filter(func(a): return not a.get("pet", false)).size() if dungeon != null else 0
 	if dungeon != null:
 		Selftest.shot(dungeon, "36_allies")
 	var a_hits: int = dungeon.ally_hits if dungeon != null else 0

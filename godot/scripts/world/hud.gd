@@ -471,6 +471,9 @@ func open_dungeon(d: Dictionary) -> void:
 		warn = "✅ Ти вже зачищав це місце. Монстри, втім, повернулися — вони завжди повертаються."
 	else:
 		warn = "Твій рівень: %d. Зілля: %d. Удачі!" % [int(p.lvl), int(p.potions)]
+	var art := Artifacts.in_dungeon(world.wd, int(d.id))
+	if art != "":
+		warn += "\n🔮 Тут відчувається древній артефакт. %s" % ("Він уже твій: %s %s." % [Artifacts.get_art(art).icon, Artifacts.get_art(art).name] if art in Artifacts.owned(p) else "Здолай боса — і він твій.")
 	var wl := Game.make_label(warn, 17, Color("#ffd6ec"))
 	wl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	wl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -846,7 +849,8 @@ func open_inventory(town: Dictionary = {}) -> void:
 	var pv := _vbox_panel("Спорядження", 1040)
 	var v: VBoxContainer = pv[1]
 	var C := Player.cls(p)
-	var st := Game.make_label("%s %s · рів. %d · ❤ %d · ✦ %d · атака %d · захист %d · крит %d%% · 💰 %d" % [C.icon, C.name, int(p.lvl), int(Player.max_hp(p)), int(Player.max_mp(p)), int(Player.atk(p)), int(Player.def(p)), int(round(Player.crit(p) * 100)), int(p.gold)], 18, Game.C_GOLD, 4)
+	var T := Classes.tier(p)
+	var st := Game.make_label("%s %s · рів. %d · ❤ %d · ✦ %d · атака %d · захист %d · крит %d%% · 💰 %d" % [T.icon, T.title, int(p.lvl), int(Player.max_hp(p)), int(Player.max_mp(p)), int(Player.atk(p)), int(Player.def(p)), int(round(Player.crit(p) * 100)), int(p.gold)], 18, Game.C_GOLD, 4)
 	st.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	v.add_child(st)
 	var hb := HBoxContainer.new()
@@ -871,6 +875,20 @@ func open_inventory(town: Dictionary = {}) -> void:
 	skl.custom_minimum_size.x = 350
 	left.add_child(skl)
 	_small_btn(left, "📖 Книга навичок (B)", open_skills)
+	var A := Artifacts.worn(p)
+	left.add_child(Game.make_label("Артефакт", 16, Color(1, 1, 1, 0.6), 2))
+	var al := Game.make_label("%s %s" % [A.icon, A.name] if not A.is_empty() else "— (здобувай у найглибших підземеллях)", 16, Game.C_GOLD if not A.is_empty() else Color(1, 1, 1, 0.5), 2)
+	al.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	al.custom_minimum_size.x = 350
+	left.add_child(al)
+	var pid := Pets.active(p)
+	left.add_child(Game.make_label("Пітомець", 16, Color(1, 1, 1, 0.6), 2))
+	left.add_child(Game.make_label("%s %s · рів. %d" % [Pets.info(pid).icon, Pets.info(pid).name, Pets.lvl(p, pid)] if pid != "" else "— (зоокрамниця при стайні)", 16, Game.C_GOLD if pid != "" else Color(1, 1, 1, 0.5), 2))
+	var rr := HBoxContainer.new()
+	rr.add_theme_constant_override("separation", 6)
+	left.add_child(rr)
+	_small_btn(rr, "🔮 Артефакти", open_artifacts)
+	_small_btn(rr, "🐾 Пітомці", open_pets)
 	var sc := ScrollContainer.new()
 	sc.custom_minimum_size = Vector2(640, 480)
 	sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
@@ -1602,6 +1620,8 @@ func open_stable(b: Dictionary) -> void:
 	var v: VBoxContainer = pv[1]
 	_info(v, "Конюх жує соломинку: «Верхи — вдвічі швидше. Пішки — вдвічі романтичніше. Обирай.»", 17, Color("#ffe6b3"))
 	_info(v, "💰 %d · На мапі: X — сісти верхи / злізти. Дорогою тварини мчать, у лісі й горах повільніші." % int(p.gold), 16, Game.C_GOLD)
+	var rz := _row(v)
+	_small_btn(rz, "🐾 Зоокрамниця поруч (пітомці)", func(): open_pet_shop(b))
 	for id in Travel.MOUNTS:
 		var M: Dictionary = Travel.MOUNTS[id]
 		var own: bool = t.mounts.has(id)
@@ -2545,6 +2565,102 @@ func open_jack(filter := "") -> void:
 	v.add_child(row2)
 	_small_btn(row2, "📖 Книга навичок", open_skills)
 	var c := _button(row2, "Закрити", close_overlay)
+	_show_overlay(pv[0], 0.45)
+	c.grab_focus.call_deferred()
+
+
+## Пітомці героя: обрати, хто ходить у підземелля.
+func open_pets() -> void:
+	var p := Player.ensure(Game.state)
+	var pv := _vbox_panel("🐾 Пітомці", 980)
+	var v: VBoxContainer = pv[1]
+	var own := Pets.owned(p)
+	if own.is_empty():
+		_info(v, "Пітомців поки немає. Зоокрамниця — біля стайні в містах. Люмі радить курку: «Найнебезпечніша істота Дивосвіту».", 17, Color(1, 1, 1, 0.75))
+	else:
+		var who: String = Pets.active(p) if Pets.active(p) != "" else str(own.keys()[0])
+		_info(v, "Активний пітомець ходить з тобою в підземелля, б'ється й росте в рівнях (до %d). %s" % [Pets.MAX_LVL, Pets.PET_LINES[randi() % Pets.PET_LINES.size()] % Pets.info(who).name], 16, Color(1, 1, 1, 0.75))
+	for id in own:
+		var P := Pets.info(id)
+		var S: Dictionary = own[id]
+		var cur: bool = Pets.active(p) == id
+		var r := _row(v)
+		var l := Game.make_label("%s %s — рів. %d (%d/%d) · %s · сила ×%.2f%s\n%s" % [P.icon, P.name, int(S.lvl), int(S.xp), Pets.xp_need(int(S.lvl)), Pets.ROLES[P.role].name, Pets.power(p, id), "  ✅ з тобою" if cur else "", P.desc], 16, Game.C_GOLD if cur else Color.WHITE, 3)
+		l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		l.custom_minimum_size.x = 760
+		r.add_child(l)
+		_small_btn(r, "Залишити вдома" if cur else "Взяти з собою", func():
+			Pets.set_active(p, "" if cur else id)
+			Audio.sfx("click")
+			open_pets())
+	var c := _button(v, "Закрити", close_overlay)
+	_show_overlay(pv[0], 0.45)
+	c.grab_focus.call_deferred()
+
+
+## Зоокрамниця (при стайні): купити пітомця.
+func open_pet_shop(b: Dictionary) -> void:
+	var p := Player.ensure(Game.state)
+	var pv := _vbox_panel("🐾 Зоокрамниця · %s" % b.name, 1000)
+	var v: VBoxContainer = pv[1]
+	_info(v, "Продавчиня гладить капібару: «Усі щеплені, привчені й майже не кусаються. Мімік — під вашу відповідальність.» · 💰 %d" % int(p.gold), 16, Color("#ffe6b3"))
+	var sc := ScrollContainer.new()
+	sc.custom_minimum_size = Vector2(960, 520)
+	sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	v.add_child(sc)
+	var list := VBoxContainer.new()
+	list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	sc.add_child(list)
+	for id in Pets.PETS:
+		var P: Dictionary = Pets.PETS[id]
+		if P.get("boss_only", false):
+			continue
+		var has: bool = Pets.owned(p).has(id)
+		var r := _row(list)
+		var l := Game.make_label("%s %s — %d 💰 · %s\n%s" % [P.icon, P.name, int(P.price), Pets.ROLES[P.role].name, P.desc], 16, Color(1, 1, 1, 0.55) if has else Color.WHITE, 3)
+		l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		l.custom_minimum_size.x = 780
+		r.add_child(l)
+		_small_btn(r, "✅ Твій" if has else "Купити", func():
+			if not _err(Pets.buy(p, id)):
+				Audio.sfx("quest")
+				toast("%s %s тепер з тобою! (I → 🐾 Пітомці)" % [P.icon, P.name], Game.C_GOLD, 5.0)
+				open_pet_shop(b), has or int(p.gold) < int(P.price))
+	var row2 := _row(v)
+	_small_btn(row2, "🐾 Мої пітомці", open_pets)
+	var c := _button(row2, "Закрити", close_overlay)
+	_show_overlay(pv[0], 0.45)
+	c.grab_focus.call_deferred()
+
+
+## Колекція артефактів: який носити (один).
+func open_artifacts() -> void:
+	var p := Player.ensure(Game.state)
+	var pv := _vbox_panel("🔮 Артефакти · %d/%d" % [Artifacts.owned(p).size(), Artifacts.LIST.size()], 1000)
+	var v: VBoxContainer = pv[1]
+	_info(v, "14 унікальних артефактів сховано в найглибших підземеллях світу. Шукай позначку 🔮 в описі підземелля й здолай боса. Носити можна один.", 16, Color(1, 1, 1, 0.75))
+	var sc := ScrollContainer.new()
+	sc.custom_minimum_size = Vector2(960, 520)
+	sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	v.add_child(sc)
+	var list := VBoxContainer.new()
+	list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	sc.add_child(list)
+	for A in Artifacts.LIST:
+		var has: bool = A.id in Artifacts.owned(p)
+		var cur := str(p.get("artifact", "")) == str(A.id)
+		var r := _row(list)
+		var txt := "%s %s%s\n%s" % [A.icon, A.name, "  ✅ на тобі" if cur else "", A.desc] if has else "❔ ???\nДесь у глибинах світу. Люмі каже: «Тепло… тепліше… ой, це мій чай»."
+		var l := Game.make_label(txt, 16, Game.C_GOLD if cur else (Color.WHITE if has else Color(1, 1, 1, 0.45)), 3)
+		l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		l.custom_minimum_size.x = 780
+		r.add_child(l)
+		if has:
+			_small_btn(r, "Зняти" if cur else "Одягнути", func():
+				Artifacts.wear(p, "" if cur else str(A.id))
+				Audio.sfx("click")
+				open_artifacts())
+	var c := _button(v, "Закрити", close_overlay)
 	_show_overlay(pv[0], 0.45)
 	c.grab_focus.call_deferred()
 

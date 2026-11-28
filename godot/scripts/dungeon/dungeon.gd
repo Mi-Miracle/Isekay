@@ -36,6 +36,7 @@ var _tex := {}
 var atk_cd := 0.0
 var dash_cd := 0.0
 var _undying_used := false
+var _feather_used := false
 var dash_t := 0.0
 var dash_dir := Vector2.ZERO
 var skill_cd := [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
@@ -126,6 +127,12 @@ func _ready() -> void:
 		a.merge({"pos": Vector2.ZERO, "cd": 0.0, "sig_cd": 5.0 + ai * 3.0, "heal_cd": 0.0, "i": ai, "flash": 0.0})
 		allies.append(a)
 		ai += 1
+	var pa := Pets.ally(p, Player.atk(p))
+	if not pa.is_empty():
+		pa.merge({"pos": Vector2.ZERO, "cd": 0.0, "sig_cd": 6.0, "heal_cd": 0.0, "i": ai, "flash": 0.0})
+		allies.append(pa)
+	for a in allies:
+		a.atk = float(a.atk) * (1.0 + Origin.mul(p, "allies"))
 	_load_floor(int(info.get("start", 1)))
 
 
@@ -208,6 +215,9 @@ func _process(delta: float) -> void:
 	shield_t = maxf(0, shield_t - delta)
 	if shield_t > 0:
 		invuln = maxf(invuln, 0.05)
+	var regen := Origin.mul(p, "regen")
+	if regen > 0.0 and float(p.hp) > 0.0:
+		p.hp = minf(Player.max_hp(p), float(p.hp) + Player.max_hp(p) * regen * delta)
 	invuln = maxf(0, invuln - delta)
 	_update_zones(delta)
 	hurt_flash = maxf(0, hurt_flash - delta)
@@ -660,6 +670,9 @@ func _kill(e: Dictionary) -> void:
 	for q in Guild.event("kill", e.kind):
 		_say("📋 Завдання «%s» виконано! Здай у гільдії." % q.name, 2.5)
 	var ups := Player.add_xp(p, xp)
+	if Pets.add_xp(p, 1):
+		var PI_ := Pets.info(Pets.active(p))
+		_float_text(hero.position + Vector2(0, -70), "%s рів. %d!" % [PI_.icon, Pets.lvl(p, Pets.active(p))], Color("#ffd36e"))
 	fx.append({"type": "poof", "pos": e.pos, "t": 0.45, "size": float(e.size)})
 	_float_text(e.pos + Vector2(0, -20), "+%d досв." % xp, Color("#c9a7ff"))
 	if ups > 0:
@@ -682,7 +695,7 @@ func _hurt_hero(dmg: float) -> void:
 		invuln = 0.3
 		_float_text(hero.position + Vector2(0, -44), "ухилення!", Color("#c9f0ff"))
 		return
-	var real := maxf(1.0, dmg - Player.def(p) * 0.5)
+	var real := maxf(1.0, (dmg - Player.def(p) * 0.5) * (1.0 - Origin.mul(p, "guard")))
 	p.hp = float(p.hp) - real
 	invuln = 0.55
 	hurt_flash = 0.18
@@ -695,6 +708,13 @@ func _hurt_hero(dmg: float) -> void:
 		p.hp = 1.0
 		invuln = 1.5
 		_say("💀 Безсмертний (майже)! Люмі: «Цього разу пронесло. Наступного — не обіцяю.»", 2.5)
+		return
+	if float(p.hp) <= 0 and Origin.mul(p, "revive") > 0.0 and not _feather_used:
+		_feather_used = true
+		p.hp = Player.max_hp(p) * Origin.mul(p, "revive")
+		invuln = 2.0
+		fx.append({"type": "ring", "pos": hero.position, "t": 0.8, "r": 90.0, "col": Color("#ffb36e")})
+		_say("🪶 Перо фенікса спалахнуло! Ти повстаєш із попелу. Стильно.", 2.5)
 		return
 	if float(p.hp) <= 0:
 		p.hp = 0.0
@@ -960,7 +980,7 @@ func _mine_vein(c: Vector2i) -> void:
 	fx.append({"type": "spark", "pos": (Vector2(c) + Vector2(0.5, 0.5)) * TILE, "t": 0.25, "col": Player.ORES[v.ore].color})
 	if int(v.hits) > 0:
 		return
-	var n := randi_range(1, 3) + Estate.prof_lvl("mining") / 5
+	var n := int((randi_range(1, 3) + Estate.prof_lvl("mining") / 5) * (1.0 + Origin.mul(p, "harvest")))
 	Player.add_ore(p, v.ore, n)
 	var up := Estate.prof_xp("mining", 3)
 	if up != "":
