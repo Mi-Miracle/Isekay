@@ -1,23 +1,26 @@
 // Map renderer v2: smooth terrain, always-visible feudal regions, zone tints, sea lanes, pixel settlements, armies, quest markers, minimap, WASD.
 (function () {
   const ISK = (globalThis.ISK = globalThis.ISK || {});
-  const S = 7;
+  // v5.7: мапа в 10 разів більша — світові координати ×10 (S = 70 px на клітинку), текстури будуються з BS = 7
+  const BS = 7, MUL = 10, S = BS * MUL;
+  const ZMIN = 0.03, ZMAX = 4, ZDEF = 1.6;
   const EMOJI = '"Segoe UI Emoji","Noto Color Emoji","Apple Color Emoji",sans-serif';
   const TCOL = { 0: [22, 52, 92], 1: [36, 86, 140], 2: [222, 206, 158], 3: [128, 170, 88], 4: [62, 118, 62], 5: [150, 150, 96], 6: [128, 118, 108], 7: [235, 238, 245], 8: [222, 190, 120], 9: [172, 186, 178], 10: [86, 104, 72], 11: [70, 34, 36], 12: [40, 102, 60] };
   const hexToRgb = (h) => { const n = parseInt(h.slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; };
   const shade = (rgb, f) => rgb.map((c) => Math.max(0, Math.min(255, Math.round(c * f))));
 
-  const R = { canvas: null, ctx: null, G: null, base: null, layers: {}, mode: 'terrain', cam: { x: 0, y: 0, z: 1 }, selected: null, route: null, travel: null, t: 0, dpr: 1, keys: new Set(), mini: null, labels: null };
+  const R = { canvas: null, ctx: null, G: null, base: null, layers: {}, mode: 'terrain', cam: { x: 0, y: 0, z: 1 }, follow: true, freeUntil: 0, selected: null, route: null, travel: null, t: 0, dpr: 1, keys: new Set(), mini: null, labels: null };
 
   function init(canvas, G) {
     R.canvas = canvas; R.ctx = canvas.getContext('2d'); R.G = G; R.layers = {}; R.labels = null;
-    buildBase(); buildLabels(); resize(); centerOn(G.player.location, 1.6); R.fogFor = null;
+    buildBase(); buildLabels(); resize(); centerOn(G.player.location, ZDEF); R.follow = true; R.fogFor = null;
     R.mini = document.getElementById('minimap');
     if (R.mini) { R.mini.width = 240; R.mini.height = Math.round(240 * ISK.world.H / ISK.world.W); }
   }
   function resize() { const dpr = window.devicePixelRatio || 1; R.dpr = dpr; R.canvas.width = Math.floor(R.canvas.clientWidth * dpr); R.canvas.height = Math.floor(R.canvas.clientHeight * dpr); }
 
   function buildBase() {
+    const S = BS;
     const w = R.G.world; const { W, H } = ISK.world; const SEA = w.SEA, PEAK = w.PEAK;
     const small = document.createElement('canvas'); small.width = W; small.height = H;
     const sg = small.getContext('2d'); const sd = sg.createImageData(W, H);
@@ -63,6 +66,8 @@
       for (let y = Math.max(0, L.y - L.r - 3); y < Math.min(H, L.y + L.r + 3); y++) for (let x = Math.max(0, L.x - L.r - 3); x < Math.min(W, L.x + L.r + 3); x++) if (w.cellLandmark[y * W + x] === L.id) g2.fillRect(x * S, y * S, S, S);
       g2.restore();
     }
+    // v5.7: копія лише рельєфу — для близької камери (дерева, дороги й річки там малюються векторно)
+    { const t = document.createElement('canvas'); t.width = c2.width; t.height = c2.height; t.getContext('2d').drawImage(c2, 0, 0); R.terrain = t; }
     // glyphs
     const rnd = (a, b) => ISK.noise.hash2(a, b, 77);
     for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
@@ -109,6 +114,7 @@
   }
 
   function buildLayer(mode) {
+    const S = BS;
     const w = R.G.world; const { W, H } = ISK.world;
     const c = document.createElement('canvas'); c.width = W * S; c.height = H * S; const g = c.getContext('2d');
     const realmCol = (id) => (id >= 0 ? hexToRgb(w.realms[id].color) : null);
@@ -166,6 +172,7 @@
   const screenToWorld = (sx, sy) => [sx / R.cam.z + R.cam.x, sy / R.cam.z + R.cam.y];
   function centerOn(node, zoom) {
     const p = ISK.world.nodeXY(R.G.world, node); if (zoom) R.cam.z = zoom;
+    if (node === R.G.player.location && !R.travel) R.follow = true; else freeCam(4000);
     R.cam.x = p.x * S + S / 2 - R.canvas.clientWidth / R.cam.z / 2; R.cam.y = p.y * S + S / 2 - R.canvas.clientHeight / R.cam.z / 2; clampCam();
   }
   function clampCam() {
@@ -197,16 +204,19 @@
       const sp = 14 / R.cam.z;
       if (R.keys.has('ArrowUp')) R.cam.y -= sp; if (R.keys.has('ArrowDown')) R.cam.y += sp;
       if (R.keys.has('ArrowLeft')) R.cam.x -= sp; if (R.keys.has('ArrowRight')) R.cam.x += sp;
-      if (R.keys.has('KeyQ')) R.cam.z = Math.max(0.22, R.cam.z * 0.98); if (R.keys.has('KeyE')) R.cam.z = Math.min(4, R.cam.z * 1.02);
+      if (R.keys.has('KeyQ')) R.cam.z = Math.max(ZMIN, R.cam.z * 0.98); if (R.keys.has('KeyE')) R.cam.z = Math.min(ZMAX, R.cam.z * 1.02);
       clampCam();
     }
+    followHero();
     if (w._ownerDirty) { invalidatePolitical(); w._ownerDirty = false; realmLabels = null; }
     const z = R.cam.z * R.dpr, inv = 1 / R.cam.z;
     g.setTransform(1, 0, 0, 1, 0, 0); g.fillStyle = G.fog ? '#0b0e1c' : '#143a6c'; g.fillRect(0, 0, R.canvas.width, R.canvas.height);
     g.setTransform(z, 0, 0, z, -R.cam.x * z, -R.cam.y * z); g.imageSmoothingEnabled = true;
-    g.drawImage(R.base, 0, 0);
+    const WP = ISK.world.W * S, HP = ISK.world.H * S; const zm = R.cam.z * MUL; const near = Math.max(0, Math.min(1, (zm - 5) / 2.5));
+    if (near < 1) g.drawImage(R.base, 0, 0, WP, HP);
+    if (near > 0) { g.globalAlpha = near; g.drawImage(R.terrain, 0, 0, WP, HP); g.globalAlpha = 1; drawNear(g, near); }
     if (!R.layers[R.mode]) buildLayer(R.mode);
-    g.drawImage(R.layers[R.mode], 0, 0);
+    g.drawImage(R.layers[R.mode], 0, 0, WP, HP);
     // route
     const route = R.travel ? R.travel.route : R.route;
     if (route && route.legs.length) {
@@ -220,7 +230,7 @@
     }
     g.imageSmoothingEnabled = false;
     // settlements
-    const z1 = R.cam.z;
+    const z1 = R.cam.z * MUL; // пороги підписів — як у старому масштабі мапи
     const VX0 = R.cam.x - 80, VY0 = R.cam.y - 80, VX1 = R.cam.x + R.canvas.clientWidth / R.cam.z + 80, VY1 = R.cam.y + R.canvas.clientHeight / R.cam.z + 80;
     const vis = (x, y) => x > VX0 && x < VX1 && y > VY0 && y < VY1;
     for (const B of w.baronies) {
@@ -228,7 +238,7 @@
       const x = B.x * S + S / 2, y = B.y * S + S / 2;
       if (!vis(x, y)) continue;
       const big = B.type === 'capital' ? 1.5 : B.type === 'city' ? 1.25 : ['town', 'fortress', 'hellfort'].includes(B.type) ? 1.05 : 0.85;
-      const sc = Math.max(1.1, Math.min(2.4, inv * 1.6)) * big;
+      const sc = Math.max(1.1, Math.min(2.4 * MUL, inv * 1.6)) * big * (1 + near * 1.2);
       const ctrl = B.occ >= 0 ? B.occ : B.owner; const col = ctrl >= 0 ? w.realms[ctrl].color : '#888';
       g.beginPath(); g.ellipse(x, y + 4 * sc, 7 * sc, 2.6 * sc, 0, 0, 7); g.fillStyle = known ? col : 'rgba(60,60,70,0.7)'; g.globalAlpha = 0.85; g.fill(); g.globalAlpha = 1;
       if (known || z1 > 0.9) { const ic = ISK.sprites.icon(B.type === 'capital' || B.type === 'city' || B.type === 'fortress' || B.type === 'town' || B.type === 'port' || B.type === 'mine' || B.type === 'hellfort' ? B.type : 'village'); g.globalAlpha = known ? 1 : 0.55; g.drawImage(ic, x - 6 * sc, y - 7 * sc, 12 * sc, ic.height * sc); g.globalAlpha = 1; }
@@ -241,13 +251,13 @@
     g.imageSmoothingEnabled = true;
     // landmark labels
     if (z1 > 0.55) for (const L of w.landmarks) {
-      if (fogAt(Math.round(L.y) * ISK.world.W + Math.round(L.x)) < 1) continue;
+      if (fogAt(Math.round(L.y) * ISK.world.W + Math.round(L.x)) < 2) continue;
       text(g, `${L.icon} ${L.name}`, L.x * S, (L.y - L.r * 0.6) * S, 12 * inv + 5, `rgb(${shade(L.color, 1.35).join(',')})`, 700, 4 * inv, 'Georgia, serif');
     }
     // dungeons
     for (const Dg of w.dungeons) {
       if (!G.discovered['d:' + Dg.id] && !(G.player.flags.relicsRevealed && (Dg.relic || Dg.final))) continue;
-      const x = Dg.x * S + S / 2, y = Dg.y * S + S / 2; const s = (Dg.final ? 26 : 16) * Math.max(0.9, Math.min(1.5, inv * 1.2));
+      const x = Dg.x * S + S / 2, y = Dg.y * S + S / 2; const s = (Dg.final ? 26 : 16) * Math.max(0.9, Math.min(1.5 * MUL, inv * 1.2));
       if (Dg.relic && !G.cleared[Dg.id] && G.player.flags.relicsRevealed) { g.beginPath(); g.arc(x, y, s * 0.8 + Math.sin(R.t / 12) * 2, 0, 7); g.fillStyle = 'rgba(255,126,182,0.35)'; g.fill(); }
       // v4: difficulty ring (green easy → red deadly) + highlight pulse
       const dl = Dg.level - G.player.level; const dcol = G.cleared[Dg.id] ? '#7cd67c' : dl <= -5 ? '#7cd67c' : dl <= 2 ? '#ffd36e' : dl <= 8 ? '#ff9a40' : '#ff4a5a';
@@ -264,7 +274,7 @@
     // v5.2: угіддя й родовища — окремі точки в природі
     if (z1 > 0.6 || R.hl) for (const Rn of w.rnodes || []) {
       if (!G.discovered['r:' + Rn.id]) continue; const x = Rn.x * S + S / 2, y = Rn.y * S + S / 2; if (!vis(x, y)) continue;
-      const S2 = ISK.data.RESOURCE_SITES[Rn.key]; if (!S2) continue; const sk = Math.max(1, Math.min(1.9, inv * 1.15)); const left = ISK.game.rnodeLeft(G, Rn.id);
+      const S2 = ISK.data.RESOURCE_SITES[Rn.key]; if (!S2) continue; const sk = Math.max(1, Math.min(1.9 * MUL, inv * 1.15)); const left = ISK.game.rnodeLeft(G, Rn.id);
       g.beginPath(); g.arc(x, y, 6.5 * sk + (R.hl ? 1.5 : 0), 0, 7); g.fillStyle = left ? 'rgba(20,28,16,0.78)' : 'rgba(40,30,30,0.6)'; g.fill(); g.strokeStyle = R.hl ? '#ffe36e' : left ? 'rgba(200,240,160,0.8)' : 'rgba(150,120,120,0.6)'; g.lineWidth = (R.hl ? 2 : 1.1) * Math.max(0.6, inv); g.stroke();
       g.globalAlpha = left ? 1 : 0.45; g.font = `${9 * sk}px ${EMOJI}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = '#fff'; g.fillText(S2.icon, x, y + 0.5); g.globalAlpha = 1;
       if (z1 > 2.2) text(g, S2.name, x, y + 11 * sk * 0.8, 5.5, '#e9ffd0', 600, 2);
@@ -273,7 +283,7 @@
     // recent battles: dust clouds & crossed swords
     for (const bt of G.P.battles || []) {
       const age = G.time - bt.day; if (age > 3 || age < 0) continue;
-      const x = bt.x * S + S / 2, y = bt.y * S + S / 2; const k = Math.max(1, Math.min(1.8, inv * 1.3));
+      const x = bt.x * S + S / 2, y = bt.y * S + S / 2; const k = Math.max(1, Math.min(1.8 * MUL, inv * 1.3));
       for (let c = 0; c < 5; c++) { const ang = c * 1.26 + R.t / 30; const rr = (10 + Math.sin(R.t / 7 + c) * 3) * k; g.beginPath(); g.arc(x + Math.cos(ang) * rr, y + Math.sin(ang) * rr * 0.6, (6 + c % 3 * 2) * k, 0, 7); g.fillStyle = `rgba(200,190,170,${0.35 * (1 - age / 3)})`; g.fill(); }
       g.font = `${18 * k}px ${EMOJI}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.globalAlpha = 1 - age / 3.5; g.fillText('⚔️', x, y - 4 * k + Math.sin(R.t / 4) * 2); g.globalAlpha = 1;
     }
@@ -293,7 +303,7 @@
     };
     // armies: little marching squads with banners
     for (const a of G.P.armies) {
-      const pos = unitPos(a); if (!vis(pos.x, pos.y)) continue; const k = Math.max(0.9, Math.min(1.7, inv * 1.25)); const dark = ISK.politics.isDemon(G.P, a.realm);
+      const pos = unitPos(a); if (!vis(pos.x, pos.y)) continue; const k = Math.max(0.9, Math.min(1.7 * MUL, inv * 1.25)); const dark = ISK.politics.isDemon(G.P, a.realm);
       const col = dark ? '#3a0a10' : w.realms[a.realm].color; const n = Math.max(2, Math.min(6, Math.round(Math.log10(Math.max(100, a.size)) * 1.6 - 2)));
       const ox = pos.x + 8 * k, oy = pos.y - 6 * k; const walk = !pos.idle;
       g.save(); g.translate(ox, oy);
@@ -319,14 +329,14 @@
     // NPC heroes
     for (const hh of G.P.heroes || []) {
       if (!hh.alive || hh.joined) continue;
-      const pos = unitPos(hh); if (!vis(pos.x, pos.y)) continue; const k = Math.max(0.9, Math.min(1.6, inv * 1.2)); const x = pos.x - 10 * k, y = pos.y - 12 * k + Math.sin(R.t / 7 + hh.id) * 1.5;
+      const pos = unitPos(hh); if (!vis(pos.x, pos.y)) continue; const k = Math.max(0.9, Math.min(1.6 * MUL, inv * 1.2)); const x = pos.x - 10 * k, y = pos.y - 12 * k + Math.sin(R.t / 7 + hh.id) * 1.5;
       g.beginPath(); g.arc(x, y, 6.5 * k, 0, 7); g.fillStyle = hh.rival ? 'rgba(255,126,182,0.85)' : 'rgba(255,215,110,0.85)'; g.fill(); g.strokeStyle = 'rgba(0,0,0,0.6)'; g.lineWidth = 1; g.stroke();
       g.font = `${8 * k}px ${EMOJI}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = '#000'; g.fillText(hh.icon, x, y + 0.5);
       if (z1 > 1.5) text(g, `${hh.name.split(' ')[0]} · ${hh.lvl}`, x, y - 10 * k, 6 * k + 1, hh.rival ? '#ffc2dc' : '#ffe9a8', 700, 2.5);
     }
     // v4: trade caravans walking the roads
     for (const c of (G.life && G.life.caravans) || []) {
-      const pos = unitPos(c); if (!vis(pos.x, pos.y)) continue; const k = Math.max(0.9, Math.min(1.5, inv * 1.15));
+      const pos = unitPos(c); if (!vis(pos.x, pos.y)) continue; const k = Math.max(0.9, Math.min(1.5 * MUL, inv * 1.15));
       const bob = Math.abs(Math.sin(R.t / 6 + c.id)) * 1.5 * k;
       g.save(); g.translate(pos.x, pos.y - 4 * k - bob); if (pos.dir < 0) g.scale(-1, 1);
       g.font = `${10 * k}px ${EMOJI}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(c.icon, 0, 0); g.fillText('📦', 8 * k, 2 * k);
@@ -336,7 +346,7 @@
     // v5.2: монстри, що бродять (видно лише там, де бачиш зараз/бачив)
     for (const m of (G.life && G.life.mon) || []) {
       if (fogAt(m.cell) < 2) continue; const W0 = ISK.world.W; const x = (m.cell % W0) * S + S / 2, y = ((m.cell / W0) | 0) * S + S / 2; if (!vis(x, y)) continue;
-      const k = Math.max(0.9, Math.min(1.8, inv * 1.3)); const bob = Math.abs(Math.sin(R.t / 7 + m.id)) * 2 * k; const dl = m.lvl - G.player.level;
+      const k = Math.max(0.9, Math.min(1.8 * MUL, inv * 1.3)); const bob = Math.abs(Math.sin(R.t / 7 + m.id)) * 2 * k; const dl = m.lvl - G.player.level;
       const col = dl <= -4 ? '#7cd67c' : dl <= 1 ? '#ffd36e' : dl <= 5 ? '#ff9a40' : '#ff4a5a';
       g.beginPath(); g.ellipse(x, y + 3 * k, 7 * k, 2.6 * k, 0, 0, 7); g.fillStyle = 'rgba(0,0,0,0.4)'; g.fill();
       g.beginPath(); g.arc(x, y - 6 * k - bob, 8 * k, 0, 7); g.fillStyle = 'rgba(30,8,12,0.82)'; g.fill(); g.strokeStyle = col; g.lineWidth = 1.6 * k; g.stroke();
@@ -346,32 +356,32 @@
       if (z1 > 1.6) text(g, `${m.name} · ${m.lvl}`, x, y + 9 * k, 5.5 * k, col, 700, 2.2);
     }
     // туман війни поверх світу
-    { const fc = buildFog(); if (fc) { g.imageSmoothingEnabled = true; g.drawImage(fc, 0, 0, ISK.world.W * S, ISK.world.H * S); } }
+    { const fc = buildFog(true); if (fc) { g.imageSmoothingEnabled = true; g.drawImage(fc, 0, 0, ISK.world.W * S, ISK.world.H * S); } }
     // labels by zoom
     if (z1 < 1.25 && R.mode !== 'danger') {
       if (!realmLabels || R.t - rlT > 120) { realmLabels = realmLabelPositions(); rlT = R.t; }
       for (const L of realmLabels) {
-        if (fogAt(Math.round(L.y / S) * ISK.world.W + Math.round(L.x / S)) < 1) continue;
+        if (fogAt(Math.round(L.y / S) * ISK.world.W + Math.round(L.x / S)) < 2) continue;
         const fs = Math.min(22, 10 + Math.sqrt(L.n) * 1.6) * inv;
         text(g, L.realm.name.toUpperCase(), L.x, L.y, fs, L.realm.isDemon ? '#ff9a8a' : 'rgba(255,245,220,0.95)', 700, 5 * inv);
         const sub = L.realm.liege >= 0 ? `${L.realm.title} (васал Імперії)` : L.realm.title;
         text(g, sub, L.x, L.y + fs * 0.72, fs * 0.42, 'rgba(255,230,180,0.9)', 600, 3 * inv);
       }
     }
-    if (z1 >= 0.8 && z1 < 2.2 && R.labels) for (const d of R.labels.duchies) if (d.n >= 3 && fogAt(Math.round(d.y / S) * ISK.world.W + Math.round(d.x / S)) >= 1) text(g, d.name, d.x, d.y - 14 * inv, 11 * inv + 3, 'rgba(255,235,200,0.7)', 600, 3 * inv, 'Georgia, serif');
-    if (z1 >= 2.2 && R.labels) for (const c of R.labels.counties) if (fogAt(Math.round(c.y / S) * ISK.world.W + Math.round(c.x / S)) >= 1) text(g, 'гр. ' + c.name, c.x, c.y - 18 * inv, 9 * inv + 3, 'rgba(255,250,230,0.6)', 500, 3 * inv, 'Georgia, serif');
+    if (z1 >= 0.8 && z1 < 2.2 && R.labels) for (const d of R.labels.duchies) if (d.n >= 3 && fogAt(Math.round(d.y / S) * ISK.world.W + Math.round(d.x / S)) >= 2) text(g, d.name, d.x, d.y - 14 * inv, 11 * inv + 3, 'rgba(255,235,200,0.7)', 600, 3 * inv, 'Georgia, serif');
+    if (z1 >= 2.2 && R.labels) for (const c of R.labels.counties) if (fogAt(Math.round(c.y / S) * ISK.world.W + Math.round(c.x / S)) >= 2) text(g, 'гр. ' + c.name, c.x, c.y - 18 * inv, 9 * inv + 3, 'rgba(255,250,230,0.6)', 500, 3 * inv, 'Georgia, serif');
     if (z1 < 0.65) for (const C of w.continents) text(g, C.name, C.x * S, (C.y - C.ry * ISK.world.H * 0.85) * S, 30 * inv, 'rgba(210,235,255,0.75)', 700, 6 * inv, 'Georgia, serif');
     // quest markers
     if (R.t - mkT > 30) { markers = ISK.game.questMarkers(G); mkT = R.t; }
     for (const m of markers) {
       const p = ISK.world.nodeXY(w, m.node); const bob = Math.sin(R.t / 9) * 3;
-      const k = Math.max(1, Math.min(1.8, inv * 1.3));
+      const k = Math.max(1, Math.min(1.8 * MUL, inv * 1.3));
       g.font = `${15 * k}px ${EMOJI}`; g.textAlign = 'center'; g.textBaseline = 'middle';
       g.beginPath(); g.arc(p.x * S + S / 2, p.y * S - 22 * k + bob, 10 * k, 0, 7); g.fillStyle = m.main ? 'rgba(255,126,182,0.85)' : 'rgba(255,215,110,0.85)'; g.fill();
       g.fillText(m.icon, p.x * S + S / 2, p.y * S - 22 * k + bob);
     }
     // v5.3: власні мітки та відстежувана ціль
-    { const nv = ISK.game.nav(G.player); const k = Math.max(1, Math.min(1.8, inv * 1.3));
+    { const nv = ISK.game.nav(G.player); const k = Math.max(1, Math.min(1.8 * MUL, inv * 1.3));
       for (const [node, ic] of Object.entries(nv.pins)) { const p = ISK.world.nodeXY(w, node); g.font = `${14 * k}px ${EMOJI}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(ic, p.x * S + S / 2 + 12 * k, p.y * S - 12 * k); }
       if (nv.track) { const p = ISK.world.nodeXY(w, nv.track); g.save(); g.strokeStyle = 'rgba(255,240,140,0.95)'; g.lineWidth = 2.5 * inv + 0.8; g.beginPath(); g.arc(p.x * S + S / 2, p.y * S + S / 2, (16 + Math.sin(R.t / 7) * 4) * k, 0, 7); g.stroke(); g.restore(); } }
     // selection
@@ -379,7 +389,7 @@
     // player (pixel hero)
     let px, py;
     if (R.travel && R.travel.pos) { px = R.travel.pos.x; py = R.travel.pos.y; } else { const p = ISK.world.nodeXY(w, G.player.location); px = p.x * S + S / 2; py = p.y * S + S / 2; }
-    const pk = Math.max(1.4, Math.min(3, inv * 2));
+    const pk = Math.max(1.4, Math.min(3 * MUL, inv * 2));
     g.beginPath(); g.ellipse(px, py + 2, 9 * pk / 1.4, 3 * pk / 1.4, 0, 0, 7); g.fillStyle = 'rgba(255,126,182,0.35)'; g.fill();
     g.imageSmoothingEnabled = false;
     const hop = R.travel ? Math.abs(Math.sin(R.t / 4)) * 2 * pk : Math.sin(R.t / 20) * pk * 0.5;
@@ -413,18 +423,21 @@
   }
 
   // ---- v5.2: туман війни ----
-  function buildFog() {
+  // main=true — мапа, якою ходиш: куплені мапи (рівень 1) тут туман не знімають; знімають лише на мінімапі й мапі світу
+  function buildFog(main) {
     const G = R.G, W = ISK.world.W, H = ISK.world.H; if (!G.fog) return null;
-    if (!R.fogCv) { R.fogCv = document.createElement('canvas'); R.fogCv.width = W; R.fogCv.height = H; }
-    if (R.fogFor === G && !G.fogDirty) return R.fogCv;
-    const g = R.fogCv.getContext('2d'); const img = g.createImageData(W, H); const d = img.data, f = G.fog;
+    const key = main ? 'fogMain' : 'fogMap';
+    if (!R[key]) { R[key] = document.createElement('canvas'); R[key].width = W; R[key].height = H; R[key + 'Ver'] = -1; }
+    if (G.fogDirty || R.fogFor !== G) { R.fogVer = (R.fogVer || 0) + 1; G.fogDirty = false; R.fogFor = G; }
+    if (R[key + 'Ver'] === R.fogVer) return R[key];
+    const g = R[key].getContext('2d'); const img = g.createImageData(W, H); const d = img.data, f = G.fog;
     for (let i = 0; i < f.length; i++) {
-      const v = f[i], o = i * 4;
+      const v = main && f[i] === 1 ? 0 : f[i], o = i * 4;
       if (v === 0) { d[o] = 10; d[o + 1] = 12; d[o + 2] = 24; d[o + 3] = 247; }
       else if (v === 1) { const n = ((i * 2654435761) >>> 24) & 15; d[o] = 188 + n; d[o + 1] = 156 + n; d[o + 2] = 104; d[o + 3] = 135; }
       else d[o + 3] = 0;
     }
-    g.putImageData(img, 0, 0); R.fogFor = G; G.fogDirty = false; return R.fogCv;
+    g.putImageData(img, 0, 0); R[key + 'Ver'] = R.fogVer; return R[key];
   }
   const fogAt = (cell) => (R.G.fog ? R.G.fog[cell] : 2);
   // повна мапа світу (відкривається кліком по мінімапі)
@@ -465,7 +478,70 @@
     const p = ISK.world.nodeXY(R.G.world, R.G.player.location); g.fillStyle = '#ff7eb6'; g.beginPath(); g.arc(p.x * S * k, p.y * S * k, 3, 0, 7); g.fill();
   }
   function miniClick() { if (ISK.panels && ISK.panels.worldMap) ISK.panels.worldMap(); }
-  function lookAt(wx, wy) { R.cam.x = wx - R.canvas.clientWidth / R.cam.z / 2; R.cam.y = wy - R.canvas.clientHeight / R.cam.z / 2; clampCam(); }
+  // v5.7: камера прив'язана до героя; Ctrl + коліщатко/перетягування/стрілки — вільний огляд, потім камера сама повертається
+  function heroPx() { const G = R.G; if (R.travel && R.travel.pos) return R.travel.pos; const p = ISK.world.nodeXY(G.world, G.player.location); return { x: p.x * S + S / 2, y: p.y * S + S / 2 }; }
+  function freeCam(ms = 2200) { R.follow = false; R.freeUntil = Date.now() + ms; }
+  function followHero(snap) {
+    if (!R.G || !R.canvas) return;
+    if (!R.follow) { if (R.ctrlHeld || R.selected || Date.now() < R.freeUntil) return; R.follow = true; }
+    const h = heroPx(); const vw = R.canvas.clientWidth / R.cam.z, vh = R.canvas.clientHeight / R.cam.z;
+    const k = snap ? 1 : 0.14; R.cam.x += (h.x - vw / 2 - R.cam.x) * k; R.cam.y += (h.y - vh / 2 - R.cam.y) * k;
+  }
+  function zoomAt(sx, sy, f) { const [wx, wy] = screenToWorld(sx, sy); R.cam.z = Math.max(ZMIN, Math.min(ZMAX, R.cam.z * f)); R.cam.x = wx - sx / R.cam.z; R.cam.y = wy - sy / R.cam.z; clampCam(); }
+  // близька камера: дороги, стежки й річки — векторами, плюс трава, дерева, каміння по клітинках (лише у видимій частині)
+  let lineBoxes = null;
+  function pathBoxes() {
+    if (lineBoxes && lineBoxes.w === R.G.world) return lineBoxes; const w = R.G.world, W0 = ISK.world.W; const list = [];
+    const add = (path, kind) => { let a = 1e9, b = 1e9, c = -1, d = -1; for (const cell of path) { const x = cell % W0, y = (cell / W0) | 0; if (x < a) a = x; if (y < b) b = y; if (x > c) c = x; if (y > d) d = y; } list.push({ path, kind, a, b, c, d }); };
+    for (const t of w.rtrails || []) add(t.path, t.kind === 'path' ? 'path' : 'rtrail');
+    for (const t of w.trails) add(t.path, t.kind === 'sea' ? 'seatrail' : 'trail');
+    for (const s2 of w.seaRoutes) add(s2.path, 'sea');
+    for (const r of w.roads) add(r.path, r.major ? 'major' : 'road');
+    lineBoxes = { w, list }; return lineBoxes;
+  }
+  function drawNear(g, alpha) {
+    const w = R.G.world, W0 = ISK.world.W, H0 = ISK.world.H; const inv = 1 / R.cam.z;
+    const x0 = Math.max(0, Math.floor(R.cam.x / S) - 1), y0 = Math.max(0, Math.floor(R.cam.y / S) - 1);
+    const x1 = Math.min(W0 - 1, Math.ceil((R.cam.x + R.canvas.clientWidth / R.cam.z) / S) + 1), y1 = Math.min(H0 - 1, Math.ceil((R.cam.y + R.canvas.clientHeight / R.cam.z) / S) + 1);
+    if ((x1 - x0) * (y1 - y0) > 2600) return; const f = R.G.fog; const hs = ISK.noise.hash2; let q = 1.5; const C = (cell) => [(cell % W0) * S + S / 2, ((cell / W0) | 0) * S + S / 2];
+    g.save(); g.globalAlpha = alpha; g.lineCap = 'round'; g.lineJoin = 'round';
+    // річки
+    g.strokeStyle = 'rgba(70,140,210,0.95)'; g.lineWidth = 0.17 * S;
+    g.beginPath();
+    for (let y = y0; y <= Math.min(H0 - 2, y1); y++) for (let x = x0; x <= Math.min(W0 - 2, x1); x++) { const i = y * W0 + x; if (!w.river[i]) continue; for (const [dx, dy] of [[1, 0], [0, 1]]) { const j = (y + dy) * W0 + (x + dx); if (w.river[j] || w.terrain[j] < 2) { g.moveTo(x * S + S / 2, y * S + S / 2); g.lineTo((x + dx) * S + S / 2, (y + dy) * S + S / 2); } } }
+    g.stroke();
+    // дерева, трава, каміння
+    for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
+      const i = y * W0 + x; if (f && f[i] < 2) continue; const t = w.terrain[i]; const bx = x * S, by = y * S; const lm = w.cellLandmark[i];
+      const dead = lm >= 0 && w.landmarks[lm].key === 'deathforest';
+      const N = t === 4 || t === 12 ? 9 : t <= 1 ? 4 : 12;
+      for (let n = 0; n < N; n++) {
+        q = t === 4 || t === 12 ? 2.4 : t >= 6 && t <= 9 ? 2 : 1.4;
+        const px = bx + hs(x * 13 + n, y, 11) * S, py = by + hs(x, y * 13 + n, 13) * S, r = hs(x + n * 7, y + n * 3, 17);
+        if (t <= 1) { if (r < 0.3) { g.strokeStyle = 'rgba(210,235,255,0.28)'; g.lineWidth = 0.6 * q; g.beginPath(); g.moveTo(px - 4 * q, py); g.quadraticCurveTo(px, py - 2 * q, px + 4 * q, py); g.stroke(); } }
+        else if (t === 2) { if (r < 0.45) { g.fillStyle = 'rgba(150,120,70,0.35)'; g.fillRect(px, py, 0.9 * q, 0.9 * q); } }
+        else if (t === 3 || t === 5 || t === 10) {
+          if (r < 0.85) { g.strokeStyle = t === 5 ? 'rgba(95,95,45,0.6)' : t === 10 ? 'rgba(40,85,60,0.65)' : 'rgba(55,110,38,0.6)'; g.lineWidth = 0.55 * q; g.beginPath(); g.moveTo(px - 1.3 * q, py); g.lineTo(px - 0.6 * q, py - 3 * q); g.moveTo(px, py); g.lineTo(px + 0.2 * q, py - 3.8 * q); g.moveTo(px + 1.3 * q, py); g.lineTo(px + 1 * q, py - 2.7 * q); g.stroke(); }
+          if (t === 3 && r > 0.94) { g.fillStyle = ['#ffd8f0', '#fff3a0', '#d8e8ff'][n % 3]; g.beginPath(); g.arc(px, py - q, 0.9 * q, 0, 7); g.fill(); }
+          if (t === 5 && r > 0.9) { g.fillStyle = 'rgba(110,105,70,0.7)'; g.beginPath(); g.ellipse(px, py, 2.2 * q, 1.2 * q, 0, 0, 7); g.fill(); }
+        } else if (t === 4 || t === 12) {
+          if (r < 0.7) { const s2 = (0.8 + r * 0.5) * q; g.fillStyle = 'rgba(0,0,0,0.22)'; g.beginPath(); g.ellipse(px + s2, py + 0.6 * s2, 3 * s2, 1.1 * s2, 0, 0, 7); g.fill(); g.fillStyle = 'rgba(80,52,28,0.95)'; g.fillRect(px - 0.4 * s2, py - 1.5 * s2, 0.8 * s2, 2.2 * s2);
+            g.fillStyle = dead ? 'rgba(45,18,55,0.95)' : t === 12 ? 'rgba(24,88,46,0.97)' : 'rgba(34,98,40,0.95)'; g.beginPath(); g.moveTo(px, py - 7 * s2); g.lineTo(px + 3.2 * s2, py - 0.8 * s2); g.lineTo(px - 3.2 * s2, py - 0.8 * s2); g.closePath(); g.fill();
+            g.fillStyle = dead ? 'rgba(90,50,110,0.5)' : 'rgba(130,200,100,0.35)'; g.beginPath(); g.moveTo(px, py - 7 * s2); g.lineTo(px + 1 * s2, py - 4 * s2); g.lineTo(px - 1.6 * s2, py - 3 * s2); g.closePath(); g.fill(); }
+        } else if (t === 6 || t === 7 || t === 9) { if (r < 0.5) { const s2 = (1 + r) * q; g.fillStyle = t === 7 ? 'rgba(238,242,252,0.9)' : 'rgba(108,100,94,0.9)'; g.beginPath(); g.ellipse(px, py, 2.4 * s2, 1.5 * s2, 0, 0, 7); g.fill(); g.fillStyle = 'rgba(255,255,255,0.28)'; g.beginPath(); g.ellipse(px - 0.6 * s2, py - 0.5 * s2, 1 * s2, 0.5 * s2, 0, 0, 7); g.fill(); } }
+        else if (t === 8) { if (r < 0.3) { g.strokeStyle = 'rgba(170,130,70,0.5)'; g.lineWidth = 0.5 * q; g.beginPath(); g.moveTo(px - 3 * q, py); g.quadraticCurveTo(px, py - 1.6 * q, px + 3 * q, py); g.stroke(); } }
+        else if (t === 11) { if (r < 0.3) { g.fillStyle = 'rgba(255,110,40,0.6)'; g.beginPath(); g.arc(px, py, 0.8 * q, 0, 7); g.fill(); } }
+      }
+    }
+    // дороги й стежки
+    const st = { major: [[0.24, 'rgba(40,25,12,0.55)'], [0.15, 'rgba(236,206,150,0.95)']], road: [[0.17, 'rgba(40,25,12,0.5)'], [0.1, 'rgba(205,170,120,0.9)', [0.5, 0.25]]], path: [[0.12, 'rgba(30,20,10,0.35)'], [0.07, 'rgba(232,205,150,0.85)', [0.25, 0.15]]], rtrail: [[0.1, 'rgba(30,20,10,0.35)'], [0.06, 'rgba(190,150,95,0.85)', [0.12, 0.2]]], trail: [[0.07, 'rgba(70,45,25,0.75)', [0.15, 0.3]]], seatrail: [[0.07, 'rgba(220,240,255,0.5)', [0.15, 0.3]]], sea: [[0.08, 'rgba(220,240,255,0.55)', [0.2, 0.45]]] };
+    for (const L of pathBoxes().list) {
+      if (L.c < x0 - 1 || L.a > x1 + 1 || L.d < y0 - 1 || L.b > y1 + 1) continue;
+      for (const [lw, col, dash] of st[L.kind]) { g.beginPath(); L.path.forEach((cell, k) => { const [px, py] = C(cell); k ? g.lineTo(px, py) : g.moveTo(px, py); }); g.setLineDash(dash ? dash.map((v) => v * S) : []); g.lineWidth = lw * S; g.strokeStyle = col; g.stroke(); }
+    }
+    g.setLineDash([]); g.restore(); void inv;
+  }
+  function lookAt(wx, wy) { freeCam(6000); R.cam.x = wx - R.canvas.clientWidth / R.cam.z / 2; R.cam.y = wy - R.canvas.clientHeight / R.cam.z / 2; clampCam(); }
 
   function pickMonster(sx, sy) {
     const [wx, wy] = screenToWorld(sx, sy); const W0 = ISK.world.W; let best = null, bd = 12 / R.cam.z + 6;
@@ -481,5 +557,5 @@
   }
   const cellToPx = (cell) => ({ x: (cell % ISK.world.W) * S + S / 2, y: ((cell / ISK.world.W) | 0) * S + S / 2 });
 
-  ISK.render = { R, init, draw, resize, centerOn, clampCam, pick, pickMonster, cellToPx, screenToWorld, invalidatePolitical, S, miniClick, drawWorldMap, buildFog, lookAt, fogAt };
+  ISK.render = { ZMIN, ZMAX, ZDEF, MUL, freeCam, followHero, zoomAt, heroPx, R, init, draw, resize, centerOn, clampCam, pick, pickMonster, cellToPx, screenToWorld, invalidatePolitical, S, miniClick, drawWorldMap, buildFog, lookAt, fogAt };
 })();

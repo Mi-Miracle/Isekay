@@ -116,6 +116,9 @@ b, strong { font-weight: 650; }
 /* ---------- Game: map ---------- */
 #map { position: absolute; inset: 0; width: 100%; height: 100%; cursor: grab; background: #0d2440; }
 #map.drag { cursor: grabbing; }
+#map { cursor: pointer; }
+#map.ctrl { cursor: grab; }
+#map.ctrl.drag { cursor: grabbing; }
 #hud-top { position: absolute; top: 12px; left: 12px; right: 12px; display: flex; gap: 14px; align-items: center; pointer-events: none; }
 #hud-top > * { pointer-events: auto; }
 .hud-portrait { width: 64px; height: 64px; border-radius: 16px; background: linear-gradient(135deg, #3b2f6e, #1d2140); border: 2px solid var(--gold); display: flex; align-items: center; justify-content: center; font-size: 38px; box-shadow: var(--shadow); }

@@ -256,7 +256,7 @@
       if (p.gold < cost.gold) { toast(`Не вистачає на морські квитки (${cost.gold}🪙)!`, 'bad'); return; }
       if (!(await confirmBox(`Маршрут має морські переправи. Квитки коштують ~${cost.gold}🪙. Плисти?`, 'Пливемо!', 'Ні'))) return;
     }
-    UI.travelling = true; UI.stopTravel = false;
+    UI.travelling = true; UI.stopTravel = false; UI.dirPending = null; ISK.render.R.follow = true;
     $('#info-panel').classList.add('hidden'); $('#location-panel').classList.add('hidden'); $('#travel-bar').classList.remove('hidden');
     const R = ISK.render.R; R.travel = { route, leg: 0, pos: null };
     const totalDays = cost.days; let doneDays = 0;
@@ -269,19 +269,21 @@
       let enc = coach ? null : GM().rollEncounter(G, leg.path[encAt] ?? leg.path[0], leg.kind === 'air' ? 'land' : leg.kind, days);
       if (enc && enc.type === 'combat' && leg.kind !== 'sea' && Math.random() < (leg.kind === 'air' ? 0.75 : hurry ? 0.15 : 0.5)) enc = null; // частину бійок тепер дають видимі монстри; у польоті — рідше, у поспіху — частіше
       $('#travel-text').textContent = `${coach ? '🐎 Поштова карета' : leg.kind === 'sea' ? '⛵ Морем' : leg.kind === 'air' ? ISK.data.MOUNTS[p.mount].icon + ' Політ' : hurry ? '🏃 Поспіхом' : '🚶 Подорож'} до ${nodeName(target)} · ${GM().dateStr(G.time)}`;
-      const stride = Math.max(1, Math.round(PL().travelSpeed(p)));
-      let spent = 0; const stepMs = UI.fastTravel ? 4 : Math.max(8, Math.min(leg.kind === 'sea' ? 14 : 24, 2600 / steps));
+      // v5.7: пішки герой іде дуже повільно й плавно (клітинка за клітинкою); верхи, морем і в польоті — як раніше
+      const onFoot = p.mount === 'feet' && !coach && leg.kind === 'land' && !UI.fastTravel;
+      const stride = onFoot ? 1 : Math.max(1, Math.round(PL().travelSpeed(p)));
+      let spent = 0; const stepMs = UI.fastTravel ? 4 : onFoot ? (hurry ? FOOT_MS * 0.7 : FOOT_MS) : Math.max(8, Math.min(leg.kind === 'sea' ? 14 : 24, 2600 / steps));
       for (let s = 0; s < steps; s += stride) {
         const tgt = days * Math.min(1, (s + stride) / steps); if (tgt - spent > 0.02) { showNews(GM().passTime(G, tgt - spent)); spent = tgt; }
-        const px = ISK.render.cellToPx(leg.path[s]); R.travel.pos = px;
+        const px = ISK.render.cellToPx(leg.path[s]);
+        if (onFoot && s > 0) { const a = ISK.render.cellToPx(leg.path[s - 1]); const t0 = performance.now(); for (;;) { const t = Math.min(1, (performance.now() - t0) / stepMs); R.travel.pos = { x: a.x + (px.x - a.x) * t, y: a.y + (px.y - a.y) * t }; if (t >= 1 || UI.stopTravel) break; await sleep(16); } }
+        R.travel.pos = px;
         // v5.2: туман розвіюється на ходу; монстри, що бродять, нападають, якщо пройти поруч
         GM().revealAt(G, leg.path[s]);
         if (leg.kind !== 'sea' && leg.kind !== 'air' && !coach && s > 1) { const mon = GM().monsterNear(G, leg.path[s], 1); if (mon) { const res = await fightMonster(mon, true); if (res === 'dead') { endTravel(); return; } if (res === 'fled') { toast('Ти відступив і повернувся назад.', ''); endTravel(); return; } } }
         if (s % 4 === 0) A().play(leg.kind === 'sea' ? 'splash' : 'step');
-        const z = R.cam.z; const vw = R.canvas.clientWidth / z, vh = R.canvas.clientHeight / z;
-        R.cam.x += (px.x - vw / 2 - R.cam.x) * 0.12; R.cam.y += (px.y - vh / 2 - R.cam.y) * 0.12;
         $('#travel-fill').style.width = (((doneDays + days * (s / steps)) / totalDays) * 100).toFixed(1) + '%';
-        await sleep(stepMs);
+        if (!onFoot || s === 0) await sleep(onFoot ? 16 : stepMs);
         if (s <= encAt && s + stride > encAt && enc) { const res = await handleEncounter(enc); if (res === 'dead') { endTravel(); return; } }
       }
       if (days - spent > 0) showNews(GM().passTime(G, days - spent)); doneDays += days;
@@ -303,6 +305,7 @@
     checkMainQuest(); refresh();
   }
   // ---- v5.1: WASD — герой іде до сусіднього поселення в обраному напрямку (затиснув — іде далі) ----
+  const FOOT_MS = 480; // мс на клітинку пішки
   const WASD = { KeyW: [0, -1], KeyS: [0, 1], KeyA: [-1, 0], KeyD: [1, 0] };
   function heldDir() {
     const R = ISK.render.R; let x = 0, y = 0;
@@ -318,18 +321,31 @@
     }
     return best;
   }
+  // v5.7: пересування з двох натискань — перше обирає напрямок (показує шлях), друге підтверджує
+  function chooseDest(node) {
+    const G = UI.G; if (!node || UI.travelling) return false;
+    if (node === G.player.location) { showInfo(node); UI.dirPending = null; return false; }
+    if (UI.dirPending === node && ISK.render.R.selected === node) { UI.dirPending = null; startTravel(node); return true; }
+    UI.dirPending = node; showInfo(node);
+    if (!ISK.render.R.route) { toast('🧭 Туди шляху немає.', ''); UI.dirPending = null; return false; }
+    toast(`👣 Напрямок: ${nodeName(node)}. Ще раз — іти.`, '', 1800); return false;
+  }
   async function walkDir() {
     if (UI.travelling || UI.walking) return; UI.walking = true;
     try {
-      for (let i = 0; i < 40; i++) {
-        const v = heldDir(); if (!v) break;
-        const to = neighborToward(v); if (!to) { if (!i) toast('🧭 У той бік доріг нема. Хіба що вплав… без корабля — ні.', ''); break; }
-        await startTravel(to); if (UI.G.player.location !== to || UI.inCombat) break;
-        await sleep(60);
-      }
+      const v = heldDir(); if (!v) return;
+      const to = neighborToward(v); if (!to) { toast('🧭 У той бік доріг нема. Хіба що вплав… без корабля — ні.', ''); return; }
+      chooseDest(to);
     } finally { UI.walking = false; }
   }
 
+  // клік у порожнє місце — найближче відоме поселення/угіддя в тому напрямку
+  function nearestKnown(sx, sy) {
+    const G = UI.G, w = G.world, S = ISK.render.S; const [wx, wy] = ISK.render.screenToWorld(sx, sy); let best = null, bd = Infinity;
+    const chk = (o, key) => { if (!G.discovered[key] || key === G.player.location) return; const d = Math.hypot(o.x * S + S / 2 - wx, o.y * S + S / 2 - wy); if (d < bd) { bd = d; best = key; } };
+    for (const B of w.baronies) chk(B, 'b:' + B.id); for (const Dg of w.dungeons) chk(Dg, 'd:' + Dg.id); for (const Rn of w.rnodes || []) chk(Rn, 'r:' + Rn.id);
+    return best;
+  }
   function endTravel() { UI.travelling = false; const R = ISK.render.R; R.travel = null; R.route = null; R.selected = null; $('#travel-bar').classList.add('hidden'); $('#location-panel').classList.remove('hidden'); refresh(); }
 
   // ---- v5.2: монстри на мапі ----
@@ -427,11 +443,20 @@
   function bindMap() {
     const c = $('#map'); const R = ISK.render.R; let drag = null, moved = false;
     c.addEventListener('contextmenu', (e) => { e.preventDefault(); if (UI.travelling) return; const node = ISK.render.pick(e.clientX, e.clientY); ISK.panels2.mapContext(e, node); });
-    c.addEventListener('mousedown', (e) => { if (e.button !== 0) return; drag = { x: e.clientX, y: e.clientY, cx: R.cam.x, cy: R.cam.y }; moved = false; });
-    window.addEventListener('mousemove', (e) => { if (!drag) return; const dx = e.clientX - drag.x, dy = e.clientY - drag.y; if (Math.abs(dx) + Math.abs(dy) > 4) { moved = true; c.classList.add('drag'); } R.cam.x = drag.cx - dx / R.cam.z; R.cam.y = drag.cy - dy / R.cam.z; ISK.render.clampCam(); });
-    window.addEventListener('mouseup', (e) => { if (drag && !moved && e.target === c) { const mon = ISK.render.pickMonster(e.clientX, e.clientY); if (mon) { A().play('click'); showMonster(mon); drag = null; return; } const node = ISK.render.pick(e.clientX, e.clientY); if (node) { A().play('click'); showInfo(node); } } drag = null; c.classList.remove('drag'); });
-    c.addEventListener('wheel', (e) => { e.preventDefault(); const [wx, wy] = ISK.render.screenToWorld(e.clientX, e.clientY); R.cam.z = Math.max(0.22, Math.min(4, R.cam.z * (e.deltaY < 0 ? 1.12 : 0.89))); R.cam.x = wx - e.clientX / R.cam.z; R.cam.y = wy - e.clientY / R.cam.z; ISK.render.clampCam(); }, { passive: false });
-    c.addEventListener('dblclick', (e) => { const node = ISK.render.pick(e.clientX, e.clientY); if (node && node !== UI.G.player.location && !UI.travelling) startTravel(node); });
+    // v5.7: камера йде за героєм; Ctrl + перетягування — оглянути мапу, Ctrl + коліщатко — наблизити/віддалити
+    c.addEventListener('mousedown', (e) => { if (e.button !== 0) return; drag = { x: e.clientX, y: e.clientY, cx: R.cam.x, cy: R.cam.y, ctrl: e.ctrlKey }; moved = false; });
+    window.addEventListener('mousemove', (e) => { if (!drag) return; const dx = e.clientX - drag.x, dy = e.clientY - drag.y; if (Math.abs(dx) + Math.abs(dy) > 4) moved = true; if (!drag.ctrl || !moved) return; c.classList.add('drag'); ISK.render.freeCam(); R.cam.x = drag.cx - dx / R.cam.z; R.cam.y = drag.cy - dy / R.cam.z; ISK.render.clampCam(); });
+    window.addEventListener('mouseup', (e) => {
+      if (drag && !moved && e.target === c) {
+        const mon = ISK.render.pickMonster(e.clientX, e.clientY); if (mon) { A().play('click'); showMonster(mon); drag = null; return; }
+        const node = ISK.render.pick(e.clientX, e.clientY) || nearestKnown(e.clientX, e.clientY); if (node) { A().play('click'); chooseDest(node); }
+      }
+      drag = null; c.classList.remove('drag');
+    });
+    c.addEventListener('wheel', (e) => { e.preventDefault(); if (!e.ctrlKey) return; ISK.render.freeCam(); ISK.render.zoomAt(e.clientX, e.clientY, e.deltaY < 0 ? 1.12 : 0.89); }, { passive: false });
+    window.addEventListener('keydown', (e) => { if (e.key === 'Control') { R.ctrlHeld = true; c.classList.add('ctrl'); } });
+    window.addEventListener('keyup', (e) => { if (e.key === 'Control') { R.ctrlHeld = false; c.classList.remove('ctrl'); ISK.render.freeCam(1500); } });
+    window.addEventListener('blur', () => { R.ctrlHeld = false; c.classList.remove('ctrl'); });
     const mini = $('#minimap'); if (mini) mini.addEventListener('mousedown', (e) => ISK.render.miniClick(e));
     window.addEventListener('resize', () => ISK.render.resize());
     document.querySelectorAll('#map-modes [data-mode]').forEach((b) => b.addEventListener('click', () => { document.querySelectorAll('#map-modes [data-mode]').forEach((x) => x.classList.remove('active')); b.classList.add('active'); R.mode = b.dataset.mode; A().play('click'); }));
@@ -443,8 +468,8 @@
     const gameActive = () => UI.G && $('#screen-game').classList.contains('active') && !UI.inCombat && !UI.inMinigame && !UI.inDungeon;
     window.addEventListener('keydown', (e) => {
       if (!gameActive() || e.target.tagName === 'INPUT') return;
-      if (WASD[e.code] && !UI.modalStack.length) { R.keys.add(e.code); e.preventDefault(); if (!e.repeat) walkDir(); return; }
-      if (['KeyQ', 'KeyE', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code) && !UI.modalStack.length) { R.keys.add(e.code); e.preventDefault(); return; }
+      if (WASD[e.code] && !UI.modalStack.length && !e.ctrlKey) { R.keys.add(e.code); e.preventDefault(); if (!e.repeat) walkDir(); return; }
+      if (['KeyQ', 'KeyE', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code) && !UI.modalStack.length) { if (!e.ctrlKey) return; R.keys.add(e.code); ISK.render.freeCam(); e.preventDefault(); return; }
       if (e.key === 'Escape') { if (!closeTop()) ISK.panels.open('system'); return; }
       if (UI.modalStack.length) return;
       const byCode = { KeyC: 'character', KeyI: 'inventory', KeyK: 'skills', KeyP: 'professions', KeyJ: 'quests', KeyR: 'realms', KeyH: 'chronicle', KeyT: 'party', KeyY: 'achievements' };

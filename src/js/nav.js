@@ -132,8 +132,8 @@
       }
       if (any && active()) UI().walkDir();
       const rx = gp.axes[2] || 0, ry = gp.axes[3] || 0;
-      if (Math.abs(rx) > 0.2 || Math.abs(ry) > 0.2) { R.cam.x += rx * 9 / R.cam.z; R.cam.y += ry * 9 / R.cam.z; ISK.render.clampCam(); }
-      if (tap(4)) R.cam.z = Math.max(0.22, R.cam.z * 0.85); if (tap(5)) R.cam.z = Math.min(4, R.cam.z * 1.18);
+      if (Math.abs(rx) > 0.2 || Math.abs(ry) > 0.2) { ISK.render.freeCam(); R.cam.x += rx * 9 / R.cam.z; R.cam.y += ry * 9 / R.cam.z; ISK.render.clampCam(); }
+      if (tap(4)) R.cam.z = Math.max(ISK.render.ZMIN, R.cam.z * 0.85); if (tap(5)) R.cam.z = Math.min(ISK.render.ZMAX, R.cam.z * 1.18);
       if (active()) {
         if (tap(0) && R.selected && R.selected !== UI().G.player.location) UI().startTravel(R.selected);
         if (tap(3)) nextTarget(); if (tap(2)) go(); if (tap(8)) cycleMount();

@@ -101,11 +101,11 @@
       const G = UI.G; if (!G) throw new Error('no game');
       for (let i = 0; i < 20 && document.querySelector('.dialog'); i++) { document.querySelector('.dialog')?.click(); await UI.sleep(100); }
       UI.closeAll(); await UI.sleep(600); await shot('03_map_start');
-      ISK.render.R.cam.z = 0.4; ISK.render.clampCam(); await shot('04_world_overview');
+      ISK.render.R.cam.z = 0.04; ISK.render.clampCam(); await shot('04_world_overview');
       document.querySelector('[data-mode="political"]').click(); await shot('05_political');
       document.querySelector('[data-mode="terrain"]').click();
-      ISK.render.centerOn(G.player.location, 1.1); await shot('06_regions_mid');
-      ISK.render.centerOn(G.player.location, 2.6); await shot('07_zoom_close');
+      ISK.render.centerOn(G.player.location, 0.11); await shot('06_regions_mid');
+      ISK.render.centerOn(G.player.location, 0.26); await shot('07_zoom_close');
       const p = G.player;
       const town = G.world.baronies.find((b) => b.type === 'city' && b.owner === G.world.startRealm) || G.world.baronies.find((b) => b.type === 'city');
       p.location = 'b:' + town.id; G.discovered[p.location] = 1; p.guild.registered = true; p.gold = 20000; p.level = 14; p.fame = 700; p.social = 3;
@@ -115,7 +115,7 @@
       p.hp = ISK.player.maxHp(p); p.mp = ISK.player.maxMp(p);
       const hc = ISK.game.hireOptions(G, town.id); ISK.game.hire(G, hc[0]); ISK.game.buyPet(G, 'fox'); ISK.game.buyMount(G, 'horse');
       const bd = ISK.game.board(G, town.id); for (const q of bd.quests.slice(0, 3)) ISK.game.acceptQuest(G, town.id, q.id);
-      ISK.render.centerOn(p.location, 1.3); UI.refresh(); UI.showInfo('b:' + (town.adj && town.adj.length ? town.adj[0] : town.id)); await shot('08_markers_info');
+      ISK.render.centerOn(p.location, 0.13); UI.refresh(); UI.showInfo('b:' + (town.adj && town.adj.length ? town.adj[0] : town.id)); await shot('08_markers_info');
       ISK.panels.character(); await shot('09_character'); UI.closeAll();
       ISK.panels.skills(); await shot('10_skills_advance'); UI.closeAll();
       ISK.panels.guild(town); await UI.sleep(200); await shot('11_guild'); UI.closeAll();
@@ -164,15 +164,15 @@
       await step('v3_realms', async () => { ISK.panels.realms(); await UI.sleep(150); document.querySelector('.tabs button[data-id="races"]')?.click(); await shot('26_races'); document.querySelector('.tabs button[data-id="heroes"]')?.click(); await shot('27_heroes'); UI.closeAll(); });
       await step('v3_armies', async () => {
         const UI2 = UI; const G3 = UI2.G; const a = G3.P.armies.find((x) => x.path && x.path.length) || G3.P.armies[0];
-        if (a) { ISK.render.centerOn('b:' + a.node, 1.6); }
+        if (a) { ISK.render.centerOn('b:' + a.node, 0.16); }
         UI2.setSpeed(2); for (let i = 0; i < 30; i++) await UI2.sleep(100); UI2.setSpeed(0); await shot('28_armies_marching');
-        ISK.render.centerOn(G3.player.location, 0.3); await UI2.sleep(300); await shot('29_world_overview');
+        ISK.render.centerOn(G3.player.location, 0.03); await UI2.sleep(300); await shot('29_world_overview');
       });
       await step('v3_sites_heroes', async () => {
         const G3 = UI.G; const p3 = G3.player; const B = G3.world.baronies.find((b) => b.sites && b.sites.length && !ISK.politics.isDemon(G3.P, b.owner));
         p3.location = 'b:' + B.id; G3.discovered['b:' + B.id] = 1;
         const hh = ISK.heroes.makeHero(G3.world, G3.P, new ISK.RNG(5)); hh.node = B.id; G3.P.heroes.push(hh);
-        UI.refresh(); ISK.render.centerOn(p3.location, 2.2); UI.showInfo(p3.location); await UI.sleep(300); await shot('30_site_hero');
+        UI.refresh(); ISK.render.centerOn(p3.location, 0.22); UI.showInfo(p3.location); await UI.sleep(300); await shot('30_site_hero');
         ISK.panels.heroTalk(hh.id); await shot('31_hero_talk'); UI.closeAll();
         const r = ISK.game.gatherSite(G3, B.id, 0, 1); if (!r) errors.push('gatherSite failed');
       });
@@ -230,7 +230,7 @@
         ISK.panels.guild(town); await UI.sleep(200); document.querySelector('.tabs button[data-id="jack"]')?.click(); await UI.sleep(200); await shot('49_jack'); document.querySelector('.tabs button[data-id="rivals"]')?.click(); await UI.sleep(200); await shot('50_rivals'); UI.closeAll();
       });
       await step('v4_map', async () => {
-        const g = G4(); g.life.weatherOverride = null; document.getElementById('hl-toggle').click(); ISK.render.centerOn(g.player.location, 1.2); await UI.sleep(500); await shot('51_map_highlight'); document.getElementById('hl-toggle').click();
+        const g = G4(); g.life.weatherOverride = null; document.getElementById('hl-toggle').click(); ISK.render.centerOn(g.player.location, 0.12); await UI.sleep(500); await shot('51_map_highlight'); document.getElementById('hl-toggle').click();
         ISK.panels2.mapContext({ clientX: 500, clientY: 400, preventDefault() {} }, g.player.location); await UI.sleep(200); await shot('52_context_menu'); document.querySelectorAll('.ctx-menu').forEach((e) => e.remove());
         g.life.call = { ctx: 'random', text: 'Привіт, герою! Я тут подумала… може, вже час помитися?', gift: 'potion_s' }; ISK.panels2.goddessPopup(); await UI.sleep(800); await shot('53_goddess_call');
       });
@@ -239,6 +239,8 @@
         const ev = (type, code) => window.dispatchEvent(new KeyboardEvent(type, { code, key: code.slice(3).toLowerCase() }));
         let moved = false;
         for (const code of ['KeyD', 'KeyA', 'KeyS', 'KeyW']) {
+          // v5.7: два натискання — перше обирає напрямок, друге підтверджує
+          ev('keydown', code); await UI.sleep(60); ev('keyup', code); if (code === 'KeyD') await shot('56a_wasd_pick');
           ev('keydown', code); for (let i = 0; i < 6 && !UI.travelling; i++) await UI.sleep(50); ev('keyup', code);
           for (let i = 0; i < 200 && (UI.travelling || UI.walking); i++) { document.querySelector('.modal .btn.primary')?.click(); await UI.sleep(100); }
           if (g.player.location !== from) { moved = true; break; }
@@ -249,15 +251,15 @@
       });
       await step('v52_map', async () => {
         const g = G4(); const p = g.player; UI.closeAll(); const home = 'b:' + g.world.startBarony; if (p.location !== home) { ISK.game.arrive(g, home); UI.refresh(); }
-        ISK.render.centerOn(home, 1.3); await UI.sleep(500); await shot('70_fog');
+        ISK.render.centerOn(home, 0.13); await UI.sleep(500); await shot('70_fog');
         ISK.panels.worldMap(); await UI.sleep(600); await shot('71_world_map'); UI.closeAll();
         p.gold += 20000; ISK.panels.cartographer(g.world.startBarony); await UI.sleep(500); await shot('72_cartographer');
         const btn = [...document.querySelectorAll('.map-tier .btn.primary')][1]; if (btn) btn.click(); await UI.sleep(400); UI.closeAll();
-        ISK.render.centerOn(home, 0.7); await UI.sleep(400); await shot('73_after_map');
+        ISK.render.centerOn(home, 0.07); await UI.sleep(400); await shot('73_after_map');
         const e = g.world.graph[home].find((x) => x.to[0] === 'r'); if (!e) errors.push('no resource spot near start');
         UI.fastTravel = true; if (e) await UI.startTravel(e.to); UI.fastTravel = false; UI.closeAll();
         if (e && p.location !== e.to) errors.push('did not reach resource spot ' + p.location);
-        ISK.render.centerOn(p.location, 2.2); await UI.sleep(400); await shot('74_resource_spot');
+        ISK.render.centerOn(p.location, 0.22); await UI.sleep(400); await shot('74_resource_spot');
         const W0 = ISK.world.W; const c0 = ISK.world.nodeCell(g.world, p.location);
         g.life.mon.push({ id: 9999, cell: c0 + 3 + 2 * W0, home: c0, tgt: c0, key: 'wolf', keys: ['wolf'], lvl: p.level + 1, n: 2, icon: '🐺', name: 'Зграя: Вовк', elite: true }); ISK.game.revealAt(g, c0);
         await UI.sleep(400); await shot('75_monster'); UI.showMonster(g.life.mon[g.life.mon.length - 1]); await UI.sleep(300); await shot('76_monster_info');
@@ -327,11 +329,11 @@
         const W = ISK.world; const here = g.world.baronies[g.world.startBarony];
         const far = g.world.baronies.filter((B) => B.cont === here.cont && B.id !== here.id).sort((a, b) => Math.hypot(b.x - here.x, b.y - here.y) - Math.hypot(a.x - here.x, a.y - here.y))[3];
         ISK.nav.pin('b:' + far.id, '⭐'); ISK.nav.setTrack('b:' + far.id); await UI.sleep(400); await shot('80_track_pin');
-        p.mounts.push('griffin'); p.mount = 'griffin'; UI.showInfo('b:' + far.id); ISK.render.centerOn(home, 0.5); await UI.sleep(500); await shot('81_flight_route');
+        p.mounts.push('griffin'); p.mount = 'griffin'; UI.showInfo('b:' + far.id); ISK.render.centerOn(home, 0.05); await UI.sleep(500); await shot('81_flight_route');
         UI.fastTravel = true; await UI.startTravel('b:' + far.id); UI.fastTravel = false; UI.closeAll();
         if (p.location !== 'b:' + far.id) errors.push('flight did not arrive: ' + p.location);
         await UI.sleep(300); await shot('82_arrive_banner'); p.mount = 'feet';
-        const T = g.world.baronies.find((B) => ISK.game.hasTower(B) && B.cont === here.cont); if (T) { g.fog = new Uint8Array(W.W * W.H); ISK.game.arrive(g, 'b:' + T.id); UI.refresh(); ISK.nav.tower(T.id); ISK.render.centerOn(p.location, 0.6); await UI.sleep(500); await shot('83_tower'); }
+        const T = g.world.baronies.find((B) => ISK.game.hasTower(B) && B.cont === here.cont); if (T) { g.fog = new Uint8Array(W.W * W.H); ISK.game.arrive(g, 'b:' + T.id); UI.refresh(); ISK.nav.tower(T.id); ISK.render.centerOn(p.location, 0.06); await UI.sleep(500); await shot('83_tower'); }
         p.guild.registered = true; p.guild.rank = 2; const gt = g.world.baronies.find((B) => W.SETTLEMENT[B.type].services.includes('guild') && B.cont === here.cont && 'b:' + B.id !== p.location); ISK.game.arrive(g, 'b:' + gt.id); UI.refresh();
         ISK.nav.portals(); await UI.sleep(300); await shot('84_portals'); UI.closeAll();
         const tgt = g.world.baronies.find((B) => B.id !== gt.id && ISK.game.coachOffer(g, 'b:' + B.id)); if (tgt) { UI.showInfo('b:' + tgt.id); await UI.sleep(300); await shot('85_coach'); }
@@ -364,7 +366,7 @@
         await UI.sleep(2600); await shot('63_action_phase2');
         globalThis.ISK_ACTIONBOT = false; L.finish('flee'); await pr; UI.closeAll();
       });
-      await step('v4_lifesim', async () => { const g = G4(); const t0 = g.time; ISK.game.passTime(g, 200); if (g.time < t0 + 199) errors.push('time'); UI.refresh(); ISK.render.centerOn(g.player.location, 0.5); await UI.sleep(400); await shot('55_world_after'); });
+      await step('v4_lifesim', async () => { const g = G4(); const t0 = g.time; ISK.game.passTime(g, 200); if (g.time < t0 + 199) errors.push('time'); UI.refresh(); ISK.render.centerOn(g.player.location, 0.05); await UI.sleep(400); await shot('55_world_after'); });
       await step('v4_intro', async () => { const el = document.getElementById('intro'); for (const [i, at] of [[0, 3.4], [1, 6.2], [2, 10.2], [3, 13.9], [4, 16.6]]) { await ISK.intro.play(el, { at }); await UI.sleep(150); await shot('36_intro_' + i); } el.classList.add('hidden'); el.innerHTML = ''; });
     } catch (e) { errors.push('fatal: ' + (e.stack || e)); }
     if (native) { await native.report({ errors }); native.quit(); } else console.log('SELFTEST', errors);

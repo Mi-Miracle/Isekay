@@ -177,7 +177,6 @@
       if (here && k === 'd') items.push({ icon: '🕳️', label: 'Увійти в підземелля', fn: () => ISK.dungeonUI.enter(+id) });
     }
     for (const a of extras || []) items.push(a);
-    items.push('-', { icon: '🧪', label: 'Чіт-меню', fn: () => ISK.panels.cheats() }, { icon: '🎙️', label: 'Голоси', fn: voices });
     contextMenu(e.clientX, e.clientY, items);
   }
 
