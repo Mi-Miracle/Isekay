@@ -1,5 +1,5 @@
 ## Підземелля й шахти: екшен-бій у реальному часі просто на рівні.
-## WASD — рух, ЛКМ/Пробіл — удар, Q/F/V/Shift(ПКМ) — навички зі слотів (книга навичок, B), R/1 — зілля, 2 — ефір,
+## WASD — рух, ЛКМ/Пробіл — удар, Shift/ПКМ — ривок, Q/F/V/G — навички зі слотів (книга навичок, B), R/1 — зілля, 2 — ефір,
 ## E — скриня/сходи/вихід/жила, Esc — пауза.
 class_name Dungeon
 extends Node2D
@@ -239,6 +239,8 @@ func _hero_input(delta: float) -> void:
 	_move_hero(dir, delta)
 	if Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) or Input.is_key_pressed(KEY_SPACE):
 		attack()
+	if Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT) or Input.is_key_pressed(KEY_SHIFT):
+		dash(dir if dir != Vector2.ZERO else facing)
 
 
 func _move_hero(dir: Vector2, delta: float) -> void:
@@ -316,7 +318,26 @@ func attack() -> void:
 		get_tree().create_timer(0.06).timeout.connect(func(): if is_instance_valid(cam): cam.offset = Vector2.ZERO)
 
 
-## Навичка з клавіші-слота (0 Q, 1 F, 2 V, 3 Shift/ПКМ).
+func dash(dir: Vector2) -> void:
+	if dash_cd > 0 or dir == Vector2.ZERO:
+		return
+	dash_cd = 0.75
+	dash_t = 0.17
+	Audio.sfx("dash", -3.0)
+	dash_dir = dir.normalized()
+	invuln = 0.3
+	fx.append({"type": "dust", "pos": hero.position, "t": 0.35})
+	# секретне благословення «Вантажівка-кун на виклик»: ривок таранить ворогів
+	var ram := Origin.mul(p, "dash_dmg")
+	if ram > 0:
+		var to := hero.position + dash_dir * 92.0
+		for e in enemies:
+			if float(e.hp) > 0 and (Geometry2D.get_closest_point_to_segment(e.pos, hero.position, to) - e.pos).length() < 30 * float(e.size):
+				_hit(e, ram, dash_dir * 300.0)
+		_float_text(hero.position + Vector2(0, -60), "🚚 БІП!", Color("#ffd36e"))
+
+
+## Навичка з клавіші-слота (0 Q, 1 F, 2 V, 3 G).
 func cast_slot(k: int) -> void:
 	var id := str(Classes.slots(p)[k])
 	if id == "":
@@ -427,7 +448,7 @@ func drink_potion() -> void:
 	if float(p.hp) >= Player.max_hp(p):
 		return
 	p.potions = int(p.potions) - 1
-	p.hp = minf(Player.max_hp(p), float(p.hp) + Player.max_hp(p) * 0.45)
+	p.hp = minf(Player.max_hp(p), float(p.hp) + Player.max_hp(p) * 0.45 * (1.0 + Origin.mul(p, "potion")))
 	Audio.sfx("potion")
 	_float_text(hero.position + Vector2(0, -40), "+зілля", Color("#7dff9a"))
 
@@ -458,7 +479,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_V:
 				if not paused:
 					cast_slot(2)
-			KEY_SHIFT:
+			KEY_G:
 				if not paused:
 					cast_slot(3)
 			KEY_R, KEY_1:
@@ -474,8 +495,6 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif event is InputEventMouseButton and event.pressed and not paused:
 		if event.button_index == MOUSE_BUTTON_MIDDLE:
 			cast_slot(0)
-		elif event.button_index == MOUSE_BUTTON_RIGHT:
-			cast_slot(3)
 
 
 func interact() -> void:
@@ -645,15 +664,20 @@ func _kill(e: Dictionary) -> void:
 		fx.append({"type": "levelup", "pos": hero.position, "t": 1.0})
 	if randf() < (1.0 if e.boss else 0.45):
 		drops.append({"pos": e.pos, "kind": "gold", "n": randi_range(3, 9) * int(e.lvl) * ((3 if info.has("ambush") else 10) if e.boss else 1)})
-	if randf() < (1.0 if e.boss else 0.06):
+	var lootm := 1.0 + Origin.mul(p, "loot")
+	if randf() < (1.0 if e.boss else 0.06 * lootm):
 		drops.append({"pos": e.pos + Vector2(12, 0), "kind": "potion", "n": 1})
-	if randf() < (1.0 if e.boss else 0.035):
+	if randf() < (1.0 if e.boss else 0.035 * lootm):
 		var rar := maxi(2, Items.roll_rarity(0.1)) if e.boss else Items.roll_rarity()
 		drops.append({"pos": e.pos + Vector2(-12, 6), "kind": "item", "item": Items.make(str(p.cls), int(e.lvl), rar)})
 
 
 func _hurt_hero(dmg: float) -> void:
 	if invuln > 0 or done:
+		return
+	if randf() < Origin.mul(p, "dodge"):
+		invuln = 0.3
+		_float_text(hero.position + Vector2(0, -44), "ухилення!", Color("#c9f0ff"))
 		return
 	var real := maxf(1.0, dmg - Player.def(p) * 0.5)
 	p.hp = float(p.hp) - real
@@ -1180,7 +1204,7 @@ func _build_ui() -> void:
 	_msg.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_msg.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	root.add_child(_msg)
-	var hints := Game.make_label("WASD — рух · ЛКМ/Пробіл — удар · Q/F/V/Shift(ПКМ) — навички · R — зілля · 2 — ефір · E — дія · Esc — пауза", 15, Color(1, 1, 1, 0.75), 4)
+	var hints := Game.make_label("WASD — рух · ЛКМ/Пробіл — удар · Shift/ПКМ — ривок · Q/F/V/G — навички · R — зілля · 2 — ефір · E — дія · Esc — пауза", 15, Color(1, 1, 1, 0.75), 4)
 	hints.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
 	hints.position = Vector2(18, -34)
 	root.add_child(hints)
@@ -1223,7 +1247,7 @@ func _update_ui() -> void:
 	_xp_bar.value = int(p.xp)
 	_stat.text = "Рів. %d · ❤ %d/%d · ✦ %d/%d · 💰 %d · 🧪 %d · 💧 %d" % [int(p.lvl), int(p.hp), int(Player.max_hp(p)), int(p.mp), int(Player.max_mp(p)), int(p.gold), int(p.potions), int(p.ethers)]
 	var alive := enemies.filter(func(e): return float(e.hp) > 0).size()
-	var parts: Array = ["Ворогів: %d" % alive]
+	var parts: Array = ["Ворогів: %d" % alive, "Ривок %s" % ("✔" if dash_cd <= 0 else "%.1f" % dash_cd)]
 	var sl: Array = Classes.slots(p)
 	for k in Classes.SLOTS:
 		var i := -1
@@ -1352,7 +1376,7 @@ class EntLayer extends Node2D:
 			var hgt := 46.0 * float(e.size)
 			var w := hgt * tex.get_width() / float(tex.get_height())
 			var bob := sin(t * 8.0 + float(e.seed)) * 2.0 if e.vel.length() > 10 else 0.0
-			var hover := -10.0 if e.kind in ["bat", "ghost"] else 0.0
+			var hover := -10.0 if e.kind in ["bat", "ghost", "harpy", "frost_wisp", "wyvern", "imp"] else 0.0
 			# попередження про атаку
 			if e.state == "windup":
 				var k: float = 1.0 - clampf(float(e.t) / 0.9, 0.0, 1.0)

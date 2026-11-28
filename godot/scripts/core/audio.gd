@@ -96,6 +96,8 @@ func _load(path: String) -> AudioStream:
 ## Настрої, де вбудована 8-біт музика перемішується з власними треками гравця.
 const AMBIENT := ["field", "forest", "desert", "winter", "town", "tavern", "home", "sea"]
 const AUDIO_EXT := ["ogg", "mp3", "wav"]
+## Вбудована в гру музика автора (потрапляє в .exe для всіх гравців): track1, track2…, menu.
+const BUILTIN_CUSTOM := "res://assets/audio/custom/"
 
 var now_playing := ""          # що звучить зараз (назва файлу/треку) — для налаштувань і тостів
 var _custom: Array = []        # власні треки гравця (шляхи)
@@ -125,9 +127,24 @@ func scan_music() -> int:
 		if fw:
 			fw.store_string("Хроніки Дивосвіту — власна музика\n\nКладіть сюди файли .mp3, .ogg або .wav:\n  track1.mp3, track2.mp3, track3.ogg … — грають у грі впереміш із вбудованою 8-бітною музикою\n  menu.mp3 (або menu1, menu2…) — грає в головному меню\n\nБій, боси й підземелля лишаються зі своєю музикою.\nПісля додавання файлів натисніть «Оновити» в Налаштування → Звук або перезапустіть гру.\n")
 			fw.close()
+	# вбудовані треки автора: у зібраній грі файли видно як «track1.mp3.import»/«.remap»
+	var rd := DirAccess.open(BUILTIN_CUSTOM)
+	if rd:
+		var seen := {}
+		for fn in rd.get_files():
+			var base := fn.trim_suffix(".import").trim_suffix(".remap")
+			if seen.has(base) or not (base.get_extension().to_lower() in AUDIO_EXT):
+				continue
+			seen[base] = true
+			if base.to_lower().begins_with("menu"):
+				_menu.append(BUILTIN_CUSTOM + base)
+			else:
+				_custom.append(BUILTIN_CUSTOM + base)
 	var d := DirAccess.open(dir)
 	if d == null:
-		return 0
+		_custom.sort()
+		_menu.sort()
+		return _custom.size() + _menu.size()
 	for fn in d.get_files():
 		if not (fn.get_extension().to_lower() in AUDIO_EXT):
 			continue
@@ -150,6 +167,10 @@ func _load_ext(path: String) -> AudioStream:
 	if _ext_cache.has(path):
 		return _ext_cache[path]
 	var st: AudioStream = null
+	if path.begins_with("res://"):
+		st = load(path) if ResourceLoader.exists(path) else null
+		_ext_cache[path] = st
+		return st
 	match path.get_extension().to_lower():
 		"ogg":
 			st = AudioStreamOggVorbis.load_from_file(path)
@@ -284,6 +305,21 @@ func sfx(name: String, vol_db: float = 0.0, pitch_var: float = 0.07) -> void:
 	pl.stream = st
 	pl.volume_db = vol_db
 	pl.pitch_scale = 1.0 + randf_range(-pitch_var, pitch_var)
+	pl.play()
+
+
+## Програти готовий потік як звук (для бліпів голосу).
+func sfx_stream(st: AudioStream, vol_db: float, pitch: float) -> void:
+	var pl: AudioStreamPlayer = null
+	for p in _pool:
+		if not p.playing:
+			pl = p
+			break
+	if pl == null:
+		return
+	pl.stream = st
+	pl.volume_db = vol_db
+	pl.pitch_scale = pitch
 	pl.play()
 
 

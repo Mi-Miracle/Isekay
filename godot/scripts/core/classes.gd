@@ -1,10 +1,10 @@
 ## Класи героя: базові характеристики, стиль звичайної атаки й шість навичок.
-## Гравець сам кладе навички на 4 клавіші (Q, F, V, Shift/ПКМ) — `p.skill_slots`.
+## Гравець сам кладе навички на 4 клавіші (Q, F, V, G) — `p.skill_slots`. Shift/ПКМ — ривок.
 ## Типи навичок виконує dungeon.gd (cast_skill).
 class_name Classes
 extends RefCounted
 
-const KEYS := ["Q", "F", "V", "Shift"]
+const KEYS := ["Q", "F", "V", "G"]
 const SLOTS := 4
 
 const CLASSES := {
@@ -14,7 +14,7 @@ const CLASSES := {
 		"basic": {"type": "arc", "reach": 58, "arc": 1.05, "power": 1.0, "cd": 0.36},
 		"skills": [
 			{"id": "power_strike", "name": "Сильний удар", "lvl": 1, "mp": 8, "cd": 2.0, "type": "arc", "reach": 70, "arc": 1.3, "power": 2.3, "knock": 320, "desc": "Удар з усієї сили. І з усієї душі."},
-			{"id": "lunge", "name": "Випад", "lvl": 1, "mp": 4, "cd": 1.4, "type": "charge", "range": 200, "power": 1.0, "col": "#cfe3ff", "desc": "Ривок уперед з мечем напоготові. Заміна старому перекату, але стильніша."},
+			{"id": "lunge", "name": "Випад", "lvl": 1, "mp": 4, "cd": 1.4, "type": "charge", "range": 200, "power": 1.0, "col": "#cfe3ff", "desc": "Випад уперед з мечем напоготові. Ривок, але з наміром."},
 			{"id": "whirl", "name": "Вихор клинків", "lvl": 4, "mp": 14, "cd": 5.0, "type": "nova", "radius": 95, "power": 1.5, "col": "#e8f0ff", "desc": "Крутишся, поки вороги не закінчаться."},
 			{"id": "skysplit", "name": "Розсікання неба", "lvl": 8, "mp": 26, "cd": 8.0, "type": "projectile", "speed": 520, "power": 3.6, "pierce": 99, "r": 16, "col": "#bfe6ff", "desc": "Хвиля сталі. Назву вигукувати обов'язково."},
 			{"id": "warcry", "name": "Бойовий клич", "lvl": 12, "mp": 20, "cd": 14.0, "type": "buff", "time": 6.0, "col": "#ffd36e", "desc": "Кричиш «Я — головний герой!». Шкода +60%, вороги в шоці."},
@@ -110,7 +110,7 @@ static func default_slots(key: String) -> Array:
 	return order.map(func(i): return sk[i].id if i < sk.size() else "")
 
 
-## Навички на клавішах (Q, F, V, Shift): масив id. Старі сейви та чужі id → за замовчуванням.
+## Навички на клавішах (Q, F, V, G): масив id. Старі сейви та чужі id → за замовчуванням.
 static func slots(p: Dictionary) -> Array:
 	var key := str(p.get("cls", "swordsman"))
 	var cur = p.get("skill_slots")

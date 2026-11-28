@@ -9,12 +9,12 @@ const H := 40
 
 ## Хто живе в якому підземеллі (ключі — типи з Defs.DTYPES).
 const POOLS := {
-	"goblin": ["goblin", "wolf", "bat"], "crypt": ["skeleton", "ghost", "bat"], "slime": ["slime", "spider", "bat"],
-	"ruins": ["skeleton", "spider", "golem"], "mine": ["bat", "spider", "golem"], "tower": ["ghost", "golem", "bat"],
-	"dragon": ["golem", "wolf", "bat"], "beast": ["wolf", "spider", "bat"], "spider": ["spider", "bat", "slime"],
-	"bandit": ["goblin", "wolf", "goblin"], "fey": ["slime", "bat", "ghost"], "crystal": ["golem", "bat", "ghost"],
-	"ice": ["ghost", "golem", "wolf"], "volcano": ["golem", "bat", "slime"], "pirate": ["skeleton", "goblin", "bat"],
-	"sunken": ["slime", "ghost", "skeleton"], "hellgate": ["skeleton", "ghost", "golem"], "minecave": ["bat", "spider", "golem", "slime"],
+	"goblin": ["goblin", "wolf", "bat", "orc"], "crypt": ["skeleton", "ghost", "bat", "mimic"], "slime": ["slime", "spider", "bat", "mushroom"],
+	"ruins": ["skeleton", "spider", "golem", "mimic"], "mine": ["bat", "spider", "golem"], "tower": ["ghost", "golem", "bat", "imp"],
+	"dragon": ["golem", "wyvern", "salamander", "bat"], "beast": ["wolf", "spider", "bat", "harpy"], "spider": ["spider", "bat", "slime"],
+	"bandit": ["goblin", "wolf", "orc", "mimic"], "fey": ["slime", "mushroom", "ghost", "harpy"], "crystal": ["golem", "bat", "ghost", "frost_wisp"],
+	"ice": ["ghost", "frost_wisp", "wolf", "golem"], "volcano": ["salamander", "imp", "golem", "wyvern"], "pirate": ["skeleton", "goblin", "bat", "mimic"],
+	"sunken": ["slime", "ghost", "skeleton", "mushroom"], "hellgate": ["imp", "skeleton", "ghost", "golem"], "minecave": ["bat", "spider", "golem", "slime", "mushroom"],
 }
 
 ## Відтінок стін і підлоги та фарбування монстрів за темою.
@@ -40,6 +40,15 @@ const MONSTERS := {
 	"wolf": {"name": "Вовк", "hp": 40, "atk": 11, "speed": 105, "ai": "lunge", "size": 1.0, "xp": 13},
 	"ghost": {"name": "Привид", "hp": 30, "atk": 9, "speed": 55, "ai": "ranged", "size": 1.0, "xp": 14},
 	"golem": {"name": "Голем", "hp": 90, "atk": 16, "speed": 45, "ai": "slam", "size": 1.35, "xp": 24},
+	# v0.17: нові мешканці підземель
+	"orc": {"name": "Орк-рубака", "hp": 70, "atk": 15, "speed": 72, "ai": "melee", "size": 1.2, "xp": 20},
+	"mimic": {"name": "Мімік", "hp": 55, "atk": 14, "speed": 95, "ai": "lunge", "size": 1.0, "xp": 22},
+	"imp": {"name": "Біс", "hp": 26, "atk": 10, "speed": 85, "ai": "ranged", "size": 0.85, "xp": 14},
+	"harpy": {"name": "Гарпія", "hp": 32, "atk": 10, "speed": 125, "ai": "swoop", "size": 1.0, "xp": 15},
+	"mushroom": {"name": "Злий гриб", "hp": 48, "atk": 9, "speed": 50, "ai": "slam", "size": 1.0, "xp": 13},
+	"frost_wisp": {"name": "Морозний дух", "hp": 34, "atk": 11, "speed": 65, "ai": "ranged", "size": 0.95, "xp": 16},
+	"salamander": {"name": "Саламандра", "hp": 44, "atk": 13, "speed": 90, "ai": "lunge", "size": 1.05, "xp": 17},
+	"wyvern": {"name": "Віверна", "hp": 80, "atk": 17, "speed": 100, "ai": "swoop", "size": 1.3, "xp": 28},
 }
 
 const BOSS_TITLES := ["Король", "Володар", "Древній", "Жахливий", "Великий", "Безсмертний (майже)", "Дуже злий"]

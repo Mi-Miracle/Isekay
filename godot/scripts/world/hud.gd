@@ -2342,7 +2342,7 @@ func open_skills() -> void:
 	var C := Player.cls(p)
 	var pv := _vbox_panel("📖 Книга навичок · %s %s" % [C.icon, C.name], 980)
 	var v: VBoxContainer = pv[1]
-	_info(v, "Натисни на клавішу біля навички — і вона ляже туди. Shift також працює як ПКМ, Q — як середня кнопка миші. Ривка більше немає — тепер у кожного класу є власна навичка руху.", 16, Color(1, 1, 1, 0.75))
+	_info(v, "Натисни на клавішу біля навички — і вона ляже туди. Q також на середній кнопці миші. Shift/ПКМ — як і раніше ривок.", 16, Color(1, 1, 1, 0.75))
 	var sl: Array = Classes.slots(p)
 	for S in C.skills:
 		var open: bool = int(p.lvl) >= int(S.lvl)
@@ -2368,3 +2368,50 @@ func open_skills() -> void:
 	var c := _button(v, "Закрити", close_overlay)
 	_show_overlay(pv[0], 0.45)
 	c.grab_focus.call_deferred()
+
+
+## Дзвінок богині Люмі: портрет, кумедне питання й відповіді з маленькими подарунками.
+func open_goddess_call(t: Dictionary) -> void:
+	var p := Player.ensure(Game.state)
+	var pv := _vbox_panel("📞 Дзвонить богиня Люмі", 1000)
+	var v: VBoxContainer = pv[1]
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 16)
+	v.add_child(row)
+	var pic := TextureRect.new()
+	pic.texture = load("res://assets/art/goddess.png")
+	pic.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	pic.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	pic.custom_minimum_size = Vector2(260, 320)
+	row.add_child(pic)
+	var col := VBoxContainer.new()
+	col.add_theme_constant_override("separation", 10)
+	col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(col)
+	var txt := Game.make_label("Люмі: «%s»" % t.text, 19, Color("#ffe6f4"), 3)
+	txt.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	txt.custom_minimum_size.x = 680
+	col.add_child(txt)
+	var mood := Game.make_label(Goddess.mood_text(), 15, Color(1, 1, 1, 0.6), 2)
+	col.add_child(mood)
+	Voice.say("Богиня Люмі", str(t.text))
+	Audio.sfx("goddess", -4.0, 0.0)
+	var btns: Array = []
+	for o in t.opts:
+		var b := _button(col, str(o.label), func():
+			for x in btns:
+				x.queue_free()
+			var res := Goddess.answer(p, o, t.get("gift", false))
+			txt.text = "Люмі: «%s»" % o.text
+			Voice.say("Богиня Люмі", str(o.text))
+			mood.text = Goddess.mood_text()
+			if not res.is_empty():
+				_info(col, " · ".join(PackedStringArray(res)), 17, Game.C_GOLD)
+			set_player(Player.short(p))
+			var bye := _button(col, "Па-па, Люмі! 👋", func():
+				Voice.stop()
+				close_overlay())
+			bye.grab_focus())
+		btns.append(b)
+	_show_overlay(pv[0], 0.5)
+	(btns[0] as Button).grab_focus.call_deferred()

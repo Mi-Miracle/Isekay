@@ -307,6 +307,8 @@ def sfx():
                     mix(tone(370, 0.55, "saw", 2.5) * 0.35, tone(466, 0.55, "saw", 2.5) * 0.3), gap=0.06)
     S["goddess"] = mix(*[cat(np.zeros(int(i * 0.07 * SR)), tone(N(24 + s), 0.6, "sine", 4) * 0.2) for i, s in enumerate((0, 4, 7, 11, 14, 19))],
                        nz(0.9, 4000, 10000, 13) * dec(0.9, 3) * 0.08)
+    # голос-«бурмотіння» для діалогів (висоту змінює Voice.blip)
+    S["blip"] = mix(tone(620, 0.05, "square", 7) * 0.35, tone(1240, 0.04, "triangle", 9) * 0.15)
     return S
 
 

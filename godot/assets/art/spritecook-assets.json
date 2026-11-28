@@ -21,6 +21,11 @@
       "asset_id": "9c3fadf8-dcd9-4839-a6f3-88c3140bbb89",
       "label": "goddess_lumi",
       "file": "goddess.png (620 px)"
+    },
+    {
+      "asset_id": "8ad73cf7-ae97-4578-88dd-e80d28b3acf0",
+      "label": "monsters_sheet_8_v2",
+      "file": "monsters/{orc,mimic,imp,harpy,mushroom,frost_wisp,salamander,wyvern}.png (нарізано 4×2)"
     }
   ]
 }

@@ -69,6 +69,49 @@ func _ready() -> void:
 		Audio.track = ""
 		Audio.music(t))
 	mrow.add_child(rescan)
+	a.add_child(_lbl("🗣️ Озвучка діалогів", 22, Game.C_GOLD))
+	var vm := OptionButton.new()
+	var modes := [["neural", "Нейроголос (українська, як у старій версії)"], ["blip", "Аніме-бурмотіння"], ["off", "Вимкнено"]]
+	for i in modes.size():
+		vm.add_item(modes[i][1], i)
+		if modes[i][0] == Voice.mode():
+			vm.select(i)
+	vm.item_selected.connect(func(i):
+		Game.settings.voice_mode = modes[i][0]
+		Game.save_settings())
+	a.add_child(vm)
+	_slider(a, "🗣️ Гучність голосу", "voice_vol", 0.0, 1.0, 0.05, true)
+	var vst := _lbl("", 17)
+	a.add_child(vst)
+	var vrow := HBoxContainer.new()
+	vrow.add_theme_constant_override("separation", 10)
+	a.add_child(vrow)
+	var vins := Button.new()
+	vins.text = "⬇ Завантажити нейроголос (~95 МБ, один раз)"
+	vrow.add_child(vins)
+	var vtest := Button.new()
+	vtest.text = "▶ Почути Люмі"
+	vtest.pressed.connect(func(): Voice.say("Богиня Люмі", ["Привіт! Це я, Люмі! Тепер мене чути на весь Дивосвіт!", "Тестую голос. Раз, два, три. Вантажівка-кун, чуєш мене?", "Не забувай пити воду і рятувати світ. Воду — першою!"].pick_random()))
+	vrow.add_child(vtest)
+	var vupd := func():
+		vst.text = "✅ Нейроголос встановлено — Люмі говорить уголос." if Voice.installed() else "Нейроголос ще не завантажено — поки звучить аніме-бурмотіння."
+		vins.visible = not Voice.installed()
+	vupd.call()
+	vins.pressed.connect(func():
+		vins.disabled = true
+		Voice.install())
+	_v_prog = func(f, t):
+		if is_instance_valid(vst):
+			vst.text = "⬇ %d%% · %s" % [int(f * 100), t]
+	_v_done = func(ok, msg):
+		if is_instance_valid(vst):
+			vins.disabled = false
+			vupd.call()
+			if not ok:
+				vst.text = "❌ " + msg
+	Voice.install_progress.connect(_v_prog)
+	Voice.install_done.connect(_v_done)
+	_note(a, "Голос — Piper (MIT) і відкритий датасет ukrainian_tts: Лада, Микита й Тетяна. Працює без інтернету після завантаження.")
 	var skip := Button.new()
 	skip.text = "⏭ Наступний трек"
 	skip.pressed.connect(func():
@@ -143,6 +186,17 @@ func _ready() -> void:
 func _on_status(text: String) -> void:
 	if is_instance_valid(_status):
 		_status.text = "Стан: " + text
+
+
+var _v_prog: Callable
+var _v_done: Callable
+
+
+func _exit_tree() -> void:
+	if _v_prog.is_valid() and Voice.install_progress.is_connected(_v_prog):
+		Voice.install_progress.disconnect(_v_prog)
+	if _v_done.is_valid() and Voice.install_done.is_connected(_v_done):
+		Voice.install_done.disconnect(_v_done)
 
 
 func _close() -> void:

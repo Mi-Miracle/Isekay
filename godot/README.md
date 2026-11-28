@@ -18,7 +18,7 @@
 | K | королівства: правителі, казна, війни, союзи |
 | J | хроніка світу |
 | I | спорядження |
-| B | книга навичок: яка навичка на Q / F / V / Shift |
+| B | книга навичок: яка навичка на Q / F / V / G |
 | H | мій дім (город, прибудови, ремесла) |
 | L | мої землі (будівлі, поселенці, казна) |
 | U | серця: легенди-супутники, загін, розділи історії |
@@ -29,11 +29,13 @@
 | F11 | повний екран |
 | Esc | пауза |
 
-**У підземеллі:** WASD — рух · ЛКМ/Пробіл — удар · Q/F/V/Shift (Shift = ПКМ, Q = середня кнопка) — навички, які ти розклав(ла) в книзі навичок (B) · R/1 — зілля · 2 — ефір · E — скриня/сходи/вихід/жила · Esc — пауза.
+**У підземеллі:** WASD — рух · ЛКМ/Пробіл — удар · Shift/ПКМ — ривок · Q/F/V/G (Q також середня кнопка) — навички, які ти розклав(ла) в книзі навичок (B) · R/1 — зілля · 2 — ефір · E — скриня/сходи/вихід/жила · Esc — пауза.
 На мапі: **I** — спорядження.
 
 ## Своя музика
-Поруч із `.exe` гра створює теку **music** (з підказкою всередині). Кладіть туди `.mp3`, `.ogg` або `.wav`:
+**Для всіх гравців:** поклади файли в `godot/assets/audio/custom/` (track1.mp3, track2.mp3…, menu.mp3) — вони вбудуються в `.exe` при збірці (див. README у тій теці).
+
+**Лише для себе:** поруч із `.exe` гра створює теку **music** (з підказкою всередині). Кладіть туди `.mp3`, `.ogg` або `.wav`:
 - `track1.mp3`, `track2.mp3`, … (будь-які назви, крім `menu*`) — грають у грі впереміш із вбудованою 8-бітною музикою (поле, ліс, місто, таверна, дім, море);
 - `menu.mp3` (або `menu1`, `menu2`…) — у головному меню.
 Бій, боси й підземелля лишаються зі своєю музикою. Після додавання — Налаштування → Звук → «Оновити».
@@ -64,8 +66,10 @@ godot --headless --path godot --export-release "Windows Desktop" Dyvosvit.exe
 | `scripts/sim/politics.gd` | ШІ королівств (порт `politics.js`): економіка, дипломатія, війни, армії, облоги, династії, катастрофи, демони й орди; стан `P` — у сейві (`state.politics`) |
 | `scripts/sim/heroes.gd` | мандрівні НПС-герої й суперники-ісекайники |
 | `scripts/world/armies_layer.gd` | армії, герої та битви на мапі |
-| `scripts/core/classes.gd` | 6 класів: характеристики, звичайний удар (`basic`), по 6 навичок (типи: arc, nova, projectile, fan, aoe_at, meteor, cloud, heal, shield, buff, blink, charge); слоти Q/F/V/Shift — `slots(p)`/`assign` (`p.skill_slots`), вікно — `hud.open_skills` (B) |
+| `scripts/core/classes.gd` | 6 класів: характеристики, звичайний удар (`basic`), по 6 навичок (типи: arc, nova, projectile, fan, aoe_at, meteor, cloud, heal, shield, buff, blink, charge); слоти Q/F/V/G — `slots(p)`/`assign` (`p.skill_slots`), вікно — `hud.open_skills` (B) |
 | `scripts/core/origin.gd` | походження: стать (`p.gender`, арт `hero_art`), раси `RACES` і благословення `BLESSINGS` (`p.race`, `p.bless`), бонуси `mul(p, key)` — враховуються в `Player.max_hp/max_mp/atk/def/crit/add_xp`, швидкості й перезарядці в підземеллі |
+| `scripts/core/voice.gd` | автозавантаження `Voice`: озвучка — нейроголос Piper (`install()` качає піпер і модель у `user://voice`, `say(who, text)` синтезує в потоці через `say.bat`/`say.sh`, кеш wav), бліпи `blip(who, ch)`, режими `settings.voice_mode` (neural/blip/off) |
+| `scripts/core/goddess.gd` | дзвінки богині: `TALKS` (питання з відповідями), `due/make_call/answer`, настрій `state.goddess`; вікно — `hud.open_goddess_call` |
 | `scripts/ui/manga_intro.gd` | заставка-манга при запуску (раз за запуск, `MangaIntro`) |
 | `scripts/ui/story.gd` | `scenes/story.tscn`: нова гра — місто, вантажівка-кун, богиня Люмі, створення героя/героїні, рулетка благословень → `Game.new_game(name, seed, cls, origin)` |
 | `scripts/core/items.gd` | генерація спорядження (зброя/броня/прикраса, 5 рідкостей), опис, «сила» для порівняння |

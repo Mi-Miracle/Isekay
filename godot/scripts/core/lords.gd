@@ -123,6 +123,8 @@ static func rel(l: Dictionary) -> int:
 	if Clan.lvl() >= 5:
 		v += 5
 	v += Family.lord_bonus()
+	if Game.state.get("player") is Dictionary:
+		v += Origin.mul(Game.state.player, "lord")
 	return clampi(int(round(v)), -100, 100)
 
 

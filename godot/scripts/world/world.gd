@@ -797,6 +797,8 @@ func _on_viewer(user: String, kind: String, _args: Array) -> void:
 			hud.toast("💚 %s кинув(ла) героєві цілющу травичку: +%d ❤" % [user, int(h)], Color("#9dffb0"))
 			Audio.sfx("potion")
 		"gift":
+			if str(p.get("bless", "")) == "streamer" and not _args.has("again"):
+				_on_viewer(user, kind, ["again"])
 			var r := randi() % 3
 			if r == 0:
 				p.potions = int(p.potions) + 1
@@ -854,7 +856,7 @@ func _move_hero(delta: float) -> void:
 	var ground := maxf(0.25, wd.speed_at(c))
 	var rides := Travel.riding()
 	hero.mount = Travel.mount().get("color", Color.TRANSPARENT) if rides else Color.TRANSPARENT
-	var sp := ground * Travel.speed_mult(ground)
+	var sp := ground * Travel.speed_mult(ground) * (1.0 + Origin.mul(Player.ensure(Game.state), "travel"))
 	var cells := WALK_CELLS_PER_SEC * sp * ((1.35 if rides else 1.75) if hero.running else 1.0) * delta
 	var step := dir * cells * CELL
 	var np := hero.position + step
@@ -886,6 +888,10 @@ func _move_hero(delta: float) -> void:
 			_path.clear()
 			hero.moving = false
 			hud.open_event(ev)
+		elif Goddess.due() and not hud.is_modal() and not Game.selftest:
+			_path.clear()
+			hero.moving = false
+			hud.open_goddess_call(Goddess.make_call(pl))
 	var nc := Vector2i(hero.position / CELL)
 	if nc != _last_cell:
 		_last_cell = nc
@@ -1336,6 +1342,17 @@ func _selftest() -> void:
 	hud.close_overlay()
 	Selftest.step("skill_slots", sk_all.size() == 6 and after[3] == sk_all[5].id and after.size() == 4, "%s → %s" % [before, after])
 	Classes.assign(pl2, 3, str(before[3]))
+	# v0.17: дзвінок богині
+	var call := Goddess.make_call(pl2)
+	hud.open_goddess_call(call)
+	await tree.create_timer(0.4).timeout
+	Selftest.shot(self, "21c_goddess_call")
+	var gans := Goddess.answer(pl2, call.opts[0], false)
+	hud.close_overlay()
+	var mon_ok := true
+	for k in DungeonGen.MONSTERS:
+		mon_ok = mon_ok and ResourceLoader.exists("res://assets/art/monsters/%s.png" % k)
+	Selftest.step("goddess_call", call.opts.size() >= 2 and Goddess.st().next > Goddess.today() and mon_ok, "%s → %s · монстрів %d" % [str(call.text).left(40), gans, DungeonGen.MONSTERS.size()])
 	Selftest.step("dungeon_combat", float(last_dungeon.get("dmg_dealt", 0)) > 0, "%s: ворогів %d, шкоди %d, золота %d, помер: %s" % [dsel.name, last_dungeon.kills, int(last_dungeon.dmg_dealt), last_dungeon.gold, str(last_dungeon.died)])
 	await tree.create_timer(0.6).timeout
 	Selftest.shot(self, "19_after_dungeon")
