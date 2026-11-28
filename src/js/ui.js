@@ -274,7 +274,7 @@
     const evs = GM().arrive(G, p.location); endTravel();
     if (ISK.nav) ISK.nav.banner(p.location, firstVisit);
     // v5.9: легендарні супутники можуть з'явитися просто по прибуттю
-    if (ISK.bondsUI) { const hr0 = GM().here(G); await ISK.bondsUI.trigger(hr0.kind === 'res' ? 'res' : 'arrive', { type: hr0.kind === 'barony' ? hr0.B.type : undefined }); }
+    if (ISK.bondsUI) { const hr0 = GM().here(G); const met = await ISK.bondsUI.trigger(hr0.kind === 'res' ? 'res' : 'arrive', { type: hr0.kind === 'barony' ? hr0.B.type : undefined }); if (!met && hr0.kind === 'barony' && ISK.extrasUI) await ISK.extrasUI.townEvent(); }
     for (const e of evs) {
       if (e.type === 'quest') toast(e.text, 'good');
       if (e.type === 'bounty') {
@@ -365,6 +365,7 @@
       if (e.fame) parts.push(`+${PL().addFame(p, e.fame)} ⭐ слави`);
       toast('✨ ' + parts.join(' '), 'good', 4500); A().play('coin'); refresh(); return 'ok';
     }
+    if (enc.type === 'story') return ISK.extrasUI ? ISK.extrasUI.storyEvent(ISK.extras.pickEvent(G, enc.where || 'road')) : 'ok';
     if (enc.type === 'rival') {
       const lvl = Math.max(2, p.level + 1);
       await alertBox('Суперник-ісекайник!', `«Ха! Ще один переродженець? Я — Кіріто-ні-сан, рівень 99 (у своїй голові)! Битимемось за звання Головного Героя!»`, '🧑‍🎤');

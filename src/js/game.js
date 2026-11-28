@@ -327,6 +327,7 @@
     if (lm) ch = Math.max(ch, 0.5);
     if (t === WM().T.ASH) ch = 0.65;
     if (!rng.chance(ch)) {
+      if (D().STORY_EVENTS && rng.chance(0.07 * Math.min(2, days))) return { type: 'story', where: 'road' }; // v6.0: події з вибором
       if (rng.chance(0.13 * days)) return { type: 'event', event: rng.pick(D().ENCOUNTER_EVENTS.filter((e) => !e.rare || rng.chance(0.3))) };
       if (rng.chance(0.03)) return { type: 'rival' };
       return null;

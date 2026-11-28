@@ -48,7 +48,7 @@
       const C = D().CLASSES[cls]; const cx = p.classXp[cls] || { lvl: 1 };
       for (const k in C.bonus) s[k] += Math.floor(C.bonus[k] * (1 + cx.lvl / 6));
       if (cx.adv) { const A = C.adv.find((a) => a.id === cx.adv); if (A) for (const k in A.bonus) s[k] += A.bonus[k]; }
-      if (cx.adv && cx.master) { const A = C.adv.find((a) => a.id === cx.adv); if (A && A.master) for (const k in A.master.bonus) s[k] += A.master.bonus[k]; }
+      if (cx.adv && cx.master) { const A = C.adv.find((a) => a.id === cx.adv); const Ms = D().masterOf ? D().masterOf(A, cx) : A && A.master; if (Ms) for (const k in Ms.bonus) s[k] += Ms.bonus[k]; }
       if (cx.ascended) for (const k in s) s[k] += 6;
       const t = D().classTier && D().classTier(cls, cx); if (t) s[C.main] += t.tier * 3 + t.grade; // grade bonus
     }
@@ -100,7 +100,7 @@
   }
   function availableSkills(p, cls) {
     const cx = p.classXp[cls]; if (!cx) return [];
-    return D().allSkillsOf(cls).filter((s) => (s.adv ? s.adv === cx.adv && (!s.master || cx.master) : s.ascend ? cx.ascended : true) && s.lvl <= cx.lvl);
+    return D().allSkillsOf(cls).filter((s) => (s.adv ? s.adv === cx.adv && (!s.master || (D().skillOpen ? D().skillOpen(cls, s, cx) : cx.master)) : s.ascend ? cx.ascended : true) && s.lvl <= cx.lvl);
   }
   function knownSkills(p) {
     const out = [];

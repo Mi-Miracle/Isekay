@@ -595,3 +595,5 @@ img.px.bob { animation: idle 2.4s ease-in-out infinite; }
 @keyframes legendGlow { 50% { box-shadow: 0 0 22px rgba(255,180,230,1); } }
 .clan-emblem { width: 72px; height: 72px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 40px; background: radial-gradient(circle, rgba(255,211,110,.35), rgba(90,50,20,.6)); border: 2px solid #ffd36e; flex: none; }
 .item.legend .nm .tag { display: inline-block; vertical-align: middle; }
+/* v6.0: події */
+.event-text { font-size: 15px; line-height: 1.55; padding: 10px 12px; border-radius: 12px; background: rgba(255,255,255,.04); border: 1px solid var(--line2); white-space: pre-line; }

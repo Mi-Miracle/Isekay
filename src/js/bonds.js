@@ -19,6 +19,7 @@
     if (p.flags.legendCool && d < p.flags.legendCool) return out;
     for (const [id, L] of Object.entries(LG())) {
       if (st(p, id)) continue; const m = L.meet; if (!m || m.when !== when) continue;
+      if (L.only && L.only !== (p.gender || 'm')) continue; // чоловічі легенди v6.0 — лише для героїнь
       if (p.level < (m.minLvl || 1)) continue;
       if (m.types && ctx.type && !m.types.includes(ctx.type)) continue;
       if (m.types && !ctx.type) continue;
@@ -29,7 +30,9 @@
   }
   function rollMeet(G, when, ctx = {}, rnd = Math.random) {
     const c = meetCandidates(G, when, ctx); if (!c.length) return null;
-    const id = c[Math.floor(rnd() * c.length)]; const L = LG()[id];
+    // героїням частіше трапляються хлопці, героям — дівчата
+    const pg = G.player.gender || 'm'; const pool = []; for (const x of c) { const w = LG()[x].gender !== pg ? 3 : 1; for (let i = 0; i < w; i++) pool.push(x); }
+    const id = pool[Math.floor(rnd() * pool.length)]; const L = LG()[id];
     const mul = G.player.cheat === 'harem' ? 2 : 1;
     return rnd() < (L.meet.chance || 0.2) * mul ? id : null;
   }

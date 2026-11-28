@@ -113,7 +113,7 @@
         wrap.appendChild(h('div', { class: 'row' }, h('h3', { style: { margin: '4px 0', fontFamily: 'Georgia' } }, `${C.icon} ${C.name} — рівень ${L}`), h('span', { class: 'tag rank' }, `Очки навичок: ${cx.sp || 0}`)));
         const T = D().classTier && D().classTier(c, cx);
         if (T) {
-          const path = [C.name, cx.adv ? (C.adv.find((a) => a.id === cx.adv) || {}).name : 'Клас ІІ', cx.adv && (C.adv.find((a) => a.id === cx.adv) || {}).master ? C.adv.find((a) => a.id === cx.adv).master.name : 'Клас ІІІ', C.ascend.name];
+          const path = [C.name, cx.adv ? (C.adv.find((a) => a.id === cx.adv) || {}).name : 'Клас ІІ', (() => { const A0 = cx.adv ? C.adv.find((a) => a.id === cx.adv) : null; const m0 = D().masterOf ? D().masterOf(A0, cx) : null; return m0 ? m0.name : 'Клас ІІІ'; })(), C.ascend.name];
           wrap.appendChild(h('div', { class: 'grade-track' }, path.map((nm, ti) => h('div', { class: 'gt-tier' + (ti < T.tier ? ' done' : ti === T.tier ? ' cur' : '') }, h('div', { class: 'gt-nm' }, nm), h('div', { class: 'gt-pips' }, [1, 2, 3].map((gi) => h('span', { class: 'gt-pip' + (ti < T.tier || (ti === T.tier && gi <= T.grade) ? ' on' : '') }, ['I', 'II', 'III'][gi - 1])))))));
           wrap.appendChild(h('div', { class: 'muted', style: { fontSize: '12px' } }, `Поточний грейд: ${T.icon} ${T.title} · кожен грейд дає +${T.tier * 3 + T.grade} до основної характеристики`));
         }
@@ -124,16 +124,19 @@
         }
         const A2 = cx.adv ? C.adv.find((a) => a.id === cx.adv) : null;
         if (L >= 20 && A2 && A2.master && !cx.master) {
-          const M = A2.master;
-          wrap.appendChild(h('div', { class: 'quest main' }, h('div', { class: 't' }, `⏫ Клас ІІІ: ${M.icon} ${M.name}`), h('div', { class: 'd' }, `${M.desc} Нові навички: ${M.skills.map((x) => x.icon + ' ' + x.name).join(', ')}.`),
-            h('button', { class: 'btn primary', style: { marginTop: '6px' }, onclick: () => { cx.master = true; A().play('win'); UI().cutin(M.name.toUpperCase(), 'КЛАС ІІІ ВІДКРИТО!', '#ff9df0'); UI().sparkle(innerWidth / 2, innerHeight / 2, 30); reopen(skills); } }, `⏫ Стати «${M.name}»`)));
+          const Ms = D().mastersOf ? D().mastersOf(A2) : [A2.master];
+          wrap.appendChild(h('div', { class: 'quest main' }, h('div', { class: 't' }, `⏫ Клас ІІІ відкрито! ${Ms.length > 1 ? 'Обери один з варіантів:' : ''}`),
+            h('div', { class: 'choice-grid' }, Ms.map((M) => h('div', { class: 'choice', onclick: async () => { if (!(await UI().confirm(`Стати «${M.name}»?\n${M.desc}\nНавички: ${M.skills.map((x) => x.icon + ' ' + x.name).join(', ')}`))) return; cx.master = M.id; A().play('win'); UI().cutin(M.name.toUpperCase(), 'КЛАС ІІІ ВІДКРИТО!', '#ff9df0'); UI().sparkle(innerWidth / 2, innerHeight / 2, 30); reopen(skills); } },
+              h('div', { class: 'ic' }, M.icon), h('div', { class: 'nm' }, M.name), h('div', { class: 'ds' }, M.desc), h('div', { class: 'ds', style: { color: 'var(--cyan)' } }, M.skills.map((x) => x.icon + ' ' + x.name).join(', ')))))));
         }
-        wrap.appendChild(h('div', { class: 'muted', style: { fontSize: '12.5px' } }, `Шлях: ${C.name} → ${A2 ? A2.name : 'клас ІІ (рів. 10)'} → ${A2 && A2.master ? A2.master.name : 'клас ІІІ'} (рів. 20) → ${C.ascend.name} (рів. 30, вознесіння у тренера) · макс. рівень класу ${D().CLASS_CAP || 30}`));
+        const M3 = D().masterOf ? D().masterOf(A2, cx) : (A2 && cx.master ? A2.master : null);
+        wrap.appendChild(h('div', { class: 'muted', style: { fontSize: '12.5px' } }, `Шлях: ${C.name} → ${A2 ? A2.name : 'клас ІІ (рів. 10)'} → ${M3 ? M3.name : A2 && D().mastersOf ? D().mastersOf(A2).map((m) => m.name).join(' / ') : 'клас ІІІ'} (рів. 20) → ${C.ascend.name} (рів. 30, вознесіння у тренера) · макс. рівень класу ${D().CLASS_CAP || 30}`));
         const grid = h('div', { class: 'items' });
         for (const sk of D().allSkillsOf(c)) {
           if (sk.adv && cx.adv && sk.adv !== cx.adv) continue;
           if (sk.adv && !cx.adv) continue;
-          const ok = sk.lvl <= L && (!sk.ascend || cx.ascended) && (!sk.master || cx.master); const r = PL().skillRank(p, sk.id); const rs = PL().rankSkill(sk, r);
+          if (sk.master && M3 && sk.master !== M3.id) continue;
+          const ok = sk.lvl <= L && (!sk.ascend || cx.ascended) && (!sk.master || (D().skillOpen ? D().skillOpen(c, sk, cx) : cx.master)); const r = PL().skillRank(p, sk.id); const rs = PL().rankSkill(sk, r);
           grid.appendChild(h('div', { class: 'item', style: { opacity: ok ? 1 : 0.45 } }, h('div', { class: 'ic' }, sk.icon),
             h('div', { style: { flex: 1 } }, h('div', { class: 'nm' }, `${sk.name}${ok ? ` ★${r}` : sk.ascend ? ' 🔒 вознесіння (рів. 30)' : sk.master && !cx.master ? ` 🔒 клас ІІІ (рів. ${sk.lvl})` : ` 🔒 рів. ${sk.lvl}`}`), h('div', { class: 'ds' }, `🔷${rs.mp}${sk.cd ? ` · ⏱${sk.cd}` : ''}${rs.power ? ` · сила ×${rs.power.toFixed(2)}` : ''} · ${sk.desc}`)),
             ok && r < 5 ? h('div', { class: 'acts' }, h('button', { class: 'btn small primary', disabled: !cx.sp, onclick: () => { PL().upgradeSkill(p, c, sk.id); A().play('magic'); reopen(skills); } }, '⬆ ранг')) : null));

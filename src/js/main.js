@@ -341,6 +341,22 @@
         if (!ISK.data.CLASSES.samurai || ISK.data.allSkillsOf('ninja').length < 15) errors.push('new classes missing');
         console.log('v59 party cap', B.partyCap(p), 'clan lvl', p.clan && p.clan.lvl);
       });
+      await step('v60_subclass_arena_events', async () => {
+        const g = G4(); const p = g.player; UI.closeAll(); const X = ISK.extras;
+        const cls = p.classes.primary; const cx = p.classXp[cls]; const saved = { ...cx };
+        Object.assign(cx, { lvl: 22, adv: ISK.data.CLASSES[cls].adv[2].id, master: false });
+        ISK.panels.open('skills'); await UI.sleep(400); await shot('60a_class3_choice'); UI.closeAll();
+        if (!document.querySelectorAll || ISK.data.mastersOf(ISK.data.CLASSES[cls].adv[2]).length !== 2) errors.push('no master choice');
+        Object.assign(cx, saved);
+        const cap = g.world.baronies.find((b) => b.type === 'capital' && !ISK.politics.isDemon(g.P, b.owner)); ISK.game.arrive(g, 'b:' + cap.id); UI.refresh();
+        ISK.estate.open('town', cap.id); await UI.sleep(900); await shot('60b_town_colosseum'); ISK.estate.close();
+        ISK.extrasUI.colosseum(cap); await UI.sleep(300); await shot('60c_colosseum'); UI.closeAll();
+        ISK.extrasUI.colosseum(cap, 'bets'); await UI.sleep(300); await shot('60d_colosseum_bets'); UI.closeAll();
+        const ev = ISK.data.STORY_EVENTS.find((e) => e.id === 'witch_hut'); const pr = ISK.extrasUI.storyEvent(ev); await UI.sleep(400); await shot('60e_story_event');
+        document.querySelectorAll('.modal .btn')[2]?.click(); await UI.sleep(300); UI.closeAll(); void pr;
+        const g0 = p.gender; p.gender = 'f'; ISK.bondsUI.legends(); await UI.sleep(400); await shot('60f_legends_heroine'); UI.closeAll(); p.gender = g0;
+        if (!X.roundEnemies) errors.push('extras missing');
+      });
       await step('v54_depths', async () => {
         const g = G4(); const p = g.player; UI.closeAll(); const DP = ISK.depths;
         p.hp = ISK.player.maxHp(p); p.level = Math.max(p.level, 20);

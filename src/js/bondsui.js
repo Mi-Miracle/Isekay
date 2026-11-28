@@ -112,7 +112,7 @@
     const m = UI().modal({ title: `Подарунок для ${L.name}`, icon: '🎁', size: 'mid', body: () => h('div', { class: 'items' }, ids.length ? ids.slice(0, 60).map((k) => { const it = PL().item(k); const lk = B().likes(id, it); return h('div', { class: 'item' + (lk ? ' r3' : ''), style: { cursor: 'pointer' }, onclick: () => { const r = B().gift(G(), id, k); if (r.err) return UI().toast(r.err, 'bad'); m.close(); A().play('coin'); UI().toast(`${r.liked ? '😍' : '🙂'} ${L.name} ${r.liked ? 'у захваті' : 'дякує'}: ${it.icon} ${it.name}. 💗 +${r.gain}`, r.liked ? 'epic' : 'good', 3500); onChange(); } }, h('div', { class: 'ic' }, it.icon), h('div', null, h('div', { class: 'nm' }, `${it.name} ×${p.inventory[k]}`), h('div', { class: 'ds' }, lk ? '💗 Улюблене!' : 'Звичайний подарунок'))); }) : h('div', { class: 'muted' }, 'У торбі порожньо. Навіть лушпиння від насіння немає.')) });
   }
   function legendsPanel() {
-    const p = G().player; const ids = Object.keys(D().LEGENDS);
+    const p = G().player; const ids = Object.keys(D().LEGENDS).filter((id) => B().st(p, id) || !D().LEGENDS[id].only || D().LEGENDS[id].only === (p.gender || 'm'));
     const met = ids.filter((id) => B().st(p, id)); const unmet = ids.filter((id) => !B().st(p, id));
     UI().modal({ title: 'Серця — легендарні супутники', icon: '💘', size: 'big', sub: `Зустрінуто: ${met.length}/${ids.length} · загін ${p.party.length}/${B().partyCap(p)} · легенди не беруть платні, ростуть з прихильністю й мають власні історії`, body: () => {
       const w = h('div', { class: 'col' });

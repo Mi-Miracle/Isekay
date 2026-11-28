@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert');
-['rng', 'data', 'content', 'content2', 'content3', 'world', 'politics', 'heroes', 'player', 'combat', 'game', 'depths', 'life', 'bonds'].forEach((f) => require(`../src/js/${f}.js`));
+['rng', 'data', 'content', 'content2', 'content3', 'content4', 'world', 'politics', 'heroes', 'player', 'combat', 'game', 'depths', 'life', 'bonds', 'extras'].forEach((f) => require(`../src/js/${f}.js`));
 const { game: GM, data: D, player: PL, bonds: B, combat: C } = globalThis.ISK;
 
 test('v5.9 classes: six new classes with full skill trees', () => {
@@ -8,7 +8,7 @@ test('v5.9 classes: six new classes with full skill trees', () => {
     const Cl = D.CLASSES[k]; assert.ok(Cl, k);
     assert.ok(D.WEAPON_TYPES[Cl.weapon], `${k} weapon ${Cl.weapon}`);
     for (const w of Cl.alt) assert.ok(D.WEAPON_TYPES[w], `${k} alt ${w}`);
-    assert.strictEqual(Cl.adv.length, 2); for (const a of Cl.adv) assert.ok(a.master && a.master.skills.length === 2, `${k}/${a.id} master`);
+    assert.ok(Cl.adv.length >= 2); for (const a of Cl.adv) assert.ok(a.master && a.master.skills.length === 2, `${k}/${a.id} master`);
     const all = D.allSkillsOf(k); assert.ok(all.length >= 9 + 4 + 4 + 1, `${k} skills ${all.length}`);
     assert.ok(D.classTier(k, { lvl: 1 }).name === Cl.name);
   }

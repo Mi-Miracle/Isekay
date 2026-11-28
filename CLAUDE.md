@@ -31,7 +31,7 @@ ISEKAY_SHOTS=/tmp/shots timeout 590 xvfb-run -a -s "-screen 0 1600x900x24" npx e
 
 ## Архітектура
 Чистий JS без збирача. Кожен файл — IIFE, що кладе модуль у `globalThis.ISK`. Порядок підключення важливий — див. `<script>` у `src/index.html`:
-`rng → data → content → content2 → content3 → world → politics → heroes → player → combat → game → depths → life → bonds → twitch → audio → music → voice → sprites → render → ui → panels → panels2 → bondsui → nav → estate → combatui → actioncombat → minigames → dungeonui → depthsui → intro → story → main`.
+`rng → data → content → content2 → content3 → content4 → world → politics → heroes → player → combat → game → depths → life → bonds → extras → twitch → audio → music → voice → sprites → render → ui → panels → panels2 → bondsui → extrasui → nav → estate → combatui → actioncombat → minigames → dungeonui → depthsui → intro → story → main`.
 Логіка (rng, data, content*, world, politics, heroes, player, combat, game, depths, life) працює і в Node — її тестують без Electron.
 
 | Файл | Що там |
@@ -46,6 +46,9 @@ ISEKAY_SHOTS=/tmp/shots timeout 590 xvfb-run -a -s "-screen 0 1600x900x24" npx e
 | `src/js/content3.js` | v5.9: 6 класів (samurai, summoner, warlock, ninja, battle_chef, alchemist), `D.LEGENDS` (11 легенд: look, meet, intro, lines, likes, sig, chapters з boss), `D.CLAN` (perks, hall, contracts, roles) |
 | `src/js/bonds.js` | v5.9 логіка (Node): легенди `p.legends[id]` {bond, ch, sig, lvl}, `rollMeet/meet/join/leave/talk/gift/completeChapter`, `partyCap`; клан `p.clan` — `foundClan`, кандидати/контракти (щотижня), `daily`, `upgradeHall`, `warEnemies/warResult`, `boostRewards`, `onWin` |
 | `src/js/bondsui.js` | v5.9 UI: вікна «Серця» (U) і «Клан» (L), сцени зустрічей (`trigger('arrive'|'res'|'win')`), розділи історії, портрети легенд |
+| `src/js/content4.js` | v6.0: третя гілка класу ІІ для кожного класу + `adv.masters` (2 варіанти класу ІІІ); `D.mastersOf/masterOf/skillOpen`, перевизначені `allSkillsOf`/`classTier` (`cx.master` = true (старе → перший) або id); чоловічі легенди з `only: 'f'`; `D.STORY_EVENTS` (where road/town, opts→out з шансами); `D.COLOSSEUM` |
+| `src/js/extras.js` | v6.0 логіка: події `pickEvent/choose/afterWin`, Колізей `canEnter/startCup/roundEnemies/winRound/loseCup`, ставки; стан `p.flags.colos`, забіг `G.colos` |
+| `src/js/extrasui.js` | v6.0 UI: `storyEvent(ev)`, `townEvent()`, `colosseum(B)`, `runCup` |
 | `src/js/world.js` | генерація світу 540×370: континенти, королівства, баронства, дороги, підземелля, пам'ятки, лорди, артефакти; v5.2 `addResourceNodes` — угіддя `w.rnodes` (вузли `'r:<id>'`) і стежки `w.rtrails` (окремий RNG) |
 | `src/js/politics.js` | ШІ королівств: економіка, дипломатія, війни, армії, облоги |
 | `src/js/heroes.js` | НПС-герої, що мандрують світом |
@@ -91,6 +94,8 @@ ISEKAY_SHOTS=/tmp/shots timeout 590 xvfb-run -a -s "-screen 0 1600x900x24" npx e
 - Стиль коду: короткі функції-хелпери `h()` для DOM, `UI()/D()/PL()/GM()` як ледачі посилання на модулі.
 
 - v5.9: панель поселення — лише «Увійти» (+ бій з ордою); дії міста — у тулбарі `estate` (kind town). Рух на мапі: `FOOT_MS`=620, `MOUNT_MIN_MS`, `SEA_MS`, `UI.quickAnim` (налаштування). Легенди з'являються в `startTravel` після прибуття і в `combatUI.settle` після перемоги (`opts.noLegend` вимикає); у автотесті вимкнені через `ISK_NOENCOUNTER`. Фірмовий прийом легенди — у `combat.alliesAct`. Тести — `test/bonds.test.js`, крок `v59_bonds_clan`.
+
+- v6.0: події з вибором — `rollEncounter` → `{type:'story'}` → `handleEncounter`; у містах 10% після прибуття (`townEvent`). Колізей — будівля в `townLayout` лише для `capital`. Тести — `test/extras.test.js`, крок `v60_subclass_arena_events`.
 
 ## Ідеї на майбутнє
 Таверна з картковою мініграмою; сюжетні змови лордів; власне королівство зі столицею; бестіарій з трофеями; голосування глядачів за події; нова гра+ з переродженням; сезонні фестивалі з мініграмами; щоденник героя.
